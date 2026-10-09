@@ -24,6 +24,7 @@ import {
   activityFallback,
   aggregateTasks,
   mergeHistory,
+  originBadge,
   roleLabel,
   shellBoxText,
   shellDoneKind,
@@ -214,6 +215,9 @@ class AgentView {
   private sessionValue: HTMLElement;
   private linesPlus: HTMLElement;
   private linesMinus: HTMLElement;
+  private origin: HTMLElement;
+  private appRow: HTMLElement;
+  private appId: HTMLElement;
 
   constructor(
     private ctx: UiContext,
@@ -222,6 +226,9 @@ class AgentView {
     this.avatar = createAvatarPlaceholder('lg');
     this.name = h('h2', { class: 'ui-hero__name' });
     this.role = h('span', { class: 'ui-role' });
+    this.origin = h('span', { class: 'ui-role', hidden: true });
+    this.appId = h('code', { class: 'ui-mono' });
+    this.appRow = h('div', { class: 'ui-hero__where', hidden: true }, h('span', { class: 'ui-muted', text: 'Sessão no app' }), this.appId);
     this.title = h('p', { class: 'ui-hero__title' });
     this.accChip = createAccountChip('md');
     this.accName = h('span', { class: 'ui-hero__acc-name' });
@@ -231,9 +238,10 @@ class AgentView {
     const heroText = h(
       'div',
       { class: 'ui-hero__text' },
-      h('div', { class: 'ui-hero__line' }, this.name, this.role),
+      h('div', { class: 'ui-hero__line' }, this.name, this.role, this.origin),
       h('div', { class: 'ui-hero__acc' }, this.accChip, this.accName, this.accEmail),
       h('div', { class: 'ui-hero__where' }, h('span', { class: 'ui-muted', text: 'Sala' }), this.roomBtn),
+      this.appRow,
     );
     this.gone = h('p', { class: 'ui-gone', text: 'Este agente já saiu do escritório.', hidden: true });
 
@@ -415,6 +423,12 @@ class AgentView {
     setText(this.name, a.name);
     setText(this.role, roleLabel(a));
     setVariant(this.role, 'ui-role--', a.kind);
+    const origin = originBadge(a);
+    setHidden(this.origin, !origin);
+    setText(this.origin, origin?.text ?? '');
+    setTitle(this.origin, origin ? `Origem da sessão: ${origin.text}` : '');
+    setHidden(this.appRow, !origin?.appSessionId);
+    setText(this.appId, origin?.appSessionId ?? '');
     setText(this.title, a.title ?? '');
     setHidden(this.title, !a.title);
     setTitle(this.title, a.title ?? '');

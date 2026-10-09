@@ -11,6 +11,7 @@ import {
   hasRunningShells,
   matchesQuery,
   mergeHistory,
+  originBadge,
   roleLabel,
   SHELL_STAGES,
   shellBoxText,
@@ -132,6 +133,12 @@ describe('utilidades', () => {
   it('roleLabel', () => {
     expect(roleLabel({ kind: 'main', role: 'Agente principal' })).toBe('Agente principal');
     expect(roleLabel({ kind: 'sub', role: '' })).toBe('Subagente');
+  });
+  it('originBadge: o selo de cada origem; o local_ do app só no agente do app', () => {
+    expect(originBadge({ origin: 'app desktop', appSessionId: 'local_um' })).toEqual({ text: 'app desktop', appSessionId: 'local_um' });
+    expect(originBadge({ origin: 'app desktop' })).toEqual({ text: 'app desktop' });
+    for (const origin of ['terminal', 'sdk', 'segundo plano'] as const) expect(originBadge({ origin, appSessionId: 'local_um' })).toEqual({ text: origin });
+    expect(originBadge({})).toBeUndefined();
   });
   it('aggregateTasks soma tarefas de vários agentes', () => {
     expect(aggregateTasks(agents)).toEqual({ completed: 1, inProgress: 1, total: 3 });

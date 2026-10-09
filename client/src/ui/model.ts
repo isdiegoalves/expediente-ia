@@ -43,6 +43,13 @@ export function roleLabel(agent: Pick<AgentInfo, 'kind' | 'role'>): string {
   return agent.role || 'Subagente';
 }
 
+/** Selo de origem do agente principal; o `local_<uuid>` do app só acompanha o selo "app desktop". */
+export function originBadge(agent: Pick<AgentInfo, 'origin' | 'appSessionId'>): { text: string; appSessionId?: string } | undefined {
+  if (!agent.origin) return undefined;
+  if (agent.origin === 'app desktop' && agent.appSessionId) return { text: agent.origin, appSessionId: agent.appSessionId };
+  return { text: agent.origin };
+}
+
 /** Agente ainda "presente" (não está indo embora). */
 export function isPresent(agent: Pick<AgentInfo, 'status'>): boolean {
   return agent.status !== 'offline';
