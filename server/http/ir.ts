@@ -10,13 +10,14 @@ import { sendJson } from './app';
 import { isLoopbackHost } from './guard';
 
 export const NONCE_VALIDADE_MS = 60_000;
-const ID_SESSAO = /^[A-Za-z0-9-]{1,64}$/;
+// Sem traço no começo: o id entra no comando copiado e não pode virar opção do claude.
+const ID_SESSAO = /^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/;
 const ID_APP = /^local_[A-Za-z0-9-]{1,64}$/;
 const AVISO_FORK = 'cria uma cópia, não responde à sessão original';
 
 const LISTA_PERMITIDA = [
   /^claude:\/\/code\/(?:continue|needs-input)\?session=local_[A-Za-z0-9-]{1,64}$/,
-  /^claude:\/\/resume\?session=[A-Za-z0-9-]{1,64}$/,
+  /^claude:\/\/resume\?session=[A-Za-z0-9][A-Za-z0-9-]{0,63}$/,
 ];
 
 /** Só estas URLs saem num redirecionamento que faz o sistema abrir o app. */

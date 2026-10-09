@@ -144,6 +144,16 @@ describe('GET /api/agentes/:id/ir', () => {
     expect(inter.aviso).toBe('cria uma cópia, não responde à sessão original');
   });
 
+  it('id de sessão que começa com traço não vira opção do claude no comando', async () => {
+    agente('a:o1', { entrypoint: 'cli', kind: 'bg', sessionId: '--dangerously-skip-permissions' });
+    agente('a:o2', { entrypoint: 'cli', kind: 'interactive', sessionId: '-p' });
+    agente('a:o3', { entrypoint: 'cli', encerrado: true, sessionId: '--settings' });
+    for (const id of ['a:o1', 'a:o2', 'a:o3']) {
+      expect((await pedir(`/api/agentes/${encodeURIComponent(id)}/ir`)).status).toBe(404);
+    }
+    expect(urlPermitida('claude://resume?session=--settings')).toBe(false);
+  });
+
   it('sessão encerrada: cd e resume; CLI ganha o terceiro botão, app não', async () => {
     agente('a:4', { entrypoint: 'cli', kind: 'interactive', encerrado: true });
     agente('a:5', { entrypoint: 'claude-desktop', encerrado: true, sessionId: 'sessao-do-app' });
