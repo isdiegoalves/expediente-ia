@@ -1,5 +1,6 @@
 // Integração da simulação sem DOM: snapshots -> personagens andando, sentando, apagando a luz e indo embora.
 import { describe, expect, it } from 'vitest';
+import type { AppearanceParts } from '../../../../shared/appearance';
 import type { AgentInfo, OfficeSnapshot, RoomInfo, ShellJob } from '../../../../shared/types';
 import type { Appearance, ArtModule, RoomTheme } from '../../art/api';
 import { DEFAULT_WORLD_OPTIONS } from '../api';
@@ -372,6 +373,31 @@ describe('simulação do escritório', () => {
     }
     expect(new Set(chars.map((c) => c.speedK.toFixed(3))).size).toBeGreaterThan(1);
     expect(new Set(chars.map((c) => c.lane)).size).toBeGreaterThan(1);
+  });
+
+  it('personagem editado: seed ou peças novas no snapshot trocam a aparência de quem já está no escritório', () => {
+    let calls = 0;
+    const spyArt = {
+      appearanceFromSeed: (seed: number, opts: { parts?: AppearanceParts } = {}) => {
+        calls++;
+        return { ...appearance, skin: `#${seed.toString(16).padStart(6, '0')}`, ...opts.parts };
+      },
+      roomTheme: () => theme,
+    } as unknown as ArtModule;
+    const sim = new Sim(spyArt, () => ({ ...DEFAULT_WORLD_OPTIONS, liveliness: 'calm' }));
+    const clock = { now: T0 };
+    sim.applySnapshot(snap([room('/a', 0)], [agent('ana', '/a', 'working', { seed: 1 })]), clock.now);
+    run(sim, clock, 0.2);
+    expect(sim.chars.get('ana')!.appearance.skin).toBe('#000001');
+
+    sim.applySnapshot(snap([room('/a', 0)], [agent('ana', '/a', 'working', { seed: 2, parts: { hairStyle: 'bob' } })], 2), clock.now);
+    const ana = sim.chars.get('ana')!;
+    expect(ana.appearance.skin).toBe('#000002');
+    expect(ana.appearance.hairStyle).toBe('bob');
+
+    const before = calls;
+    sim.applySnapshot(snap([room('/a', 0)], [agent('ana', '/a', 'idle', { seed: 2, parts: { hairStyle: 'bob' } })], 3), clock.now);
+    expect(calls).toBe(before);
   });
 });
 
