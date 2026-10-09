@@ -980,6 +980,20 @@ a.ui-btn {
   color: var(--ui-muted);
 }
 
+/* Contexto do agente na gaveta: a barra do medidor sozinha, sem as colunas do cartão de uso. */
+.ui-ctx {
+  grid-column: auto;
+  grid-template-columns: minmax(40px, 1fr) auto;
+  column-gap: 8px;
+  height: auto;
+  font-size: inherit;
+}
+
+.ui-ctx__text {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
 .ui-meter__reset {
   min-width: 0;
   overflow: hidden;

@@ -1,4 +1,5 @@
 // Gaveta de detalhes (direita): agente ou sala selecionados.
+import { contextView, costView } from '../../../shared/stats';
 import type { Activity, AgentInfo, FeedItem, RoomInfo, ShellJob, TaskItem } from '../../../shared/types';
 import { roomTheme } from '../art';
 import { createAvatarPlaceholder, updateAvatar } from './avatar';
@@ -10,13 +11,14 @@ import {
   formatDuration,
   formatElapsed,
   formatInt,
+  clampPercent,
   formatTokens,
-  formatUSD,
   permissionLabel,
   plural,
   prettyModel,
   relativeTime,
   shortPath,
+  usageLevel,
 } from './format';
 import { ICONS } from './icons';
 import { IrSection } from './ir';
@@ -39,6 +41,7 @@ import {
 } from './model';
 import { avisoProcesso, linhasParado, textoEspera } from './parado';
 import { isLocalHostname, PermissionCard } from './permission';
+import { compactionDetail, compactionText, contextText, costText } from './stats-text';
 import { createAgentRow, updateAgentRow } from './rows';
 import { SocialSection } from './social';
 import { TERMINAL_UNAVAILABLE_HINT, type TerminalControl } from './terminal';
@@ -228,6 +231,9 @@ class AgentView {
   private sessionValue: HTMLElement;
   private linesPlus: HTMLElement;
   private linesMinus: HTMLElement;
+  private ctxMeter: HTMLElement;
+  private ctxBar: HTMLElement;
+  private ctxText: HTMLElement;
   private origin: HTMLElement;
   private appRow: HTMLElement;
   private appId: HTMLElement;
@@ -358,11 +364,16 @@ class AgentView {
     this.sessionValue = h('span', { class: 'ui-mono-inline' });
     this.linesPlus = h('span', { class: 'ui-plus' });
     this.linesMinus = h('span', { class: 'ui-minus' });
+    this.ctxBar = h('span', { class: 'ui-meter__bar' }, h('span', { class: 'ui-meter__fill' }));
+    this.ctxText = h('span', { class: 'ui-ctx__text' });
+    this.ctxMeter = h('div', { class: 'ui-meter ui-ctx', role: 'img' }, this.ctxBar, this.ctxText);
     this.stats = new KvList<StatKey>([
       ['tools', 'Chamadas de ferramenta'],
       ['tokensIn', 'Tokens de entrada'],
       ['tokensOut', 'Tokens de saída'],
-      ['cost', 'Custo estimado'],
+      ['context', 'Contexto', this.ctxMeter],
+      ['compact', 'Compactações'],
+      ['cost', 'Custo'],
       ['lines', 'Linhas', h('span', { class: 'ui-lines' }, this.linesPlus, this.linesMinus)],
       ['subs', 'Subagentes disparados'],
       ['model', 'Modelo'],
@@ -634,7 +645,20 @@ class AgentView {
     st.set('tools', formatInt(s.toolCalls));
     st.set('tokensIn', formatTokens(s.tokensIn));
     st.set('tokensOut', formatTokens(s.tokensOut));
-    st.set('cost', s.costUSD !== undefined ? formatUSD(s.costUSD) : null);
+    const ctx = contextView(s);
+    st.show('context', !!ctx);
+    if (ctx) {
+      const text = contextText(ctx);
+      setText(this.ctxText, text);
+      setAttr(this.ctxMeter, 'aria-label', `Contexto: ${text}`);
+      setVariant(this.ctxMeter, 'is-', ctx.percent === undefined ? 'none' : usageLevel(ctx.percent));
+      setStyleVar(this.ctxBar, '--pct', String(clampPercent(ctx.percent)));
+    }
+    const compact = compactionText(s);
+    st.set('compact', compact);
+    if (compact) setTitle(st.valueEl('compact'), compactionDetail(s));
+    const cost = costView(s);
+    st.set('cost', cost ? costText(cost) : null);
     const hasLines = s.linesAdded !== undefined || s.linesRemoved !== undefined;
     st.show('lines', hasLines);
     setText(this.linesPlus, `+${formatInt(s.linesAdded ?? 0)}`);
@@ -651,7 +675,7 @@ class AgentView {
   }
 }
 
-type StatKey = 'tools' | 'tokensIn' | 'tokensOut' | 'cost' | 'lines' | 'subs' | 'model' | 'branch' | 'perm' | 'session' | 'start' | 'duration' | 'bg';
+type StatKey = 'tools' | 'tokensIn' | 'tokensOut' | 'context' | 'compact' | 'cost' | 'lines' | 'subs' | 'model' | 'branch' | 'perm' | 'session' | 'start' | 'duration' | 'bg';
 
 /** Lista chave/valor de linhas fixas: cada linha é criada uma vez e só tem o texto/visibilidade atualizados. */
 class KvList<K extends string> {
@@ -674,6 +698,10 @@ class KvList<K extends string> {
     const r = this.rows.get(key)!;
     this.show(key, value !== null);
     if (value !== null) setText(r.dd, value);
+  }
+
+  valueEl(key: K): HTMLElement {
+    return this.rows.get(key)!.dd;
   }
 
   show(key: K, visible: boolean): void {

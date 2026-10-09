@@ -757,6 +757,24 @@ export class DemoSimulator {
     this.dirty = true;
   }
 
+  /** Contexto que cresce a cada ação e é compactado perto do limite; sessões de número ímpar mostram custo estimado. */
+  private growContext(a: SimAgent, now: number): void {
+    const st = a.info.stats;
+    const janela = 200_000;
+    const atual = (st.contextTokens ?? 18_000) + Math.floor(1_500 + a.rng() * 7_500);
+    if (atual > janela * 0.9) {
+      const pos = Math.floor(janela * (0.08 + a.rng() * 0.06));
+      st.compactions = [...(st.compactions ?? []), { at: now, preTokens: atual, postTokens: pos, trigger: 'auto' }].slice(-10);
+      st.compactionCount = (st.compactionCount ?? 0) + 1;
+      st.contextTokens = pos;
+    } else st.contextTokens = atual;
+    st.contextWindow = janela;
+    if (a.info.kind === 'main' && hash32(a.info.id) % 2 === 1 && st.costUSD !== undefined) {
+      st.costEstimatedUSD = st.costUSD;
+      delete st.costUSD;
+    } else if (st.costEstimatedUSD !== undefined && st.costUSD === undefined) st.costEstimatedUSD = +(st.costEstimatedUSD + a.rng() * 0.04).toFixed(4);
+  }
+
   private setStatus(a: SimAgent, status: AgentInfo['status'], now: number): void {
     if (a.info.status !== status) {
       a.info.status = status;
@@ -783,6 +801,7 @@ export class DemoSimulator {
     a.info.stats.tokensIn += Math.floor(2_000 + a.rng() * 12_000);
     a.info.stats.tokensOut += Math.floor(80 + a.rng() * 900);
     if (a.info.stats.costUSD !== undefined) a.info.stats.costUSD = +(a.info.stats.costUSD + a.rng() * 0.04).toFixed(4);
+    this.growContext(a, now);
     if (d.kind === 'edit' || d.kind === 'write') {
       a.info.stats.linesAdded = (a.info.stats.linesAdded ?? 0) + Math.floor(a.rng() * 40);
       a.info.stats.linesRemoved = (a.info.stats.linesRemoved ?? 0) + Math.floor(a.rng() * 15);
