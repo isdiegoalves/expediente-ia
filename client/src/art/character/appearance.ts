@@ -1,6 +1,6 @@
 // Geração determinística de aparência a partir de uma semente (puro, sem DOM).
 // `look` apenas enviesa as probabilidades de estilos; nada é exclusivo de um look, exceto barba ('m').
-import { ACCESSORIES, BOTTOM_STYLES, FACIAL_HAIR, HAIR_STYLES, TOP_STYLES, type AppearanceParts, type PartKey } from '../../../../shared/appearance';
+import { ACCESSORIES, BOTTOM_STYLES, FACIAL_HAIR, HAIR_STYLES, PART_KEYS, TOP_STYLES, type AppearanceParts, type PartKey } from '../../../../shared/appearance';
 import { mulberry32 } from '../../../../shared/hash';
 import type { Accessory, Appearance, HairStyle, TopStyle } from '../api';
 
@@ -170,8 +170,12 @@ export function appearanceFromSeed(seed: number, opts: { look?: 'f' | 'm'; sub?:
     facialHair,
     bottomStyle,
   };
-  // Peças escolhidas no editor (por cima do sorteio, sem mudar a ordem dos sorteios).
-  return opts.parts ? { ...a, ...opts.parts } : a;
+  // Peças escolhidas no editor (por cima do sorteio, sem mudar a ordem dos sorteios). Um undefined explícito não
+  // apaga a peça sorteada.
+  const parts = opts.parts;
+  if (!parts) return a;
+  const chosen = Object.fromEntries(PART_KEYS.filter((k) => parts[k] !== undefined).map((k) => [k, parts[k]])) as AppearanceParts;
+  return { ...a, ...chosen };
 }
 
 /** Chave estável de uma aparência (para cache de sprites). */

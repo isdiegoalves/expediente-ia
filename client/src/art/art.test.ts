@@ -872,6 +872,8 @@ describe('editor do personagem (arte)', () => {
     const base = appearanceFromSeed(5, { look: 'f' });
     expect(appearanceFromSeed(5, { look: 'f', parts: { hairStyle: 'mohawk', skin: '#5a3623' } })).toEqual({ ...base, hairStyle: 'mohawk', skin: '#5a3623' });
     expect(appearanceFromSeed(5, { look: 'f', parts: {} })).toEqual(base);
+    // Um undefined explícito não apaga a peça sorteada.
+    expect(appearanceFromSeed(5, { look: 'f', parts: { hairStyle: undefined, skin: undefined } })).toEqual(base);
   });
 
   it('toda aparência sorteada usa valores que o editor oferece (paletas e estilos)', () => {
