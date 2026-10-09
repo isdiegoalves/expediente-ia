@@ -1,6 +1,6 @@
 // Rotas da API (/api/*). Respostas JSON; rotas desconhecidas -> 404 JSON.
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { AgentInfo, ModSummary, OfficeSnapshot, SourceInfo, UpdateStatus } from '../../shared/types';
+import type { AgentInfo, ModSummary, OfficeSnapshot, SourceInfo } from '../../shared/types';
 import type { AccountsService } from '../accounts/service';
 import type { DayStatsService } from '../history/daystats';
 import type { Office } from '../model/office';
@@ -33,11 +33,6 @@ export interface ApiDeps {
   permissions?: (req: IncomingMessage, res: ServerResponse, path: string) => void;
   /** Estatísticas do "Meu dia" (GET /api/stats, http/stats.ts). */
   stats?: DayStatsService;
-  /** Verificação de versão nova no GitHub (GET /api/updates, POST /api/updates/check; updates/checker.ts). */
-  updates?: {
-    status(): UpdateStatus;
-    check(opts: { manual?: boolean }): Promise<UpdateStatus>;
-  };
 }
 
 /** GET /api/agents/:id/terminal (ids nunca contêm '/'). */
@@ -94,11 +89,6 @@ export function readJson(req: IncomingMessage): Promise<unknown> {
     });
     req.on('error', fail);
   });
-}
-
-/** Resumo da verificação de versão nova para o /api/health. */
-function updatesSummary(s: UpdateStatus | undefined): { state: UpdateStatus['state']; latest?: string; available: boolean } {
-  return s ? { state: s.state, latest: s.latest, available: s.available } : { state: 'off', available: false };
 }
 
 /** Subagentes aninhados mais fundo que isto não existem na prática; o limite só evita laço num parentId torto. */
@@ -193,7 +183,6 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
           docker: deps.inDocker,
           terminal: !!terminals,
           permissions: !!deps.permissions,
-          updates: updatesSummary(deps.updates?.status()),
           sources: deps.sources(),
           accounts: accounts.entries().map((a) => ({ id: a.id, usageStatus: accounts.usageView(a.id).status })),
         });
@@ -267,26 +256,6 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
     if (path === '/api/demo') {
       if (method !== 'POST') methodNotAllowed(res, 'POST');
       else handleDemo(req, res).catch((err) => fail(res, err));
-      return true;
-    }
-    if (path === '/api/updates') {
-      if (!isRead) methodNotAllowed(res, 'GET');
-      else sendJson(res, 200, { version: deps.version, ...(deps.updates?.status() ?? { state: 'off', available: false }) });
-      return true;
-    }
-    if (path === '/api/updates/check') {
-      // "Verificar agora": consulta o GitHub (no máximo uma vez a cada 30 s) e devolve o status novo.
-      if (method !== 'POST') methodNotAllowed(res, 'POST');
-      else {
-        req.resume();
-        const updates = deps.updates;
-        if (!updates) sendJson(res, 200, { version: deps.version, state: 'off', available: false });
-        else
-          updates
-            .check({ manual: true })
-            .then((status) => sendJson(res, 200, { version: deps.version, ...status }))
-            .catch((err) => fail(res, err));
-      }
       return true;
     }
     if (deps.timeline?.(req, res, url)) return true;

@@ -18,7 +18,6 @@ import type {
   ShellJob,
   SourceInfo,
   TaskItem,
-  UpdateStatus,
 } from '../../shared/types';
 import { SHELL_WAIT_TOOL, SPECIAL, type ShellOutcome } from '../../shared/activity';
 import { DemoSimulator } from '../../shared/demo/simulator';
@@ -61,8 +60,6 @@ export interface OfficeDeps {
   terminal?: boolean;
   /** Pedidos de permissão pendentes por agente (PermissionRegistry.snapshot), postos no snapshot. */
   permissions?: () => ReadonlyMap<string, PermissionRequestInfo>;
-  /** Verificação de versão nova no GitHub (ver OfficeSnapshot.meta.updates). */
-  updates?: () => UpdateStatus;
   now?: () => number;
 }
 
@@ -791,7 +788,6 @@ export class Office {
         version: this.deps.version,
         build: this.deps.build?.(),
         terminal: this.deps.terminal === true,
-        updates: this.deps.updates?.(),
       },
     };
   }

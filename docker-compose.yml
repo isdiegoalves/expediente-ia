@@ -28,8 +28,6 @@ services:
       # O mesmo valor da porta publicada acima: o terminal somente leitura só liga com bind local.
       EXPEDIENTE_BIND: ${EXPEDIENTE_BIND:-127.0.0.1}
       EXPEDIENTE_TERMINAL: ${EXPEDIENTE_TERMINAL:-}
-      # 0 desliga a verificação de versão nova (consulta às releases no GitHub a cada 6 h).
-      EXPEDIENTE_UPDATE_CHECK: ${EXPEDIENTE_UPDATE_CHECK:-}
     # Endurecimento: sistema de arquivos só leitura (exceto /data e /tmp), sem capabilities extras.
     read_only: true
     tmpfs:

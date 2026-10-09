@@ -6,7 +6,6 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { discoverClaudeDirs } from './accounts/detect';
 import { parseAllowedHosts } from './http/guard';
-import { parseGithubRepo } from './updates/checker';
 
 export interface ServerConfig {
   port: number;
@@ -39,10 +38,6 @@ export interface ServerConfig {
   /** Raiz do projeto (onde fica o package.json); serve dist/client a partir daqui. */
   rootDir: string;
   version: string;
-  /** Repositório no GitHub ("dono/nome", do campo `repository` do package.json) onde saem as versões novas. */
-  repo?: string;
-  /** Consulta o GitHub atrás de versão nova (server/updates/checker.ts); EXPEDIENTE_UPDATE_CHECK=0 desliga. */
-  updateCheck: boolean;
 }
 
 export function isTruthy(v: string | undefined): boolean {
@@ -70,10 +65,10 @@ export function findRoot(from: string): string {
 }
 
 /** Versão e repositório do package.json. */
-function readPackage(rootDir: string): { version: string; repo?: string } {
+function readPackage(rootDir: string): { version: string } {
   try {
-    const pkg = JSON.parse(readFileSync(join(rootDir, 'package.json'), 'utf8')) as { version?: unknown; repository?: unknown };
-    return { version: typeof pkg.version === 'string' ? pkg.version : '0.0.0', repo: parseGithubRepo(pkg.repository) };
+    const pkg = JSON.parse(readFileSync(join(rootDir, 'package.json'), 'utf8')) as { version?: unknown };
+    return { version: typeof pkg.version === 'string' ? pkg.version : '0.0.0' };
   } catch {
     return { version: '0.0.0' };
   }
@@ -146,7 +141,5 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] 
     timeline: !env.EXPEDIENTE_TIMELINE?.trim() || isTruthy(env.EXPEDIENTE_TIMELINE),
     rootDir,
     version: pkg.version,
-    repo: pkg.repo,
-    updateCheck: !env.EXPEDIENTE_UPDATE_CHECK?.trim() || isTruthy(env.EXPEDIENTE_UPDATE_CHECK),
   };
 }
