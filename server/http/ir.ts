@@ -75,7 +75,7 @@ function montar(src: NonNullable<ReturnType<Office['irSource']>>): Omit<IrInfo, 
   const base = { estado: vivo ? ('vivo' as const) : ('encerrado' as const), ...(origin ? { origin } : {}) };
   if (!vivo) {
     if (origin === 'terminal') links.push({ rotulo: 'Retomar no app', href: `claude://resume?session=${sessionId}` });
-    return { ...base, comando: `${cwdLimpo ? `cd ${entreAspas(cwd)} && ` : ''}claude --resume ${sessionId}`, links };
+    return { ...base, comando: `${cwdLimpo ? `cd -- ${entreAspas(cwd)} && ` : ''}claude --resume ${sessionId}`, links };
   }
   if (!noApp && (src.kind === 'bg' || src.kind === 'background')) return { ...base, comando: `claude attach ${sessionId}`, links };
   return { ...base, comando: `claude --resume ${sessionId} --fork-session`, aviso: AVISO_FORK, links };

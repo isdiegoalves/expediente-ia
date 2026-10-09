@@ -102,7 +102,7 @@ describe('GET /api/agentes/:id/ir: segredos', () => {
     const res = await pedir('/api/agentes/a%3A9/ir');
     expect(res.body).not.toContain('ghp_aB3');
     expect(res.body).not.toContain(encodeURIComponent(GHP));
-    expect((JSON.parse(res.body) as IrInfo).comando).toContain("cd '/Users/ficticio/projetos/loja-gh*_***'");
+    expect((JSON.parse(res.body) as IrInfo).comando).toContain("cd -- '/Users/ficticio/projetos/loja-gh*_***'");
   });
 });
 
@@ -159,7 +159,7 @@ describe('GET /api/agentes/:id/ir', () => {
     agente('a:5', { entrypoint: 'claude-desktop', encerrado: true, sessionId: 'sessao-do-app' });
     const cli = await ir('a:4');
     expect(cli.estado).toBe('encerrado');
-    expect(cli.comando).toBe(`cd '/p/loja' && claude --resume ${SESSAO}`);
+    expect(cli.comando).toBe(`cd -- '/p/loja' && claude --resume ${SESSAO}`);
     expect(cli.aviso).toBeUndefined();
     expect(cli.links.map((l) => l.href)).toEqual(['claude-cli://open?cwd=%2Fp%2Floja', `claude://resume?session=${SESSAO}`]);
     const app = await ir('a:5');
@@ -169,7 +169,7 @@ describe('GET /api/agentes/:id/ir', () => {
   it('o caminho vai entre aspas e sai mascarado', async () => {
     agente('a:6', { entrypoint: 'cli', encerrado: true, cwd: `/p/minha loja/${GHP}` });
     const j = await ir('a:6');
-    expect(j.comando).toContain("cd '/p/minha loja/");
+    expect(j.comando).toContain("cd -- '/p/minha loja/");
     expect(JSON.stringify(j)).not.toContain(GHP);
   });
 
@@ -190,11 +190,12 @@ describe('GET /api/agentes/:id/ir', () => {
 
   it('cwd com aspas e metacaracteres de shell (sem controle) sai inerte entre aspas simples', async () => {
     const esperado: Record<string, string> = {
-      "/p/'; rm -rf ~ #": `cd '/p/'\\''; rm -rf ~ #' && claude --resume ${SESSAO}`,
-      '/p/$(id)': `cd '/p/$(id)' && claude --resume ${SESSAO}`,
-      '/p/`id`': `cd '/p/\`id\`' && claude --resume ${SESSAO}`,
-      "/p/it's": `cd '/p/it'\\''s' && claude --resume ${SESSAO}`,
-      '/p/a;b': `cd '/p/a;b' && claude --resume ${SESSAO}`,
+      "/p/'; rm -rf ~ #": `cd -- '/p/'\\''; rm -rf ~ #' && claude --resume ${SESSAO}`,
+      '/p/$(id)': `cd -- '/p/$(id)' && claude --resume ${SESSAO}`,
+      '/p/`id`': `cd -- '/p/\`id\`' && claude --resume ${SESSAO}`,
+      "/p/it's": `cd -- '/p/it'\\''s' && claude --resume ${SESSAO}`,
+      '/p/a;b': `cd -- '/p/a;b' && claude --resume ${SESSAO}`,
+      '-P': `cd -- '-P' && claude --resume ${SESSAO}`,
     };
     for (const [i, [cwd, comando]] of Object.entries(esperado).entries()) {
       agente(`a:q${i}`, { entrypoint: 'cli', encerrado: true, cwd });
@@ -205,9 +206,9 @@ describe('GET /api/agentes/:id/ir', () => {
   it('todo comando devolvido pelo /ir casa com uma gramática fechada', async () => {
     const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
     const gramatica = new RegExp(
-      `^(?:cd '(?:[^'\\x00-\\x1f\\x7f-\\x9f\\u202a-\\u202e\\u2066-\\u2069]|'\\\\'')+' && claude --resume ${UUID}|claude --resume ${UUID}(?: --fork-session)?|claude attach ${UUID})$`,
+      `^(?:cd -- '(?:[^'\\x00-\\x1f\\x7f-\\x9f\\u202a-\\u202e\\u2066-\\u2069]|'\\\\'')+' && claude --resume ${UUID}|claude --resume ${UUID}(?: --fork-session)?|claude attach ${UUID})$`,
     );
-    const cwds = ['/p/loja', "/p/it's", '/p/a b', "/p/'; rm -rf ~ #", '/p/$(id)', '/p/`id`', ...CWDS_HOSTIS];
+    const cwds = ['/p/loja', '-P', '--', "/p/it's", '/p/a b', "/p/'; rm -rf ~ #", '/p/$(id)', '/p/`id`', ...CWDS_HOSTIS];
     const casos: { id: string; extra: Parameters<typeof agente>[1] }[] = [];
     for (const [i, cwd] of cwds.entries())
       for (const [j, e] of [
