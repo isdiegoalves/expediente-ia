@@ -2024,7 +2024,7 @@ a.ui-btn {
 
 .ui-ask__q {
   padding-top: 9px;
-  border-top: 1px solid rgba(255, 181, 71, 0.25);
+  border-top: 1px solid color-mix(in srgb, var(--st-waiting) 25%, transparent);
 }
 
 .ui-ask__tag {
@@ -2032,7 +2032,7 @@ a.ui-btn {
   margin-bottom: 4px;
   padding: 1px 6px;
   border-radius: 5px;
-  background: rgba(255, 181, 71, 0.18);
+  background: color-mix(in srgb, var(--st-waiting) 18%, transparent);
   font: 500 11px/1.4 var(--font-px);
   color: var(--st-waiting);
 }
@@ -2040,7 +2040,7 @@ a.ui-btn {
 .ui-ask__question {
   font-size: 12.5px;
   font-weight: 600;
-  color: #fff3df;
+  color: color-mix(in srgb, var(--st-waiting) 12%, var(--ui-text));
 }
 
 .ui-ask__hint {
@@ -5907,7 +5907,7 @@ html.is-replay #world {
 
 .ui-perm-ask__q + .ui-perm-ask__q {
   padding-top: 10px;
-  box-shadow: inset 0 1px 0 rgba(255, 181, 71, 0.25);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--st-waiting) 25%, transparent);
 }
 
 /* Legenda flutuando: fica no fluxo normal (sem o recorte que o fieldset faz na borda). */
@@ -5933,19 +5933,19 @@ html.is-replay #world {
   margin-top: 6px;
   padding: 6px 9px;
   border-radius: var(--radius-sm);
-  border: 1px solid rgba(255, 181, 71, 0.22);
-  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid color-mix(in srgb, var(--st-waiting) 22%, transparent);
+  background: color-mix(in srgb, var(--ink-dark) 18%, transparent);
   font-size: 12px;
   cursor: pointer;
 }
 
 .ui-perm-ask__opt:hover {
-  border-color: rgba(255, 181, 71, 0.5);
+  border-color: color-mix(in srgb, var(--st-waiting) 50%, transparent);
 }
 
 .ui-perm-ask__opt:has(.ui-perm-ask__input:checked) {
-  border-color: rgba(255, 181, 71, 0.75);
-  background: rgba(255, 181, 71, 0.13);
+  border-color: color-mix(in srgb, var(--st-waiting) 75%, transparent);
+  background: color-mix(in srgb, var(--st-waiting) 13%, transparent);
 }
 
 .ui-perm-ask__opt:has(.ui-perm-ask__input:disabled) {
@@ -5968,7 +5968,7 @@ html.is-replay #world {
 
 .ui-perm-ask__opt-text strong {
   font-weight: 600;
-  color: #fff3df;
+  color: color-mix(in srgb, var(--st-waiting) 12%, var(--ui-text));
 }
 
 .ui-perm-ask__other {
@@ -5993,14 +5993,14 @@ html.is-replay #world {
   padding: 5px 9px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--ui-line-strong);
-  background: rgba(0, 0, 0, 0.32);
+  background: color-mix(in srgb, var(--ink-dark) 32%, transparent);
   color: var(--ui-text);
   font: 12.5px/1.4 var(--font-ui);
 }
 
 .ui-perm-ask__text:focus {
   outline: none;
-  border-color: rgba(255, 181, 71, 0.7);
+  border-color: color-mix(in srgb, var(--st-waiting) 70%, transparent);
 }
 
 .ui-perm-ask__text:disabled {
