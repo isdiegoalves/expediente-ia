@@ -37,6 +37,7 @@ import {
   taskProgress,
   visibleShells,
 } from './model';
+import { avisoProcesso, linhasParado, textoEspera } from './parado';
 import { PermissionCard } from './permission';
 import { createAgentRow, updateAgentRow } from './rows';
 import { SocialSection } from './social';
@@ -193,6 +194,9 @@ class AgentView {
   /** Pedido de permissão para responder por aqui (substitui o alerta genérico enquanto existe). */
   private perm: PermissionCard;
   private shellBox: HTMLElement;
+  private paradoBox: HTMLElement;
+  private paradoText: HTMLElement;
+  private processoNote: HTMLElement;
   private shellText: HTMLElement;
   private shellMood: HTMLElement;
   private shellNext: HTMLElement;
@@ -289,6 +293,15 @@ class AgentView {
       h('div', {}, h('strong', { class: 'ui-alert__title', text: 'Precisa de você' }), this.alertText),
     );
 
+    this.paradoText = h('p', { class: 'ui-alert__text' });
+    this.paradoBox = h(
+      'div',
+      { class: 'ui-alert ui-alert--parado', role: 'status', hidden: true },
+      h('span', { class: 'ui-alert__icon', text: '⏸', attrs: { 'aria-hidden': 'true' } }),
+      h('div', {}, h('strong', { class: 'ui-alert__title', text: 'Parado' }), this.paradoText),
+    );
+    this.processoNote = h('p', { class: 'ui-gone', hidden: true });
+
     // Esperando o shell: caixa de status (com a fase da espera no escritório) e a lista de comandos rodando.
     this.shellText = h('p', { class: 'ui-alert__text' });
     this.shellMood = h('span', { class: 'ui-shell-mood__text' });
@@ -363,6 +376,8 @@ class AgentView {
       this.irSec.el,
       this.alert,
       this.perm.el,
+      this.paradoBox,
+      this.processoNote,
       this.shellBox,
       this.shellsSec.el,
       nowSec.el,
@@ -450,12 +465,12 @@ class AgentView {
     this.el.classList.toggle('is-gone', !live);
 
     // Status (quem está parado num comando longo aparece como "Esperando o shell", como no escritório).
-    const wait = live ? shellWaitIn(a, this.ctx.store.snapshot?.agents ?? [], now) : null;
+    const wait = live && !a.parado ? shellWaitIn(a, this.ctx.store.snapshot?.agents ?? [], now) : null;
     const status = wait ? 'shell' : a.status;
     updateStatusDot(this.dot, status);
-    setText(this.statusText, statusLabel(status));
+    setText(this.statusText, live && a.parado ? 'Parado' : statusLabel(status));
     // Parado num comando longo: o "desde" é o início do comando (o status do servidor continua 'working').
-    const since = wait?.foreground ? wait.since : a.statusSince;
+    const since = live && a.parado ? a.parado.desde : wait?.foreground ? wait.since : a.statusSince;
     setText(this.statusSince, relativeTime(since, now));
     setTitle(this.statusSince, `Desde ${formatClock(since)}`);
     const following = this.ctx.world.getOptions().followSelected;
@@ -470,9 +485,16 @@ class AgentView {
     if (waiting) {
       setText(
         this.alertText,
-        `Vá ao terminal da ${account?.name ?? a.account} em ${room?.name ?? 'seu projeto'} para responder${a.waitingFor ? `: ${a.waitingFor}` : '.'}`,
+        `${textoEspera(a, now)}. Vá ao terminal da ${account?.name ?? a.account} em ${room?.name ?? 'seu projeto'} para responder.`,
       );
     }
+
+    const parado = live ? a.parado : undefined;
+    setHidden(this.paradoBox, !parado);
+    if (parado) setText(this.paradoText, linhasParado(parado, now).join(' '));
+    const aviso = live ? avisoProcesso(a, this.ctx.store.snapshot?.meta.sources) : undefined;
+    setHidden(this.processoNote, !aviso);
+    setText(this.processoNote, aviso ?? '');
 
     // Esperando o shell.
     setHidden(this.shellBox, !wait);
