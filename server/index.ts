@@ -20,6 +20,7 @@ import { DayStatsService } from './history/daystats';
 import { errMsg, log } from './log';
 import { NameStore } from './model/names';
 import { Office } from './model/office';
+import { RoomAliases } from './model/room-aliases';
 import { openMainAgent, SessionHistory } from './sources/history';
 import { createPermissionRoutes } from './permissions/http';
 import { PermissionRegistry } from './permissions/registry';
@@ -36,6 +37,9 @@ const startedAt = Date.now();
 
 const names = new NameStore(join(config.dataDir, 'names.json'));
 names.load();
+// Nomes de sala escolhidos pelo usuário (botão direito > Renomear).
+const roomAliases = new RoomAliases(join(config.dataDir, 'rooms.json'));
+roomAliases.load();
 
 // Office, contas e watcher se referenciam (avisos de mudança / fontes): ligação tardia.
 const sessoesApp = new SessoesAppReader(config.sessoesAppFile);
@@ -49,6 +53,7 @@ const accounts = new AccountsService({
 });
 const office = new Office({
   names,
+  roomAlias: (path) => roomAliases.get(path),
   version: config.version,
   // No modo dev o Vite serve o cliente direto do código-fonte: não há build para comparar.
   build: config.dev ? undefined : createBuildReader(config.rootDir),
@@ -121,6 +126,13 @@ const temaAtivo = carregarTema(pastasDoTema);
 if (temaAtivo.aviso) log.warn(temaAtivo.aviso);
 
 const api = createApiHandler({
+  renameRoom: (id, name) => {
+    const path = office.roomPath(id);
+    if (!path) return undefined;
+    roomAliases.set(path, name);
+    office.refreshRoomNames();
+    return office.roomName(id);
+  },
   office,
   hub,
   accounts,

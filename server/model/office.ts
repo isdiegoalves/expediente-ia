@@ -54,6 +54,8 @@ const FEED_LIMIT = 200;
 
 export interface OfficeDeps {
   names: NameStore;
+  /** Nome escolhido pelo usuário para a sala da pasta (model/room-aliases.ts), se houver. */
+  roomAlias?: (path: string) => string | undefined;
   version: string;
   /** Build do cliente servido (ver OfficeSnapshot.meta.build); ausente no modo dev e nos testes. */
   build?: () => string | undefined;
@@ -285,6 +287,11 @@ export class Office {
   /** Agentes reais presentes (inclusive em período de graça). */
   list(): AgentInfo[] {
     return [...this.agents.values()].map((r) => r.info);
+  }
+
+  /** Pasta do projeto da sala (cwd original, sem normalizar). */
+  roomPath(roomId: string): string | undefined {
+    return this.rooms.get(roomId)?.path;
   }
 
   roomName(roomId: string): string {
@@ -1096,6 +1103,16 @@ export class Office {
     const paths = new Map([...this.rooms].map(([id, r]) => [id, r.path]));
     for (const r of this.demoSnap?.rooms ?? []) paths.set(r.id, r.path);
     this.roomNames = roomDisplayNames(paths);
+    for (const [id, path] of paths) {
+      const alias = this.deps.roomAlias?.(path);
+      if (alias) this.roomNames.set(id, alias);
+    }
+  }
+
+  /** Um nome de sala mudou (renomear): recalcula e transmite. */
+  refreshRoomNames(): void {
+    this.recomputeRoomNames();
+    this.markDirty();
   }
 
   private pushFeed(items: FeedItem[]): void {

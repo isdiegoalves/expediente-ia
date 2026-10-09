@@ -212,6 +212,13 @@ export class Sidebar implements UiComponent {
     );
     head.addEventListener('click', () => this.ctx.select({ type: 'room', id: g.room.id }, { focus: true }));
     this.wireRoomDrag(head, g.room.id);
+    // Botão direito: renomear a sala (ui/roomrename.ts).
+    head.addEventListener('contextmenu', (e) => {
+      if (!this.ctx.renameRoom) return;
+      e.preventDefault();
+      const r = head.getBoundingClientRect();
+      this.ctx.renameRoom(g.room.id, { x: r.left + 12, y: r.bottom + 4 });
+    });
     try {
       setStyleVar(head, '--room', roomTheme(g.room.seed).accent);
     } catch {
