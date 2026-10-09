@@ -36,6 +36,9 @@
     "mod:install": "tsx scripts/mod-install.ts install",
     "mod:uninstall": "tsx scripts/mod-install.ts uninstall",
     "mod:status": "tsx scripts/mod-install.ts status",
+    "instalar": "tsx scripts/instalar.ts install",
+    "instalar:status": "tsx scripts/instalar.ts status",
+    "desinstalar": "tsx scripts/instalar.ts uninstall",
     "release": "tsx scripts/release.ts",
     "preflight": "node scripts/preflight.mjs"
   },
