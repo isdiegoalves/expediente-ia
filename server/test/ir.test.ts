@@ -45,8 +45,8 @@ function pedir(path: string, headers: Record<string, string> = {}, method = 'GET
 }
 
 const ir = async (id: string): Promise<IrInfo> => JSON.parse((await pedir(`/api/agentes/${encodeURIComponent(id)}/ir`)).body) as IrInfo;
-const abrir = (id: string, nonce: string, headers: Record<string, string> = {}) =>
-  pedir(`/api/agentes/${encodeURIComponent(id)}/ir?abrir=1&n=${nonce}`, headers);
+const abrir = (id: string, nonce: string | undefined, headers: Record<string, string> = {}) =>
+  pedir(`/api/agentes/${encodeURIComponent(id)}/ir?abrir=1&n=${nonce ?? ''}`, headers);
 
 function agente(id: string, extra: { entrypoint?: string; kind?: string; cwd?: string; encerrado?: boolean; sessionId?: string }): void {
   office.addMain({
@@ -223,10 +223,28 @@ describe('GET /api/agentes/:id/ir?abrir=1', () => {
     expect(res.headers.location).toBeUndefined();
   });
 
-  it('o nonce mais velho sai depois de 256', async () => {
-    const primeiro = (await ir('a:1')).nonce;
-    for (let i = 0; i < 256; i++) await ir('a:1');
-    expect((await abrir('a:1', primeiro)).status).toBe(403);
+  it('300 pedidos para um agente não invalidam o nonce de outro', async () => {
+    agente('a:2', { entrypoint: 'claude-desktop', sessionId: 'x' });
+    const { nonce } = await ir('a:1');
+    for (let i = 0; i < 300; i++) await ir('a:2');
+    expect((await abrir('a:1', nonce)).status).toBe(302);
+  });
+
+  it('o nonce novo do agente substitui o anterior dele', async () => {
+    const velho = (await ir('a:1')).nonce;
+    const novo = (await ir('a:1')).nonce;
+    expect((await abrir('a:1', velho)).status).toBe(403);
+    expect((await abrir('a:1', novo)).status).toBe(302);
+  });
+
+  it('pedido de outra origem não recebe nonce nem derruba o do agente', async () => {
+    const { nonce } = await ir('a:1');
+    for (const site of ['cross-site', 'same-site']) {
+      const res = await pedir('/api/agentes/a%3A1/ir', { 'Sec-Fetch-Site': site });
+      expect(res.status).toBe(200);
+      expect((JSON.parse(res.body) as IrInfo).nonce).toBeUndefined();
+    }
+    expect((await abrir('a:1', nonce)).status).toBe(302);
   });
 });
 

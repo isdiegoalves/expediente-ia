@@ -113,8 +113,8 @@ export interface IrInfo {
   aviso?: string;
   /** Links `<a href>` que abrem o projeto (e retomam a sessão de CLI encerrada). */
   links: { rotulo: string; href: string }[];
-  /** Uso único, 60 s: autoriza `?abrir=1&n=` para este agente. */
-  nonce: string;
+  /** Uso único, 60 s, um por agente: autoriza `?abrir=1&n=` para ele. Ausente quando o pedido vem de outra origem. */
+  nonce?: string;
 }
 
 export interface AgentInfo {

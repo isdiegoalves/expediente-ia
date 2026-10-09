@@ -9,7 +9,6 @@ import { sendJson } from './app';
 import { isLoopbackHost } from './guard';
 
 export const NONCE_VALIDADE_MS = 60_000;
-const NONCE_MAX = 256;
 const ID_SESSAO = /^[A-Za-z0-9-]{1,64}$/;
 const ID_APP = /^local_[A-Za-z0-9-]{1,64}$/;
 const AVISO_FORK = 'cria uma cópia, não responde à sessão original';
@@ -26,13 +25,16 @@ export function urlPermitida(url: string): boolean {
 
 export class NonceStore {
   private readonly itens = new Map<string, { agentId: string; venceEm: number }>();
+  private readonly doAgente = new Map<string, string>();
 
   constructor(private readonly now: () => number) {}
 
   emitir(agentId: string): string {
     const nonce = randomBytes(16).toString('hex');
+    const anterior = this.doAgente.get(agentId);
+    if (anterior) this.itens.delete(anterior);
+    this.doAgente.set(agentId, nonce);
     this.itens.set(nonce, { agentId, venceEm: this.now() + NONCE_VALIDADE_MS });
-    while (this.itens.size > NONCE_MAX) this.itens.delete(this.itens.keys().next().value as string);
     return nonce;
   }
 
@@ -41,6 +43,7 @@ export class NonceStore {
     const item = this.itens.get(nonce);
     if (!item) return false;
     this.itens.delete(nonce);
+    if (this.doAgente.get(item.agentId) === nonce) this.doAgente.delete(item.agentId);
     return item.agentId === agentId && this.now() <= item.venceEm;
   }
 }
@@ -88,10 +91,10 @@ export function handleIrRoute(req: IncomingMessage, res: ServerResponse, url: UR
   const ir = src && montar(src);
   if (!src || !ir) return sendJson(res, 404, { error: 'agente não encontrado' });
 
-  if (url.searchParams.get('abrir') !== '1') return sendJson(res, 200, { ...ir, nonce: nonces.emitir(id) });
-
   const site = req.headers['sec-fetch-site'];
-  if (site !== undefined && site !== 'none' && site !== 'same-origin') return sendJson(res, 403, { error: 'pedido de outra origem' });
+  const deDentro = site === undefined || site === 'none' || site === 'same-origin';
+  if (url.searchParams.get('abrir') !== '1') return sendJson(res, 200, deDentro ? { ...ir, nonce: nonces.emitir(id) } : ir);
+  if (!deDentro) return sendJson(res, 403, { error: 'pedido de outra origem' });
   if (!nonces.consumir(url.searchParams.get('n') ?? '', id)) return sendJson(res, 403, { error: 'nonce ausente, vencido ou já usado' });
   const destino = src.appSessionId && ID_APP.test(src.appSessionId) ? `claude://code/continue?session=${src.appSessionId}` : undefined;
   if (!destino || !urlPermitida(destino)) return sendJson(res, 409, { error: 'esta sessão não tem link direto para o app' });
