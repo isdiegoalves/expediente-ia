@@ -2,7 +2,7 @@
 // mantém o modelo do escritório e transmite via SSE. Sem dependências de runtime.
 //   npm run dev    -> tsx server/index.ts --dev (Vite em middleware mode, HMR no mesmo servidor)
 //   npm start      -> node dist/server/index.js (serve dist/client)
-import http from 'node:http';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import { AccountsService } from './accounts/service';
 import { loadConfig, terminalOffReason } from './config';
@@ -136,10 +136,10 @@ const api = createApiHandler({
   tema: createTemaHandler(pastasDoTema, temaAtivo, sendJson),
 });
 
-const server = http.createServer();
+const server = createServer();
 let closeVite: (() => Promise<void>) | undefined;
 
-function parseUrl(req: http.IncomingMessage): URL {
+function parseUrl(req: IncomingMessage): URL {
   try {
     return new URL(req.url ?? '/', 'http://localhost');
   } catch {
@@ -148,7 +148,7 @@ function parseUrl(req: http.IncomingMessage): URL {
 }
 
 /** Quem atende o que não é /api: o Vite (dev) ou os arquivos de dist/client (produção). */
-let fallback: (req: http.IncomingMessage, res: http.ServerResponse, url: URL) => void;
+let fallback: (req: IncomingMessage, res: ServerResponse, url: URL) => void;
 if (config.dev) {
   // Import dinâmico: o bundle de produção nunca carrega o Vite.
   const { createServer } = await import('vite');

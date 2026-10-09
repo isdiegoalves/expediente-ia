@@ -165,14 +165,16 @@ const CHAMADAS_DE_REDE: [string, RegExp][] = [
   ['WebSocket', /\bWebSocket\s*\(/],
 ];
 
-const MODULO_DE_REDE = /['"](?:node:)?(http|https|http2|net|tls|dns|dgram)(?:\/promises)?['"]/g;
+const MODULOS = 'http|https|http2|net|tls|dns|dgram|child_process';
+const MODULO_DE_REDE = new RegExp(`['"](?:node:)?(?:${MODULOS})(?:/promises)?['"]`);
+const IMPORT_NOMEADO = new RegExp(`\\bimport\\s*\\{([^}]*)\\}\\s*from\\s*['"](?:node:)?(${MODULOS})(?:/promises)?['"]`, 'g');
 const SO_TIPO = /\b(?:import|export)\s+type\b[\s\S]*?from\s*['"][^'"]+['"]/g;
 
-// Servidor que só escuta (index.ts) e função pura de endereço (isIP em config.ts e guard.ts).
-const MODULOS_PERMITIDOS: Record<string, string[]> = {
-  'server/index.ts': ['http'],
-  'server/config.ts': ['net'],
-  'server/http/guard.ts': ['net'],
+// Só import nomeado, e só estes nomes. child_process fica fora de server/ e shared/.
+const IMPORTS_PERMITIDOS: Record<string, Record<string, string[]>> = {
+  'server/index.ts': { http: ['createServer'] },
+  'server/config.ts': { net: ['isIP'] },
+  'server/http/guard.ts': { net: ['isIP'] },
 };
 
 function fontesDeRuntime(): string[] {
@@ -191,11 +193,19 @@ function fontesDeRuntime(): string[] {
   return achados;
 }
 
-function chamadasDeRede(codigo: string, permitidos: string[] = []): string[] {
+function chamadasDeRede(codigo: string, permitidos: Record<string, string[]> = {}): string[] {
   const sem = codigo.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
   const achadas = CHAMADAS_DE_REDE.filter(([, re]) => re.test(sem)).map(([nome]) => nome);
-  const modulos = [...sem.replace(SO_TIPO, '').matchAll(MODULO_DE_REDE)].map((m) => m[1]!);
-  if (modulos.some((m) => !permitidos.includes(m))) achadas.push('módulo de rede de saída');
+  const semTipos = sem.replace(SO_TIPO, '');
+  let foraDaLista = false;
+  const resto = semTipos.replace(IMPORT_NOMEADO, (_, nomes: string, modulo: string) => {
+    for (const item of nomes.split(',').map((n) => n.trim())) {
+      if (!item || item.startsWith('type ')) continue;
+      if (!(permitidos[modulo] ?? []).includes(item.split(/\s+as\s+/)[0]!)) foraDaLista = true;
+    }
+    return '';
+  });
+  if (foraDaLista || MODULO_DE_REDE.test(resto)) achadas.push('módulo de rede de saída');
   return achadas;
 }
 
@@ -205,7 +215,7 @@ describe('código do servidor não faz chamada de rede de saída', () => {
   });
 
   it('nenhum arquivo de server/ e shared/ (fora testes e shared/demo) chama a rede', () => {
-    const achados = fontesDeRuntime().flatMap((p) => chamadasDeRede(readFileSync(p, 'utf8'), MODULOS_PERMITIDOS[relative(ROOT, p)]).map((c) => `${relative(ROOT, p)}: ${c}`));
+    const achados = fontesDeRuntime().flatMap((p) => chamadasDeRede(readFileSync(p, 'utf8'), IMPORTS_PERMITIDOS[relative(ROOT, p)]).map((c) => `${relative(ROOT, p)}: ${c}`));
     expect(achados).toEqual([]);
   });
 
@@ -235,8 +245,18 @@ describe('código do servidor não faz chamada de rede de saída', () => {
     ]) expect(chamadasDeRede(forma), forma).toContain('módulo de rede de saída');
     expect(chamadasDeRede("import type { IncomingMessage } from 'node:http';")).toEqual([]);
     expect(chamadasDeRede("import type {\n  AddressInfo,\n} from 'node:net';")).toEqual([]);
-    expect(chamadasDeRede("import http from 'node:http';", ['http'])).toEqual([]);
-    expect(chamadasDeRede("import http from 'node:http'; import { get } from 'node:net';", ['http'])).toContain('módulo de rede de saída');
+    const livre = { http: ['createServer'], net: ['isIP'] };
+    expect(chamadasDeRede("import { createServer, type Server } from 'node:http';", livre)).toEqual([]);
+    expect(chamadasDeRede("import { isIP } from 'node:net';", livre)).toEqual([]);
+    for (const forma of [
+      "import { createServer, get } from 'node:http';",
+      "import { get as obter } from 'node:http';",
+      "import http from 'node:http';",
+      "import { connect } from 'node:net';",
+      "import { execFile } from 'node:child_process';",
+      "import { spawnSync } from 'child_process';",
+      "const cp = require('node:child_process');",
+    ]) expect(chamadasDeRede(forma, livre), forma).toContain('módulo de rede de saída');
     expect(chamadasDeRede("// fetch('x')\n/* http.get(u) */ const a = 1;")).toEqual([]);
     expect(chamadasDeRede("res.fetchedAt = 1; refetch(); isIP('::1');")).toEqual([]);
   });
