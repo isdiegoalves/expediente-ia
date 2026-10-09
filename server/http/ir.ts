@@ -25,17 +25,21 @@ export function urlPermitida(url: string): boolean {
   return LISTA_PERMITIDA.some((re) => re.test(url));
 }
 
+/** Quantos nonces vivos cada agente guarda: dois painéis e o navegador não se expulsam, e o limite é por agente. */
+export const NONCES_POR_AGENTE = 8;
+
 export class NonceStore {
   private readonly itens = new Map<string, { agentId: string; venceEm: number }>();
-  private readonly doAgente = new Map<string, string>();
+  private readonly doAgente = new Map<string, string[]>();
 
   constructor(private readonly now: () => number) {}
 
   emitir(agentId: string): string {
     const nonce = randomBytes(16).toString('hex');
-    const anterior = this.doAgente.get(agentId);
-    if (anterior) this.itens.delete(anterior);
-    this.doAgente.set(agentId, nonce);
+    const vivos = (this.doAgente.get(agentId) ?? []).filter((n) => this.itens.has(n));
+    vivos.push(nonce);
+    while (vivos.length > NONCES_POR_AGENTE) this.itens.delete(vivos.shift() as string);
+    this.doAgente.set(agentId, vivos);
     this.itens.set(nonce, { agentId, venceEm: this.now() + NONCE_VALIDADE_MS });
     return nonce;
   }
@@ -45,7 +49,9 @@ export class NonceStore {
     const item = this.itens.get(nonce);
     if (!item) return false;
     this.itens.delete(nonce);
-    if (this.doAgente.get(item.agentId) === nonce) this.doAgente.delete(item.agentId);
+    const vivos = this.doAgente.get(item.agentId)?.filter((n) => n !== nonce) ?? [];
+    if (vivos.length) this.doAgente.set(item.agentId, vivos);
+    else this.doAgente.delete(item.agentId);
     return item.agentId === agentId && this.now() <= item.venceEm;
   }
 }

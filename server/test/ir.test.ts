@@ -6,7 +6,7 @@ import { AccountsService } from '../accounts/service';
 import { Hub } from '../http/sse';
 import { createApiHandler } from '../http/app';
 import { createRequestGuard } from '../http/guard';
-import { urlPermitida } from '../http/ir';
+import { NONCES_POR_AGENTE, urlPermitida } from '../http/ir';
 import { setQuiet } from '../log';
 import { NameStore } from '../model/names';
 import { Office } from '../model/office';
@@ -305,11 +305,27 @@ describe('GET /api/agentes/:id/ir?abrir=1', () => {
     expect((await abrir('a:1', nonce)).status).toBe(302);
   });
 
-  it('o nonce novo do agente substitui o anterior dele', async () => {
-    const velho = (await ir('a:1')).nonce;
-    const novo = (await ir('a:1')).nonce;
-    expect((await abrir('a:1', velho)).status).toBe(403);
-    expect((await abrir('a:1', novo)).status).toBe(302);
+  it('dois consumidores pedem o /ir e os dois links funcionam, uma vez cada', async () => {
+    const painelApp = (await ir('a:1')).nonce;
+    const outroPainel = (await ir('a:1')).nonce;
+    expect((await abrir('a:1', painelApp)).status).toBe(302);
+    expect((await abrir('a:1', painelApp)).status).toBe(403);
+    expect((await abrir('a:1', outroPainel)).status).toBe(302);
+    expect((await abrir('a:1', outroPainel)).status).toBe(403);
+  });
+
+  it('o agente guarda poucos nonces vivos: passando do limite, o mais antigo sai', async () => {
+    const emitidos: Array<string | undefined> = [];
+    for (let i = 0; i < NONCES_POR_AGENTE + 1; i++) emitidos.push((await ir('a:1')).nonce);
+    expect((await abrir('a:1', emitidos[0])).status).toBe(403);
+    for (const n of emitidos.slice(1)) expect((await abrir('a:1', n)).status).toBe(302);
+  });
+
+  it('pedido de outra origem não expulsa nenhum dos nonces vivos do agente', async () => {
+    const vivos: Array<string | undefined> = [];
+    for (let i = 0; i < NONCES_POR_AGENTE; i++) vivos.push((await ir('a:1')).nonce);
+    for (let i = 0; i < 50; i++) await pedir('/api/agentes/a%3A1/ir', { 'Sec-Fetch-Site': 'cross-site' });
+    for (const n of vivos) expect((await abrir('a:1', n)).status).toBe(302);
   });
 
   it('pedido de outra origem não recebe nonce nem derruba o do agente', async () => {
