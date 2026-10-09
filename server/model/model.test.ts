@@ -2,6 +2,8 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { Activity } from '../../shared/types';
+import { nameKey } from '../../shared/appearance';
+import { hash32 } from '../../shared/hash';
 import { NAME_POOL } from '../../shared/names';
 import { setQuiet } from '../log';
 import { tempDir } from '../test/fixtures';
@@ -166,8 +168,9 @@ describe('NameStore: personagem de cada sala', () => {
 
 function makeOffice() {
   let clock = 1_000_000;
+  const names = new NameStore(null);
   const office = new Office({
-    names: new NameStore(null),
+    names,
     version: 't',
     startedAt: clock,
     accounts: (s) => [{ id: 'acc', short: 'C', name: 'Conta C', color: '#f08a3c', configDir: '/x', sessions: s.get('acc') ?? 0, usageStatus: 'disabled' }],
@@ -175,7 +178,7 @@ function makeOffice() {
     accountName: () => 'Conta C',
     now: () => clock,
   });
-  return { office, advance: (ms: number) => (clock += ms), now: () => clock };
+  return { office, names, advance: (ms: number) => (clock += ms), now: () => clock };
 }
 
 const act = (id: string, at: number, kind: Activity['kind'] = 'read'): Activity => ({ id, at, kind, icon: '📖', text: 'Lendo x' });
@@ -447,4 +450,127 @@ describe('Office', () => {
     });
   });
 
+});
+
+describe('Office: personagem do projeto', () => {
+  const main = (id: string, sessionId: string, cwd: string, now: number) =>
+    ({ id, account: 'acc', sessionId, cwd, role: 'Agente principal', startedAt: now, status: 'working' }) as const;
+  const parts = { skin: '#5a3623', hairStyle: 'bob' } as const;
+
+  it('setCharacter grava para a sala, aplica na hora e avisa; a próxima sessão na sala nasce com ele', () => {
+    const { office, names, now } = makeOffice();
+    office.addMain(main('acc:1', 's1', '/p/api/', now()));
+    office.commit();
+    const before = office.get('acc:1')!.name;
+    expect(office.setCharacter('acc:1', { name: 'Zé Backend', seed: 42, parts })).toEqual({ result: 'ok' });
+    expect(office.get('acc:1')).toMatchObject({ name: 'Zé Backend', seed: 42, parts, custom: true });
+    expect(names.character('/p/api')).toMatchObject({ name: 'Zé Backend', look: office.get('acc:1')!.look, seed: 42, parts });
+    expect(office.commit().notices.map((n) => n.text)).toContain(`✏️ ${before} agora é Zé Backend em api`);
+    expect(office.setCharacter('acc:1', { name: 'Zé Backend', seed: 43, parts: {} })).toEqual({ result: 'ok' });
+    expect(office.get('acc:1')!.parts).toBeUndefined();
+    expect(office.commit().notices.map((n) => n.text)).toContain('✏️ Zé Backend mudou de visual em api');
+  });
+
+  it('reabrir a sessão logo depois de fechar (o antigo ainda saindo): o personagem volta', () => {
+    const { office, advance, now } = makeOffice();
+    office.addMain(main('acc:1', 's1', '/p/api', now()));
+    office.setCharacter('acc:1', { name: 'Zé Backend', seed: 42, parts });
+    office.closeMain('acc:1');
+    advance(5_000);
+    office.addMain(main('acc:2', 's2', '/p/api', now()));
+    expect(office.get('acc:2')).toMatchObject({ name: 'Zé Backend', seed: 42, parts, custom: true });
+  });
+
+  it('segunda sessão ao mesmo tempo na mesma sala cai no sorteio', () => {
+    const { office, now } = makeOffice();
+    office.addMain(main('acc:1', 's1', '/p/api', now()));
+    office.setCharacter('acc:1', { name: 'Zé Backend', seed: 42, parts });
+    office.addMain(main('acc:2', 's2', '/p/api', now()));
+    const b = office.get('acc:2')!;
+    expect(b.name).not.toBe('Zé Backend');
+    expect(b.custom).toBeUndefined();
+    expect(b.parts).toBeUndefined();
+    expect(b.seed).toBe(hash32('acc:2'));
+  });
+
+  it('nome escolhido fica reservado: o sorteio não o dá a outra sessão (nem o nome guardado dela, nem com outra caixa)', () => {
+    const { office, names, advance, now } = makeOffice();
+    names.remember('s9', { name: 'Ana', look: 'f' });
+    office.addMain(main('acc:1', 's1', '/p/api', now()));
+    expect(office.setCharacter('acc:1', { name: 'ana', seed: 1, parts: {} })).toEqual({ result: 'ok' });
+    office.closeMain('acc:1');
+    advance(OFFLINE_GRACE_MS + 1);
+    office.tick();
+    office.addMain(main('acc:9', 's9', '/p/web', now()));
+    expect(nameKey(office.get('acc:9')!.name)).not.toBe('ana');
+  });
+
+  it('conflitos: alguém no escritório (sem diferenciar maiúsculas), personagem de outra sala e o demo', () => {
+    const { office, advance, now } = makeOffice();
+    office.addMain(main('acc:1', 's1', '/p/api', now()));
+    office.addMain(main('acc:2', 's2', '/p/web', now()));
+    const other = office.get('acc:2')!.name;
+    expect(office.setCharacter('acc:1', { name: other.toUpperCase(), seed: 1, parts: {} })).toEqual({
+      result: 'conflict',
+      message: `${other} já está no escritório em web`,
+    });
+    expect(office.setCharacter('acc:2', { name: 'Zé', seed: 1, parts: {} })).toEqual({ result: 'ok' });
+    office.closeMain('acc:2');
+    advance(OFFLINE_GRACE_MS + 1);
+    office.tick();
+    expect(office.setCharacter('acc:1', { name: 'zé', seed: 1, parts: {} })).toEqual({ result: 'conflict', message: 'Zé já é o personagem de web' });
+    office.setDemo(true);
+    const demo = office.commit().snapshot.agents.find((a) => a.id.startsWith('demo:'))!;
+    expect(office.setCharacter('acc:1', { name: demo.name, seed: 1, parts: {} })).toMatchObject({ result: 'conflict' });
+  });
+
+  it('conflito também entre formas Unicode: "Júlia" em NFD é a mesma que a NFC reservada para outra sala', () => {
+    const { office, advance, now } = makeOffice();
+    office.addMain(main('acc:1', 's1', '/p/api', now()));
+    office.addMain(main('acc:2', 's2', '/p/web', now()));
+    expect(office.setCharacter('acc:2', { name: 'Júlia', seed: 1, parts: {} })).toEqual({ result: 'ok' });
+    office.closeMain('acc:2');
+    advance(OFFLINE_GRACE_MS + 1);
+    office.tick();
+    expect(office.setCharacter('acc:1', { name: 'Júlia', seed: 1, parts: {} })).toEqual({
+      result: 'conflict',
+      message: 'Júlia já é o personagem de web',
+    });
+  });
+
+  it('subagente, demo, quem está saindo e id desconhecido: not-found', () => {
+    const { office, now } = makeOffice();
+    office.addMain(main('acc:1', 's1', '/p/api', now()));
+    office.addSub({ id: 's1:sub', parentId: 'acc:1', sessionId: 's1', role: 'Explore', background: false, startedAt: now() });
+    office.setDemo(true);
+    const demo = office.commit().snapshot.agents.find((a) => a.id.startsWith('demo:'))!;
+    for (const id of ['s1:sub', demo.id, 'nao-existe']) {
+      expect(office.setCharacter(id, { name: 'Zé', seed: 1, parts: {} })).toEqual({ result: 'not-found' });
+      expect(office.resetCharacter(id)).toBe('not-found');
+    }
+    office.closeMain('acc:1');
+    expect(office.setCharacter('acc:1', { name: 'Zé', seed: 1, parts: {} })).toEqual({ result: 'not-found' });
+  });
+
+  it('resetCharacter volta ao nome sorteado da sessão e à seed do id; a sala perde o personagem', () => {
+    const { office, names, now } = makeOffice();
+    office.addMain(main('acc:1', 's1', '/p/api', now()));
+    const drawn = { name: office.get('acc:1')!.name, look: office.get('acc:1')!.look, seed: office.get('acc:1')!.seed };
+    office.setCharacter('acc:1', { name: 'Zé', seed: 9, parts });
+    expect(office.resetCharacter('acc:1')).toBe('ok');
+    const a = office.get('acc:1')!;
+    expect(a).toMatchObject({ ...drawn, seed: hash32('acc:1') });
+    expect(a.parts).toBeUndefined();
+    expect(a.custom).toBeUndefined();
+    expect(names.character('/p/api')).toBeUndefined();
+  });
+
+  it('/clear mantém o personagem e não grava o nome escolhido como nome da sessão nova', () => {
+    const { office, names, now } = makeOffice();
+    office.addMain(main('acc:1', 's1', '/p/api', now()));
+    office.setCharacter('acc:1', { name: 'Zé', seed: 9, parts });
+    office.switchSession('acc:1', 's2');
+    expect(office.get('acc:1')).toMatchObject({ name: 'Zé', seed: 9, parts, custom: true, sessionId: 's2' });
+    expect(names.get('s2')).toBeUndefined();
+  });
 });
