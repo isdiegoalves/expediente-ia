@@ -16,7 +16,9 @@ do meio (0.**3**.0).
   `mod:install`, `usage:install` e `hooks:install` e seus pares: o Expediente deixa de editar o `settings.json` das
   contas. O plugin de permissões passa a ser opcional (`npm run instalar -- --com-permissoes`) e é recusado na conta
   onde o plugin de permissões do projeto de origem estiver ativo. Antes de instalar, roda `claude plugin validate --strict`; Claude Code
-  anterior ao 2.1.287 é recusado.
+  anterior ao 2.1.287 é recusado. O instalador registra uma cópia fixa do commit
+  (`~/.expediente/mod-instalado`) em vez deste checkout, e o `docker:up` não atualiza mais o mod: atualizar é rodar
+  `npm run instalar` de novo. Saiu também a migração do nome antigo (pasta de estado, container e plugins `codetown`).
 
 ### Corrigido
 

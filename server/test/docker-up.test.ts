@@ -6,6 +6,7 @@ import type { DetectedAccount } from '../accounts/detect';
 import {
   accountsPayload,
   hostTimeZone,
+  modHint,
   parseArgs,
   planMounts,
   renderOverride,
@@ -135,5 +136,12 @@ describe('docker-up: montagens mínimas', () => {
     } finally {
       tmp.cleanup();
     }
+  });
+});
+
+describe('docker-up: dica do mod', () => {
+  it('só aparece sem a cópia fixa do mod e manda rodar o instalar', () => {
+    expect(modHint(true)).toEqual([]);
+    expect(modHint(false).join('\n')).toContain('npm run instalar');
   });
 });

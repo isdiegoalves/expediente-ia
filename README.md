@@ -169,7 +169,7 @@ npm run instalar -- --com-permissoes     # também o plugin de permissões (resp
 ```
 
 O Expediente traz um [mod](https://code.claude.com/docs/en/plugins/mods/overview) (um plugin que roda dentro do
-Claude Code) e o instala em cada conta **só pelo `claude plugin`**, a partir desta pasta: o instalador nunca edita o
+Claude Code) e o instala em cada conta **só pelo `claude plugin`**, a partir de uma **cópia fixa** do commit (`~/.expediente/mod-instalado`, um worktree destacado): o instalador nunca edita o
 `settings.json` de ninguém, nunca desinstala plugin do Habblaud e recusa o `expediente-permissoes` na conta onde o
 `habblaud-permissoes` estiver ativo (os dois responderiam o mesmo pedido). Com o mod:
 
@@ -180,13 +180,15 @@ Claude Code) e o instala em cada conta **só pelo `claude plugin`**, a partir de
   to…"), com o plugin `expediente-permissoes` (veja [Responder pelo escritório](#responder-pelo-escritório)).
 
 Precisa do **Claude Code 2.1.287 ou mais novo** (`claude --version`); em versão anterior o instalador recusa a conta.
-Antes de tocar nas contas, ele roda `claude plugin validate --strict` nesta pasta. O mod roda dentro de cada sessão,
+Antes de tocar nas contas, ele roda `claude plugin validate --strict` na cópia. `npm run instalar` instala o `HEAD` deste
+checkout (e recusa se houver alterações nos arquivos versionados); `-- --commit <ref>` escolhe outro. O mod roda dentro de cada sessão,
 com as suas permissões, e acessa só o que está listado em [`mod/README.md`](mod/README.md); para conferir sem rodar
 nada, `claude plugin validate mod/expediente` mostra os eventos que ele trata e as chamadas que faz. Sessões já
 abertas carregam o mod com `/reload-plugins` (ou ao reabrir). Confira com `npm run instalar:status`; para desfazer:
 `npm run desinstalar`.
 
-> O mod é lido desta pasta. Se mover a pasta, rode `npm run instalar` de novo.
+> O Claude Code lê o mod da cópia fixa, não deste checkout: trocar de branch aqui não muda o que as sessões rodam.
+> Para atualizar o mod, rode `npm run instalar` de novo (de propósito); `npm run instalar:status` mostra o commit instalado.
 
 ### Atualizar
 
@@ -206,9 +208,8 @@ npm run docker:up        # ou: npm run build && npm start (e depois npm run inst
 > package-lock.json", rode `git checkout -- package-lock.json` e repita: até a 0.4.0, o `npm install` alterava esse
 > arquivo.
 
-O `docker:up` também atualiza o mod nas contas em que ele já está instalado (nunca instala sozinho) e avisa:
-"Mod atualizado para 0.3.0 na Conta D; sessões abertas: /reload-plugins". No modo Node, rode `npm run instalar`
-depois de atualizar. Para não consultar o GitHub, use `EXPEDIENTE_UPDATE_CHECK=0` (no `.env`, para o Docker).
+O mod não é atualizado sozinho: rode `npm run instalar` depois de atualizar (o `docker:up` só lembra, se ele não
+estiver instalado). Para não consultar o GitHub, use `EXPEDIENTE_UPDATE_CHECK=0` (no `.env`, para o Docker).
 
 ### Desinstalar
 
@@ -643,7 +644,7 @@ do percentual quer dizer que a janela reiniciou desde a última coleta.
 <summary><b>O mod não carrega numa sessão</b></summary>
 
 Rode `npm run instalar:status`: ele mostra a versão do Claude Code (o mod precisa da 2.1.287 ou mais nova) e, por conta,
-se o marketplace aponta para esta pasta e se os plugins estão instalados e ligados. Numa sessão aberta antes da
+se o marketplace aponta para a cópia fixa e se os plugins estão instalados e ligados. Numa sessão aberta antes da
 instalação, rode `/reload-plugins`; o `/plugin` mostra, embaixo das abas, os mods carregados (ex.:
 `1 mod active · expediente`). Mods não rodam com `"disableAllHooks": true` no `settings.json` da conta nem com
 `claude --safe-mode`.

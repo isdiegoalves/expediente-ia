@@ -1,16 +1,18 @@
 // Instala (ou remove) o mod do Expediente no Claude Code de cada conta. Roda no HOST, com tsx:
 //
-//   npm run instalar          # marketplace "expediente" (esta pasta) + plugin expediente
+//   npm run instalar          # cópia fixa do commit + marketplace "expediente" + plugin expediente
 //   npm run desinstalar       # tira os plugins e o marketplace do Expediente de cada conta
-//   npm run instalar:status   # por conta: marketplace e plugins (e versões)
-//   (opções: --com-permissoes, --conta <pasta>, --dry-run, --claude <comando>)
+//   npm run instalar:status   # commit instalado e, por conta, marketplace e plugins (e versões)
+//   (opções: --commit <ref>, --com-permissoes, --conta <pasta>, --dry-run, --claude <comando>)
 //
 // Tudo passa pelo CLI do próprio Claude Code (`claude plugin ...`), rodado uma vez por conta com o CLAUDE_CONFIG_DIR
 // daquela conta. Quem grava os registros (enabledPlugins e extraKnownMarketplaces no settings.json) é o Claude Code:
 // este script nunca edita o settings.json de ninguém, e um teste estático impede que algum arquivo do repositório o faça.
 //
-// O marketplace é ESTA pasta (.claude-plugin/marketplace.json), adicionado como diretório local: o Claude Code carrega
-// os plugins direto de mod/, sem copiar.
+// O marketplace NÃO é este checkout: o Claude Code lê o plugin no lugar, então cada troca de branch aqui passaria a
+// rodar em todas as sessões das contas. O instalador cria uma cópia fixa (git worktree destacado em
+// ~/.expediente/mod-instalado) no commit pedido (--commit; padrão HEAD, recusando árvore com alterações) e registra
+// ESSA pasta. Atualizar o mod é rodar `npm run instalar` de novo, de propósito.
 //
 // Nunca desinstala plugin do Habblaud, e recusa o expediente-permissoes numa conta em que o habblaud-permissoes
 // esteja ativo (os dois responderiam o mesmo pedido).
@@ -45,6 +47,11 @@ function usageDirOf(env: NodeJS.ProcessEnv, home: string): string {
   return d ? resolve(d.replace(/^~(?=\/|$)/, home)) : join(home, '.expediente', 'host', 'uso');
 }
 
+/** Cópia fixa do commit instalado: é a pasta registrada como marketplace nas contas. */
+export function installDir(home: string): string {
+  return join(home, '.expediente', 'mod-instalado');
+}
+
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 /** Nome do marketplace em .claude-plugin/marketplace.json (contrato com mod/). */
@@ -62,12 +69,14 @@ const CLI_TIMEOUT_MS = 120_000;
 
 const USAGE = `Uso: npm run <instalar|desinstalar|instalar:status> [-- opções]
 
-  instalar          instala o mod do Expediente no Claude Code de cada conta (marketplace desta pasta + plugin),
-                    só por \`claude plugin\`; o settings.json das contas nunca é editado por este script
-  desinstalar       tira os plugins e o marketplace do Expediente de cada conta
-  instalar:status   mostra, por conta, o marketplace e os plugins (e versões)
+  instalar          instala o mod do Expediente no Claude Code de cada conta, a partir de uma cópia fixa do commit
+                    (~/.expediente/mod-instalado), só por \`claude plugin\`; o settings.json das contas nunca é
+                    editado por este script. Rodar de novo atualiza a cópia e os plugins
+  desinstalar       tira os plugins e o marketplace do Expediente de cada conta e remove a cópia fixa
+  instalar:status   mostra o commit instalado e, por conta, o marketplace e os plugins (e versões)
 
 Opções:
+  --commit <ref>     commit a instalar (padrão: HEAD deste checkout, que precisa estar sem alterações versionadas)
   --com-permissoes   instala também o plugin de responder permissões pelo escritório (expediente-permissoes);
                      recusado na conta onde o habblaud-permissoes estiver ativo
   --conta <pasta>    só esta conta (ex.: --conta ~/.claude-conta2); pode repetir
@@ -76,7 +85,7 @@ Opções:
   -h, --help         mostra esta ajuda
 
 Precisa do Claude Code ${MIN_CLAUDE_VERSION} ou mais novo; em versões anteriores o instalador recusa a conta.
-Antes de tocar nas contas, roda \`claude plugin validate --strict\` no marketplace desta pasta.
+Antes de tocar nas contas, roda \`claude plugin validate --strict\` na cópia.
 
 Contas: as mesmas do servidor (~/.claude* com projects/ ou sessions/, CLAUDE_CONFIG_DIR ou
 EXPEDIENTE_CLAUDE_DIRS). Uso capturado em EXPEDIENTE_USAGE_DIR (padrão ~/.expediente/host/uso).`;
@@ -405,33 +414,6 @@ export function verifyInstall(after: AccountState, plugins: string[], version: s
   return out;
 }
 
-/** Para o docker:up: atualiza só o que já está instalado, nunca instala. */
-export type UpdatePlan =
-  | { action: 'none'; installed: boolean }
-  | { action: 'update'; steps: CliStep[] }
-  | { action: 'warn'; message: string };
-
-export function planUpdate(state: AccountState, o: { root: string; version: string; sameDir?: (a: string, b: string) => boolean }): UpdatePlan {
-  const same = o.sameDir ?? sameDir;
-  const installed = [MOD_PLUGIN, PERMISSIONS_PLUGIN].map((id) => userInstall(state, id)).filter((p): p is PluginInfo => !!p);
-  if (!installed.length) return { action: 'none', installed: false };
-  const stale = installed.filter((p) => p.version !== o.version);
-  if (!stale.length) return { action: 'none', installed: true };
-  // Marketplace de outra pasta (outro clone, pasta movida): atualizar dali não traria esta versão.
-  const m = state.marketplace;
-  if (!m) return { action: 'warn', message: `o mod está instalado, mas o marketplace ${MARKETPLACE} sumiu; rode npm run instalar` };
-  if (!m.path || !same(m.path, o.root)) {
-    return { action: 'warn', message: `o mod vem de outra pasta (${m.path ?? m.source ?? '?'}), então não foi atualizado; para usar esta: npm run instalar` };
-  }
-  return {
-    action: 'update',
-    steps: [
-      { args: ['plugin', 'marketplace', 'update', MARKETPLACE], message: `marketplace ${MARKETPLACE}: catálogo relido` },
-      ...stale.map((p) => ({ args: ['plugin', 'update', p.id, '--scope', SCOPE], message: `${shortName(p.id)}: ${p.version ?? '?'} → ${o.version}`, plugin: p.id })),
-    ],
-  };
-}
-
 /** Últimas linhas úteis da saída do CLI (para explicar uma falha). */
 export function cliMessage(r: ClaudeResult): string {
   if (r.error) return r.error;
@@ -443,13 +425,13 @@ export function cliMessage(r: ClaudeResult): string {
 }
 
 /** Linhas do status de uma conta (sem o cabeçalho). */
-export function describeStatus(state: AccountState, o: { root: string; version: string; home: string; sameDir?: (a: string, b: string) => boolean }): string[] {
+export function describeStatus(state: AccountState, o: { root: string; version?: string; home: string; sameDir?: (a: string, b: string) => boolean }): string[] {
   const same = o.sameDir ?? sameDir;
   const lines: string[] = [];
   const m = state.marketplace;
   if (!m) lines.push(`marketplace ${MARKETPLACE}: não adicionado`);
-  else if (m.path && same(m.path, o.root)) lines.push(`marketplace ${MARKETPLACE}: esta pasta`);
-  else lines.push(`marketplace ${MARKETPLACE}: outra origem (${m.path ? tildify(m.path, o.home) : (m.source ?? '?')}); npm run instalar aponta para esta pasta`);
+  else if (m.path && same(m.path, o.root)) lines.push(`marketplace ${MARKETPLACE}: cópia fixa em ${tildify(o.root, o.home)}`);
+  else lines.push(`marketplace ${MARKETPLACE}: outra origem (${m.path ? tildify(m.path, o.home) : (m.source ?? '?')}); npm run instalar aponta para a cópia fixa`);
   for (const id of [MOD_PLUGIN, PERMISSIONS_PLUGIN]) {
     const name = shortName(id);
     const all = state.plugins.filter((p) => p.id === id);
@@ -459,7 +441,7 @@ export function describeStatus(state: AccountState, o: { root: string; version: 
     }
     for (const p of all) {
       const parts = [`instalado${p.scope && p.scope !== SCOPE ? ` (escopo ${p.scope})` : ''}`, p.enabled ? 'ligado' : 'desligado'];
-      parts.push(`versão ${p.version ?? '?'}${p.version === o.version ? '' : ` (esta pasta: ${o.version}; npm run instalar ou npm run docker:up atualiza)`}`);
+      parts.push(`versão ${p.version ?? '?'}${!o.version || p.version === o.version ? '' : ` (a cópia fixa tem ${o.version}; npm run instalar atualiza)`}`);
       if (p.folderVersion && p.folderVersion !== p.version) parts.push(`carrega ${p.folderVersion} de ${tildify(p.readFromFolder ?? '?', o.home)}`);
       if (p.errors.length) parts.push(`erro: ${p.errors.join('; ')}`);
       lines.push(`${name}: ${parts.join(', ')}`);
@@ -480,23 +462,51 @@ export interface RunOptions {
   /** --conta (vazio = todas as detectadas). */
   accounts: string[];
   claudeCmd?: string;
+  /** --commit: o que instalar (padrão: HEAD do checkout). */
+  commit?: string;
 }
 
 export interface RunContext {
   env: NodeJS.ProcessEnv;
   home: string;
   now: Date;
-  /** Raiz do repositório (o marketplace). */
+  /** Raiz do checkout (de onde sai a cópia fixa). */
   root: string;
-  /** Versão do package.json. */
-  version: string;
   claude: ClaudeRunner;
+  git: GitRunner;
   out: (line: string) => void;
   /** Consulta o /api/health do Expediente no status (testes injetam um falso). */
   health?: (port: number) => Promise<{ permissions?: boolean } | undefined>;
 }
 
 class FatalError extends Error {}
+
+export type GitRunner = (args: string[], cwd: string) => { code: number | null; stdout: string; stderr: string };
+
+export function makeGitRunner(): GitRunner {
+  return (args, cwd) => {
+    const r = spawnSync('git', args, { cwd, encoding: 'utf8', timeout: CLI_TIMEOUT_MS, stdio: ['ignore', 'pipe', 'pipe'] });
+    return { code: r.status, stdout: (r.stdout ?? '').trim(), stderr: (r.stderr ?? '').trim() || (r.error?.message ?? '') };
+  };
+}
+
+/** Commit a instalar: o --commit, ou o HEAD (que precisa estar sem alterações nos arquivos versionados). */
+export function resolveCommit(git: GitRunner, root: string, ref: string | undefined): { commit: string } | { error: string } {
+  if (!ref) {
+    const st = git(['status', '--porcelain', '--untracked-files=no'], root);
+    if (st.code !== 0) return { error: `não consegui conferir o checkout (${st.stderr || 'git falhou'})` };
+    if (st.stdout) return { error: 'o checkout tem alterações não commitadas nos arquivos versionados; commite ou use --commit <ref>.' };
+  }
+  const rp = git(['rev-parse', '--verify', `${ref ?? 'HEAD'}^{commit}`], root);
+  if (rp.code !== 0) return { error: `não achei o commit ${ref ?? 'HEAD'} (${rp.stderr || 'git falhou'})` };
+  return { commit: rp.stdout };
+}
+
+/** Cria (ou move para o commit) a cópia fixa. */
+export function syncCopy(git: GitRunner, root: string, dir: string, commit: string): string | undefined {
+  const r = existsSync(join(dir, '.git')) ? git(['checkout', '-q', '--detach', commit], dir) : git(['worktree', 'add', '--detach', dir, commit], root);
+  return r.code === 0 ? undefined : `não consegui preparar a cópia fixa em ${dir} (${r.stderr || 'git falhou'})`;
+}
 
 async function fetchHealth(port: number): Promise<{ permissions?: boolean } | undefined> {
   try {
@@ -519,6 +529,7 @@ export function parseArgs(argv: string[]): RunOptions | 'help' {
   let dryRun = false;
   let permissions = false;
   let claudeCmd: string | undefined;
+  let commit: string | undefined;
   const accounts: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -532,11 +543,14 @@ export function parseArgs(argv: string[]): RunOptions | 'help' {
     } else if (a === '--claude') {
       claudeCmd = argv[++i];
       if (!claudeCmd) throw new FatalError('--claude precisa de um comando ou caminho.');
+    } else if (a === '--commit') {
+      commit = argv[++i];
+      if (!commit) throw new FatalError('--commit precisa de um commit ou ref.');
     } else if ((a === 'install' || a === 'uninstall' || a === 'status') && !command) command = a;
     else throw new FatalError(`opção desconhecida: ${a}\n\n${USAGE}`);
   }
   if (!command) throw new FatalError(`diga o que fazer: install, uninstall ou status.\n\n${USAGE}`);
-  return { command, dryRun, permissions, accounts, claudeCmd };
+  return { command, dryRun, permissions, accounts, claudeCmd, commit };
 }
 
 /** Versão do package.json da raiz. */
@@ -596,7 +610,7 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
   }
   const manifest = join(ctx.root, '.claude-plugin', 'marketplace.json');
   if (opts.command === 'install' && !existsSync(manifest)) {
-    out(`Não achei ${tildify(manifest, home)}: esta pasta não tem o mod (versão antiga do Expediente? rode git pull).`);
+    out(`Não achei ${tildify(manifest, home)}: este checkout não tem o mod.`);
     return 1;
   }
 
@@ -618,15 +632,39 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
       return 1;
     }
   }
+  const copy = installDir(home);
+  let version: string | undefined;
   if (opts.command === 'install') {
-    const vv = ctx.claude(['plugin', 'validate', ctx.root, '--strict'], env);
-    if (vv.error || vv.code !== 0) {
-      out(`O marketplace desta pasta não passou em claude plugin validate --strict (${cliMessage(vv)}); nenhuma conta foi tocada.`);
+    const target = resolveCommit(ctx.git, ctx.root, opts.commit);
+    if ('error' in target) {
+      out(target.error);
       return 1;
     }
+    if (opts.dryRun) out(`~ cópia fixa em ${tildify(copy, home)} no commit ${target.commit.slice(0, 7)} (simulação: nada criado)`);
+    else {
+      const bad = syncCopy(ctx.git, ctx.root, copy, target.commit);
+      if (bad) {
+        out(bad);
+        return 1;
+      }
+      out(`✓ cópia fixa em ${tildify(copy, home)} no commit ${target.commit.slice(0, 7)}`);
+    }
+    const vv = ctx.claude(['plugin', 'validate', opts.dryRun ? ctx.root : copy, '--strict'], env);
+    if (vv.error || vv.code !== 0) {
+      out(`O marketplace não passou em claude plugin validate --strict (${cliMessage(vv)}); nenhuma conta foi tocada.`);
+      return 1;
+    }
+    version = opts.dryRun ? readPackageVersion(ctx.root) : readPackageVersion(copy);
   }
   if (opts.command === 'status') {
-    out(`Claude Code ${cliVersion ?? '(versão desconhecida)'}${cliVersion && !versionAtLeast(cliVersion, MIN_CLAUDE_VERSION) ? ` — o mod precisa do ${MIN_CLAUDE_VERSION}+` : ''} · Expediente ${ctx.version} em ${tildify(ctx.root, home)}`);
+    const head = ctx.git(['rev-parse', '--short', 'HEAD'], ctx.root);
+    const inst = existsSync(join(copy, '.git')) ? ctx.git(['rev-parse', '--short', 'HEAD'], copy) : undefined;
+    if (inst?.code === 0) version = existsSync(join(copy, 'package.json')) ? readPackageVersion(copy) : undefined;
+    out(`Claude Code ${cliVersion ?? '(versão desconhecida)'}${cliVersion && !versionAtLeast(cliVersion, MIN_CLAUDE_VERSION) ? ` — o mod precisa do ${MIN_CLAUDE_VERSION}+` : ''}`);
+    if (inst?.code === 0) {
+      const igual = head.code === 0 && head.stdout === inst.stdout;
+      out(`commit instalado: ${inst.stdout} em ${tildify(copy, home)}${igual ? '' : ` (o checkout está em ${head.code === 0 ? head.stdout : '?'}; npm run instalar atualiza)`}`);
+    } else out(`commit instalado: nenhum (a cópia fixa ${tildify(copy, home)} não existe; npm run instalar cria)`);
   }
 
   // O mod grava o uso em ~/.expediente/host/uso, mas não cria a pasta (o docker:up monta ~/.expediente/host no container).
@@ -653,7 +691,7 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
       if ('error' in state) {
         out(`    ✗ ${state.error}`);
         failures++;
-      } else for (const l of describeStatus(state, { root: ctx.root, version: ctx.version, home })) out(`    ${l}`);
+      } else for (const l of describeStatus(state, { root: copy, version, home })) out(`    ${l}`);
       out(`    ${lastCapture(dir, env, home, ctx.now)}`);
       continue;
     }
@@ -664,7 +702,7 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
       failures++;
       continue;
     }
-    const plan = opts.command === 'install' ? planInstall(state, { root: ctx.root, version: ctx.version, permissions: opts.permissions }) : planUninstall(state);
+    const plan = opts.command === 'install' ? planInstall(state, { root: copy, version: version!, permissions: opts.permissions }) : planUninstall(state);
     for (const r of plan.refusals) {
       out(`  ✗ ${r}`);
       failures++;
@@ -707,7 +745,7 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
     if (!opts.dryRun) {
       const after = readAccountState(ctx.claude, cenv);
       if (!('error' in after)) {
-        for (const w of verifyInstall(after, plan.plugins, ctx.version)) out(`  ! ${w}`);
+        for (const w of verifyInstall(after, plan.plugins, version!)) out(`  ! ${w}`);
       }
     }
   }
@@ -722,6 +760,10 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
     out('');
     out('Pronto. Sessões já abertas continuam com o mod até /reload-plugins (ou até reabrir a sessão).');
   }
+  if (opts.command === 'uninstall' && !opts.dryRun && !failures && existsSync(join(copy, '.git'))) {
+    const rm = ctx.git(['worktree', 'remove', '--force', copy], ctx.root);
+    out(rm.code === 0 ? `✓ cópia fixa removida: ${tildify(copy, home)}` : `! não consegui remover a cópia fixa ${tildify(copy, home)} (${rm.stderr})`);
+  }
   if (opts.command === 'status') {
     // O mod e o plugin de permissões só falam com o Expediente local: diz se ele está lá para responder.
     const port = expedientePort(env);
@@ -732,88 +774,6 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
     else out(`${at}: no ar, mas responder pelo escritório está desligado (porta exposta na rede ou EXPEDIENTE_TERMINAL=0).`);
   }
   return failures ? 1 : 0;
-}
-
-// ---------------------------------------------------------------------------------------------
-// Para o docker:up: atualiza o mod de quem já instalou
-// ---------------------------------------------------------------------------------------------
-
-export interface ModUpdateContext {
-  env: NodeJS.ProcessEnv;
-  home: string;
-  root: string;
-  version: string;
-  claude: ClaudeRunner;
-}
-
-export interface ModUpdateResult {
-  /** Alguma conta tem o mod (ou o plugin de permissões) instalado, mesmo que com o nome antigo. */
-  installed: boolean;
-  /** Não deu para consultar o Claude Code em nenhuma conta (ex.: `claude` fora do PATH). */
-  unavailable: boolean;
-  lines: Array<{ level: 'info' | 'warn'; text: string }>;
-}
-
-/**
- * Para cada conta com o mod instalado numa versão diferente da do package.json: relê o catálogo e atualiza os
- * plugins instalados. Com restos do nome antigo, só avisa (a troca é do instalar). Nunca instala nada e nunca
- * lança: qualquer falha vira um aviso.
- */
-export function updateInstalledMods(accounts: Array<{ dir: string; label: string }>, ctx: ModUpdateContext): ModUpdateResult {
-  const res: ModUpdateResult = { installed: false, unavailable: false, lines: [] };
-  if (!accounts.length) return res;
-  // Um runner que nunca lança: qualquer exceção vira uma falha comum (o docker:up não pode cair por isso).
-  const claude: ClaudeRunner = (args, env) => {
-    try {
-      return ctx.claude(args, env);
-    } catch (err) {
-      return { code: null, stdout: '', stderr: '', error: (err as Error).message };
-    }
-  };
-  // Sem o CLI, a mesma falha se repetiria em todas as contas: confere uma vez e avisa uma vez.
-  const probe = claude(['--version'], ctx.env);
-  if (probe.error || probe.code !== 0) {
-    res.unavailable = true;
-    res.lines.push({ level: 'warn', text: `não consegui consultar o Claude Code (${cliMessage(probe)}); o mod não foi conferido.` });
-    return res;
-  }
-  for (const { dir, label } of accounts) {
-    const env = accountEnv(ctx.env, dir, ctx.home);
-    const state = readAccountState(claude, env);
-    if ('error' in state) {
-      res.lines.push({ level: 'warn', text: `mod na ${label}: ${state.error}` });
-      continue;
-    }
-    const plan = planUpdate(state, { root: ctx.root, version: ctx.version });
-    if (plan.action === 'none') {
-      if (plan.installed) res.installed = true;
-      continue;
-    }
-    res.installed = true;
-    if (plan.action === 'warn') {
-      res.lines.push({ level: 'warn', text: `mod na ${label}: ${plan.message}` });
-      continue;
-    }
-    let failed: string | undefined;
-    for (const step of plan.steps) {
-      const r = claude(step.args, env);
-      if (r.error || r.code !== 0) {
-        failed = `${step.message.split(':')[0]} (${cliMessage(r)})`;
-        break;
-      }
-    }
-    if (failed) {
-      res.lines.push({ level: 'warn', text: `não consegui atualizar o mod na ${label}: ${failed}. Tente: npm run instalar` });
-      continue;
-    }
-    // Só diz "atualizado" se o Claude Code passou mesmo a registrar a versão nova.
-    const after = readAccountState(claude, env);
-    const ids = plan.steps.flatMap((s) => (s.plugin ? [s.plugin] : []));
-    const issues = 'error' in after ? [after.error] : verifyInstall(after, ids, ctx.version);
-    if (issues.length) res.lines.push({ level: 'warn', text: `mod na ${label}: ${issues.join('; ')}` });
-    else res.lines.push({ level: 'info', text: `Mod atualizado para ${ctx.version} na ${label}; sessões abertas: /reload-plugins` });
-  }
-  return res;
 }
 
 async function main(): Promise<void> {
@@ -828,7 +788,7 @@ async function main(): Promise<void> {
     home,
     now: new Date(),
     root: ROOT,
-    version: readPackageVersion(ROOT),
+    git: makeGitRunner(),
     claude: makeClaudeRunner(parsed.claudeCmd),
     out: (l) => console.log(l),
   });

@@ -1,16 +1,17 @@
 // Instalador do mod (scripts/instalar.ts): o comando inteiro contra um CLI FALSO do Claude Code, com HOME e contas
 // FALSOS em pastas temporárias (nunca chama o `claude` de verdade nem toca em ~/.claude*), e a trava estática de
 // que nenhum código do repositório grava em settings.json.
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  installDir,
+  makeGitRunner,
   MOD_PLUGIN,
   parseArgs,
   PERMISSIONS_PLUGIN,
-  planUpdate,
   run,
-  updateInstalledMods,
   versionAtLeast,
   type ClaudeResult,
   type ClaudeRunner,
@@ -125,9 +126,24 @@ describe('instalar.ts (CLI falso, HOME falso)', () => {
     mkdirSync(join(home, '.claude-conta2', 'sessions'), { recursive: true });
     mkdirSync(join(root, '.claude-plugin'), { recursive: true });
     writeFileSync(join(root, '.claude-plugin', 'marketplace.json'), '{"name":"expediente","plugins":[]}');
+    writeFileSync(join(root, 'package.json'), '{"version":"0.2.0"}\n');
+    git(root, 'init', '-q');
+    commit('primeiro');
     writeFileSync(join(home, '.claude', 'settings.json'), settingsDoDono);
   });
   afterEach(() => tmp.cleanup());
+
+  const git = (cwd: string, ...args: string[]) => {
+    const r = spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', ...args], { cwd, encoding: 'utf8' });
+    if (r.status !== 0) throw new Error(`git ${args.join(' ')}: ${r.stderr}`);
+    return r.stdout.trim();
+  };
+  const commit = (msg: string) => {
+    git(root, 'add', '-A');
+    git(root, 'commit', '-q', '-m', msg);
+    return git(root, 'rev-parse', 'HEAD');
+  };
+  const copia = () => installDir(home);
 
   const exec = (command: RunOptions['command'], extra: Partial<RunOptions> = {}) =>
     run(
@@ -137,7 +153,7 @@ describe('instalar.ts (CLI falso, HOME falso)', () => {
         home,
         now: new Date(2026, 9, 9, 9, 30, 0),
         root,
-        version: '0.2.0',
+        git: makeGitRunner(),
         claude: fake.runner,
         out: (l) => out.push(l),
         health: async () => undefined,
@@ -161,7 +177,7 @@ describe('instalar.ts (CLI falso, HOME falso)', () => {
   it('instala só o mod por padrão, em cada conta com o seu CLAUDE_CONFIG_DIR; de novo = nada a fazer', async () => {
     expect(await exec('install')).toBe(0);
     for (const acc of ['.claude', '.claude-conta2']) {
-      expect(Object.fromEntries(fake.account(join(home, acc)).marketplaces)).toEqual({ expediente: root });
+      expect(Object.fromEntries(fake.account(join(home, acc)).marketplaces)).toEqual({ expediente: copia() });
       expect(installed(acc)).toEqual({ [MOD_PLUGIN]: { version: '0.2.0', enabled: true } });
     }
     expect(fake.accounts.size).toBe(2);
@@ -170,7 +186,7 @@ describe('instalar.ts (CLI falso, HOME falso)', () => {
     expect(out.join('\n')).toContain('/reload-plugins');
     fake.calls = [];
     expect(await exec('install')).toBe(0);
-    expect(fake.mutating).toEqual([`plugin validate ${root} --strict`, 'plugin marketplace update expediente', 'plugin marketplace update expediente']);
+    expect(fake.mutating).toEqual([`plugin validate ${copia()} --strict`, 'plugin marketplace update expediente', 'plugin marketplace update expediente']);
   });
 
   it('--com-permissoes instala também o expediente-permissoes', async () => {
@@ -245,7 +261,7 @@ describe('instalar.ts (CLI falso, HOME falso)', () => {
     fake.invalid = true;
     expect(await exec('install')).toBe(1);
     expect(out.join('\n')).toContain('não passou em claude plugin validate --strict');
-    expect(fake.mutating).toEqual([`plugin validate ${root} --strict`]);
+    expect(fake.mutating).toEqual([`plugin validate ${copia()} --strict`]);
     for (const acc of fake.accounts.values()) expect(acc.marketplaces.size + acc.plugins.size).toBe(0);
   });
 
@@ -276,9 +292,65 @@ describe('instalar.ts (CLI falso, HOME falso)', () => {
     out = [];
     expect(await exec('status')).toBe(0);
     const text = out.join('\n');
-    expect(text).toContain('marketplace expediente: esta pasta');
+    expect(text).toContain('marketplace expediente: cópia fixa');
+    expect(text).toContain(`commit instalado: ${git(root, 'rev-parse', '--short', 'HEAD')}`);
     expect(text).toContain('expediente: instalado, ligado, versão 0.2.0');
     expect(text).toContain('expediente-permissoes: não instalado');
+  });
+
+  it('registra a cópia fixa, não o checkout, e mexer no checkout não muda a cópia', async () => {
+    const instalado = git(root, 'rev-parse', 'HEAD');
+    expect(await exec('install')).toBe(0);
+    for (const acc of ['.claude', '.claude-conta2']) {
+      const registrada = fake.account(join(home, acc)).marketplaces.get('expediente')!;
+      expect(registrada).toBe(copia());
+      expect(registrada).not.toBe(root);
+    }
+    expect(git(copia(), 'rev-parse', 'HEAD')).toBe(instalado);
+    const manifestoAntes = readFileSync(join(copia(), '.claude-plugin', 'marketplace.json'), 'utf8');
+
+    writeFileSync(join(root, '.claude-plugin', 'marketplace.json'), '{"name":"outro","plugins":[]}');
+    commit('segundo');
+    git(root, 'switch', '-q', '-c', 'outro-ramo');
+    writeFileSync(join(root, 'package.json'), '{"version":"9.9.9"}\n');
+
+    expect(git(copia(), 'rev-parse', 'HEAD')).toBe(instalado);
+    expect(readFileSync(join(copia(), '.claude-plugin', 'marketplace.json'), 'utf8')).toBe(manifestoAntes);
+    expect(readFileSync(join(copia(), 'package.json'), 'utf8')).toContain('0.2.0');
+  });
+
+  it('recusa checkout com alterações nos arquivos versionados, sem tocar em nada', async () => {
+    writeFileSync(join(root, 'package.json'), '{"version":"0.2.1"}\n');
+    expect(await exec('install')).toBe(1);
+    expect(out.join('\n')).toContain('alterações não commitadas');
+    expect(fake.mutating).toEqual([]);
+    expect(existsSync(copia())).toBe(false);
+  });
+
+  it('--commit instala o commit pedido; instalar de novo atualiza a cópia de propósito', async () => {
+    const primeiro = git(root, 'rev-parse', 'HEAD');
+    writeFileSync(join(root, 'package.json'), '{"version":"0.3.0"}\n');
+    const segundo = commit('segundo');
+    expect(await exec('install', { commit: primeiro })).toBe(0);
+    expect(git(copia(), 'rev-parse', 'HEAD')).toBe(primeiro);
+
+    fake.folderVersion = '0.3.0';
+    expect(await exec('install')).toBe(0);
+    expect(git(copia(), 'rev-parse', 'HEAD')).toBe(segundo);
+    expect(installed('.claude')[MOD_PLUGIN].version).toBe('0.3.0');
+  });
+
+  it('--dry-run não cria a cópia', async () => {
+    expect(await exec('install', { dryRun: true })).toBe(0);
+    expect(existsSync(copia())).toBe(false);
+  });
+
+  it('uninstall também remove a cópia fixa', async () => {
+    await exec('install');
+    expect(existsSync(copia())).toBe(true);
+    expect(await exec('uninstall')).toBe(0);
+    expect(existsSync(copia())).toBe(false);
+    expect(git(root, 'worktree', 'list')).not.toContain('mod-instalado');
   });
 });
 
@@ -287,28 +359,14 @@ describe('instalar.ts (puras)', () => {
     expect(parseArgs(['install'])).toMatchObject({ command: 'install', permissions: false });
     expect(parseArgs(['install', '--com-permissoes'])).toMatchObject({ permissions: true });
     expect(() => parseArgs(['install', '--sem-permissoes'])).toThrow(/opção desconhecida/);
+    expect(parseArgs(['install', '--commit', 'abc'])).toMatchObject({ commit: 'abc' });
+    expect(() => parseArgs(['install', '--commit'])).toThrow(/--commit/);
     expect(parseArgs(['-h'])).toBe('help');
   });
 
   it('versionAtLeast', () => {
     expect(versionAtLeast('2.1.287', '2.1.287')).toBe(true);
     expect(versionAtLeast('2.1.286', '2.1.287')).toBe(false);
-  });
-
-  it('planUpdate (docker:up) só atualiza o que já está instalado', () => {
-    const state = { marketplace: { name: 'expediente', path: '/r' }, plugins: [] };
-    expect(planUpdate(state, { root: '/r', version: '0.2.0', sameDir: (a, b) => a === b })).toEqual({ action: 'none', installed: false });
-  });
-
-  it('updateInstalledMods sem o claude: avisa e não derruba', () => {
-    const res = updateInstalledMods([{ dir: '/x/.claude', label: 'conta' }], {
-      env: {},
-      home: '/x',
-      root: '/r',
-      version: '0.2.0',
-      claude: () => ({ code: null, stdout: '', stderr: '', error: 'sem claude' }),
-    });
-    expect(res.unavailable).toBe(true);
   });
 });
 

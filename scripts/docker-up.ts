@@ -13,21 +13,18 @@
 //    também somente leitura. Passa EXPEDIENTE_CLAUDE_DIRS, EXPEDIENTE_ACCOUNTS, EXPEDIENTE_USAGE_DIR (/host/uso)
 //    e o fuso do host (TZ) ao container.
 // 3. Roda `docker compose up -d --build`, espera o /api/health e mostra a URL.
-// 4. Atualiza o mod do Expediente nas contas onde ele JÁ está instalado com outra versão (depois de
-//    atualizar o Expediente): relê o marketplace desta pasta e roda `claude plugin update` com o
-//    CLAUDE_CONFIG_DIR de cada conta. Nunca instala sozinho; se o `claude` faltar ou falhar, é só um aviso.
 //
 // Uso de 5h/semanal ao vivo: o mod do Expediente (npm run instalar; Claude Code 2.1.287+) grava os números em
 // ~/.expediente/host/uso, que o container lê em /host/uso. Sem ele, vale o cache do /usage lido das contas ao subir.
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { AccountInfo, SourceInfo } from '../shared/types';
 import { detectAccounts, discoverClaudeDirs, type DetectedAccount } from '../server/accounts/detect';
 import { PUBLICACAO_ARQUIVO, planejarConfirmacao } from '../server/publicacao';
-import { makeClaudeRunner, MIN_CLAUDE_VERSION, readPackageVersion, updateInstalledMods, type ModUpdateResult } from './instalar';
+import { installDir, MIN_CLAUDE_VERSION } from './instalar';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const HOME = process.env.HOME || homedir();
@@ -268,11 +265,11 @@ export function renderOverride(mounts: AccountMount[], generatedAt: Date = new D
 }
 
 /**
- * Dica do fim do docker:up sobre o mod: só aparece quando nenhuma conta tem o mod instalado (quem já instalou
- * recebe a atualização automática, ou um aviso). Sem o CLI do Claude Code, não dá para saber: fica quieto.
+ * Dica do fim do docker:up sobre o mod: só aparece quando a cópia fixa do mod (npm run instalar) não existe.
+ * Atualizar o mod é rodar o instalar de novo; o docker:up não mexe nas contas.
  */
-export function modHint(mod: Pick<ModUpdateResult, 'installed' | 'unavailable'>): string[] {
-  if (mod.installed || mod.unavailable) return [];
+export function modHint(installed: boolean): string[] {
+  if (installed) return [];
   return [
     `  Uso de 5h/semanal ao vivo: npm run instalar (uma vez; Claude Code ${MIN_CLAUDE_VERSION}+). Sem ele, vale o cache do /usage.`,
   ];
@@ -461,24 +458,8 @@ async function up(opts: Options, port: number): Promise<void> {
     const state = src.ok ? plural(src.sessions, 'sessão aberta', 'sessões abertas') : `erro ao ler (${src.error ?? 'desconhecido'})`;
     say(`  Conta ${acc.short} (${acc.id}): ${state}${usage ? ` · ${USAGE_STATUS[usage]}` : ''}`);
   }
-  for (const line of modHint(updateMods(dirs, accounts))) say(line);
+  for (const line of modHint(existsSync(installDir(HOME)))) say(line);
   say('  Logs: npm run docker:logs · Parar: npm run docker:down');
-}
-
-/** Atualiza o mod de quem já instalou (ver instalar.ts). Nada aqui derruba o docker:up. */
-function updateMods(dirs: string[], accounts: DetectedAccount[]): Pick<ModUpdateResult, 'installed' | 'unavailable'> {
-  try {
-    const labels = dirs.map((dir, i) => ({ dir, label: `Conta ${accounts[i]?.short ?? tildify(dir)}` }));
-    const mod = updateInstalledMods(labels, { env: process.env, home: HOME, root: ROOT, version: readPackageVersion(ROOT), claude: makeClaudeRunner() });
-    for (const l of mod.lines) {
-      if (l.level === 'warn') warn(l.text);
-      else say(`  ${l.text}`);
-    }
-    return mod;
-  } catch (err) {
-    warn(`não consegui conferir o mod do Expediente (${(err as Error).message}).`);
-    return { installed: false, unavailable: true };
-  }
 }
 
 async function main(): Promise<void> {
