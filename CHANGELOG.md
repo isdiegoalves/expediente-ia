@@ -20,6 +20,11 @@ do meio (0.**3**.0).
   (`~/.expediente/mod-instalado`) em vez deste checkout, e o `docker:up` não atualiza mais o mod: atualizar é rodar
   `npm run instalar` de novo. Saiu também a migração do nome antigo (pasta de estado, container e plugins `codetown`).
 
+### Adicionado
+
+- Verificação automática no GitHub (Actions): a cada push na `main` e a cada pull request, o projeto roda
+  `typecheck`, testes e build no Node 22.12, a versão mínima que o `package.json` declara.
+
 ### Corrigido
 
 - Quando um arquivo de transcript era apagado e outro, maior, era criado no lugar, o Expediente podia não perceber a
