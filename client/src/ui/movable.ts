@@ -57,9 +57,13 @@ export class Movable {
     const saved = load(opts.key);
     if (saved && this.allowed()) this.float(saved, false);
     addEventListener('resize', () => {
-      if (!this.box) return;
-      if (!this.allowed()) this.dock();
-      else this.apply(this.box);
+      // Tela estreita: volta ao lugar sem esquecer a posição guardada, que volta quando a tela alarga de novo.
+      if (!this.allowed()) this.unfloat();
+      else if (this.box) this.apply(this.box);
+      else {
+        const saved = load(opts.key);
+        if (saved) this.float(saved, true);
+      }
     });
     // Redimensionado pelo canto (resize: both): guarda o tamanho novo.
     if (typeof ResizeObserver === 'function') {
@@ -106,13 +110,22 @@ export class Movable {
     }
   }
 
-  /** Volta ao lugar padrão. */
+  /** Volta ao lugar padrão (e esquece a posição guardada). */
   dock(): void {
     if (!this.box) return;
+    save(this.opts.key, null);
+    this.unfloat();
+  }
+
+  /** Volta ao lugar padrão sem mexer na posição guardada. */
+  private unfloat(): void {
+    if (!this.box) return;
+    // Um salvamento pendente gravaria a caixa que já não vale (ou apagaria a guardada).
+    if (this.saveTimer) clearTimeout(this.saveTimer);
+    this.saveTimer = null;
     this.box = null;
     this.el.classList.remove('is-floating');
     for (const p of ['left', 'top', 'width', 'height']) this.el.style.removeProperty(p);
-    save(this.opts.key, null);
     this.opts.onChange?.(false);
     this.opts.onMove?.();
   }
@@ -145,7 +158,8 @@ export class Movable {
         b.x = z.start.x + z.start.w - b.w;
       }
       if (edge.includes('n')) {
-        b.h = Math.max(MIN_H, z.start.h - dy);
+        // Para no limite de cima: passando dele, a borda de baixo desceria.
+        b.h = Math.max(MIN_H, Math.min(z.start.h - dy, z.start.y + z.start.h - this.minTop()));
         b.y = z.start.y + z.start.h - b.h;
       }
       this.apply(b);
@@ -208,11 +222,21 @@ export class Movable {
     else if (!was) queueMicrotask(() => this.opts.onChange?.(true));
   }
 
+  /**
+   * Limite de cima: logo abaixo da barra superior, como os painéis no lugar. Por cima dela, a barra da janela
+   * ficaria coberta e não haveria por onde arrastar de volta (nem fechar, no terminal).
+   */
+  private minTop(): number {
+    const s = getComputedStyle(this.el);
+    return (parseFloat(s.getPropertyValue('--top-h')) || 0) + (parseFloat(s.getPropertyValue('--gap')) || 0);
+  }
+
   /** Aplica a caixa, mantendo um pedaço da janela (e a barra) dentro da tela. */
   private apply(b: Box): void {
     const w = Math.max(MIN_W, Math.min(b.w, innerWidth));
     const x = Math.min(innerWidth - KEEP_VISIBLE, Math.max(KEEP_VISIBLE - w, b.x));
-    const y = Math.min(innerHeight - MIN_H, Math.max(0, b.y));
+    // O limite de cima vence o de baixo: numa janela baixa demais, a barra continua alcançável.
+    const y = Math.max(this.minTop(), Math.min(innerHeight - MIN_H, b.y));
     // A altura encolhe para a janela não passar da borda de baixo.
     const h = Math.max(MIN_H, Math.min(b.h, innerHeight - y - 8));
     this.box = { x, y, w, h };
