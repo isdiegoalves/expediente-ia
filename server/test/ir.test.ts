@@ -149,7 +149,7 @@ describe('GET /api/agentes/:id/ir', () => {
     agente('a:5', { entrypoint: 'claude-desktop', encerrado: true, sessionId: 'sessao-do-app' });
     const cli = await ir('a:4');
     expect(cli.estado).toBe('encerrado');
-    expect(cli.comando).toBe(`cd /p/loja && claude --resume ${SESSAO}`);
+    expect(cli.comando).toBe(`cd '/p/loja' && claude --resume ${SESSAO}`);
     expect(cli.aviso).toBeUndefined();
     expect(cli.links.map((l) => l.href)).toEqual(['claude-cli://open?cwd=%2Fp%2Floja', `claude://resume?session=${SESSAO}`]);
     const app = await ir('a:5');
@@ -161,6 +161,59 @@ describe('GET /api/agentes/:id/ir', () => {
     const j = await ir('a:6');
     expect(j.comando).toContain("cd '/p/minha loja/");
     expect(JSON.stringify(j)).not.toContain(GHP);
+  });
+
+  const CWDS_HOSTIS = ['/p/a\nrm -rf ~', '/p/a\rrm', '/p/\x1b[2Kx', '/p/a\x00b', '/p/a\x7fb', '/p/a\u202eb', '/p/a\u2066b\u2069'];
+
+  it('cwd com controle ou direção do Unicode: comando sem o cd e sem link de abrir o projeto', async () => {
+    for (const [i, cwd] of CWDS_HOSTIS.entries()) {
+      agente(`a:h${i}`, { entrypoint: 'cli', encerrado: true, cwd });
+      agente(`a:p${i}`, { entrypoint: 'claude-desktop', encerrado: true, cwd, sessionId: `app-${i}` });
+      const cli = await ir(`a:h${i}`);
+      expect(cli.comando, cwd).toBe(`claude --resume ${SESSAO}`);
+      expect(cli.links.map((l) => l.href), cwd).toEqual([`claude://resume?session=${SESSAO}`]);
+      const app = await ir(`a:p${i}`);
+      expect(app.comando, cwd).toBe(`claude --resume app-${i}`);
+      expect(app.links, cwd).toEqual([]);
+    }
+  });
+
+  it('cwd com aspas e metacaracteres de shell (sem controle) sai inerte entre aspas simples', async () => {
+    const esperado: Record<string, string> = {
+      "/p/'; rm -rf ~ #": `cd '/p/'\\''; rm -rf ~ #' && claude --resume ${SESSAO}`,
+      '/p/$(id)': `cd '/p/$(id)' && claude --resume ${SESSAO}`,
+      '/p/`id`': `cd '/p/\`id\`' && claude --resume ${SESSAO}`,
+      "/p/it's": `cd '/p/it'\\''s' && claude --resume ${SESSAO}`,
+      '/p/a;b': `cd '/p/a;b' && claude --resume ${SESSAO}`,
+    };
+    for (const [i, [cwd, comando]] of Object.entries(esperado).entries()) {
+      agente(`a:q${i}`, { entrypoint: 'cli', encerrado: true, cwd });
+      expect((await ir(`a:q${i}`)).comando, cwd).toBe(comando);
+    }
+  });
+
+  it('todo comando devolvido pelo /ir casa com uma gramática fechada', async () => {
+    const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+    const gramatica = new RegExp(
+      `^(?:cd '(?:[^'\\x00-\\x1f\\x7f-\\x9f\\u202a-\\u202e\\u2066-\\u2069]|'\\\\'')+' && claude --resume ${UUID}|claude --resume ${UUID}(?: --fork-session)?|claude attach ${UUID})$`,
+    );
+    const cwds = ['/p/loja', "/p/it's", '/p/a b', "/p/'; rm -rf ~ #", '/p/$(id)', '/p/`id`', ...CWDS_HOSTIS];
+    const casos: { id: string; extra: Parameters<typeof agente>[1] }[] = [];
+    for (const [i, cwd] of cwds.entries())
+      for (const [j, e] of [
+        { entrypoint: 'claude-desktop' },
+        { entrypoint: 'cli', kind: 'bg' },
+        { entrypoint: 'cli', kind: 'interactive' },
+        { entrypoint: 'cli', encerrado: true },
+        { entrypoint: 'claude-desktop', encerrado: true },
+      ].entries())
+        casos.push({ id: `a:g${i}-${j}`, extra: { ...e, cwd, sessionId: '0a1b2c3d-1111-2222-3333-444455556666' } });
+    for (const c of casos) {
+      agente(c.id, c.extra);
+      const { comando } = await ir(c.id);
+      expect(comando, `${c.id} ${c.extra.cwd}`).toMatch(gramatica);
+    }
+    expect(casos.length).toBe(cwds.length * 5);
   });
 
   it('o caminho completo e o comando nunca vão para o snapshot', async () => {

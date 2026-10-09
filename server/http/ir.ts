@@ -49,8 +49,11 @@ export class NonceStore {
   }
 }
 
+/** Controle (C0, DEL, C1), separadores de linha e marcas de direção do Unicode: o que se cola não é o que se vê. */
+const INVISIVEL = /[\x00-\x1f\x7f-\x9f\u2028\u2029\u202a-\u202e\u2066-\u2069]/;
+
 function entreAspas(s: string): string {
-  return /^[A-Za-z0-9_\/.@:+=,-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`;
+  return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
 function montar(src: NonNullable<ReturnType<Office['irSource']>>): Omit<IrInfo, 'nonce'> | undefined {
@@ -58,17 +61,20 @@ function montar(src: NonNullable<ReturnType<Office['irSource']>>): Omit<IrInfo, 
   const { sessionId, vivo, origin } = src;
   const cwd = maskSecrets(src.cwd);
   const noApp = origin === 'app desktop';
-  const links = [
-    noApp
-      ? { rotulo: 'Abrir o projeto no app', href: `claude://code/new?folder=${encodeURIComponent(cwd)}` }
-      : { rotulo: 'Abrir o projeto no terminal', href: `claude-cli://open?cwd=${encodeURIComponent(cwd)}` },
-  ];
+  const cwdLimpo = !INVISIVEL.test(cwd);
+  const links = cwdLimpo
+    ? [
+        noApp
+          ? { rotulo: 'Abrir o projeto no app', href: `claude://code/new?folder=${encodeURIComponent(cwd)}` }
+          : { rotulo: 'Abrir o projeto no terminal', href: `claude-cli://open?cwd=${encodeURIComponent(cwd)}` },
+      ]
+    : [];
   const direto = vivo && noApp && src.appSessionId && ID_APP.test(src.appSessionId) ? `claude://code/continue?session=${src.appSessionId}` : undefined;
   if (direto && urlPermitida(direto)) links.unshift({ rotulo: 'Abrir a sessão no app', href: direto });
   const base = { estado: vivo ? ('vivo' as const) : ('encerrado' as const), ...(origin ? { origin } : {}) };
   if (!vivo) {
     if (origin === 'terminal') links.push({ rotulo: 'Retomar no app', href: `claude://resume?session=${sessionId}` });
-    return { ...base, comando: `cd ${entreAspas(cwd)} && claude --resume ${sessionId}`, links };
+    return { ...base, comando: `${cwdLimpo ? `cd ${entreAspas(cwd)} && ` : ''}claude --resume ${sessionId}`, links };
   }
   if (!noApp && (src.kind === 'bg' || src.kind === 'background')) return { ...base, comando: `claude attach ${sessionId}`, links };
   return { ...base, comando: `claude --resume ${sessionId} --fork-session`, aviso: AVISO_FORK, links };
