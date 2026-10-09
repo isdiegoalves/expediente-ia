@@ -5,8 +5,7 @@ lista o marketplace `expediente` com dois plugins, um em cada pasta daqui. As ve
 (o teste `server/test/mod.test.ts` falha se divergirem).
 
 Testado com o **Claude Code 2.1.293**. Mods (hooks em TypeScript carregados pelo próprio Claude Code) existem a
-partir da 2.1.287; a API ainda é "early access" e pode mudar entre versões. Em versões anteriores, use os
-instaladores de sempre (`npm run usage:install` e `npm run hooks:install`). A instalação está no README principal.
+partir da 2.1.287; a API ainda é "early access" e pode mudar entre versões. A instalação (`npm run instalar`) está no README principal.
 
 ## `expediente` — o mod
 
@@ -14,8 +13,7 @@ instaladores de sempre (`npm run usage:install` e `npm run hooks:install`). A in
 
 - **Uso do plano (5h e semanal):** no início da sessão e a cada `session.measure` (depois de cada turno e quando
   um limite anda um ponto) lê `$.session.usage().rateLimits` e grava `~/.expediente/host/uso/<conta>.json` (ou em
-  `EXPEDIENTE_USAGE_DIR`) no mesmo formato do tap de statusline, mais `"source": "mod"`. Substitui o
-  `npm run usage:install`: o seu statusline fica intocado. A conta é a pasta de `CLAUDE_CONFIG_DIR` (o primeiro
+  `EXPEDIENTE_USAGE_DIR`) no mesmo formato do tap de statusline, mais `"source": "mod"`. O seu statusline fica intocado. A conta é a pasta de `CLAUDE_CONFIG_DIR` (o primeiro
   item) ou `~/.claude`. Valores iguais gravados há menos de 10 s não são regravados; falha ao gravar = silêncio.
 - **"Precisa de você" embaixo do prompt:** a cada 5 s pergunta ao Expediente local
   (`GET http://127.0.0.1:<EXPEDIENTE_PORT ou 4848>/api/mod/summary`) quem está esperando, já sem esta sessão e os
@@ -68,7 +66,7 @@ Um hook `PermissionRequest` comum (sem mod), em `expediente-permissoes/hooks/hoo
 { "matcher": "*", "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/permission-hook.mjs\"", "timeout": 330, "statusMessage": "Aguardando resposta no Expediente" }] }
 ```
 
-O script `hooks/permission-hook.mjs` é o mesmo que o `npm run hooks:install` instala (fonte única; Node puro, só
+O script `hooks/permission-hook.mjs` é o único script do hook (fonte única; Node puro, só
 `node:*`, porque o Claude Code copia apenas a pasta do plugin para o cache). Ele manda o pedido ao Expediente local
 e espera a resposta por até 5 min; o diálogo continua no terminal e vale o que você responder primeiro. Sem o
 Expediente no ar ou sem nenhuma página aberta, sai na hora. Porta: `EXPEDIENTE_PORT` (padrão 4848); espera:

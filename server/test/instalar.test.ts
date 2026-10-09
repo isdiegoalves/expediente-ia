@@ -318,8 +318,6 @@ describe('nenhum código do repositório grava em settings.json', () => {
     });
   const ALVO = /settings(\.local)?\.json/;
   const ESCRITA = /\b(writeFile|writeFileSync|appendFile|appendFileSync|rename|renameSync|copyFile|copyFileSync|cp|cpSync|truncate|truncateSync|createWriteStream|writeSettings)\b/;
-  // Enquanto os instaladores antigos não saem, são os únicos que podem constar aqui.
-  const EXCECOES = ['scripts/hooks-install.ts', 'scripts/statusline-install.ts', 'scripts/mod-install.ts'];
 
   it('em scripts/ e server/ (fora dos testes), nenhum arquivo cita settings.json junto de uma escrita em disco', () => {
     const culpados = [...arquivos(join(RAIZ, 'scripts')), ...arquivos(join(RAIZ, 'server'))]
@@ -327,8 +325,7 @@ describe('nenhum código do repositório grava em settings.json', () => {
         const texto = readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
         return ALVO.test(texto) && ESCRITA.test(texto);
       })
-      .map((f) => relative(RAIZ, f))
-      .filter((f) => !EXCECOES.includes(f));
+      .map((f) => relative(RAIZ, f));
     expect(culpados).toEqual([]);
   });
 });

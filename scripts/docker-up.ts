@@ -21,10 +21,8 @@
 //    atualizar o Expediente): relê o marketplace desta pasta e roda `claude plugin update` com o
 //    CLAUDE_CONFIG_DIR de cada conta. Nunca instala sozinho; se o `claude` faltar ou falhar, é só um aviso.
 //
-// Uso de 5h/semanal ao vivo: o mod do Expediente (npm run mod:install; Claude Code 2.1.287+) ou, em
-// versões anteriores, o tap de statusline (npm run usage:install). Os dois gravam os números em
-// ~/.expediente/host/uso, que o container lê em /host/uso. Sem eles, vale o cache do /usage
-// lido das contas ao subir.
+// Uso de 5h/semanal ao vivo: o mod do Expediente (npm run instalar; Claude Code 2.1.287+) grava os números em
+// ~/.expediente/host/uso, que o container lê em /host/uso. Sem ele, vale o cache do /usage lido das contas ao subir.
 import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -34,7 +32,7 @@ import type { AccountInfo, SourceInfo } from '../shared/types';
 import { detectAccounts, discoverClaudeDirs, type DetectedAccount } from '../server/accounts/detect';
 import { PUBLICACAO_ARQUIVO, planejarConfirmacao } from '../server/publicacao';
 import { describeStateMigration, LEGACY_NAME, legacyEnvWarning, migrateLegacyStateDir } from '../server/legacy';
-import { makeClaudeRunner, MIN_CLAUDE_VERSION, readPackageVersion, updateInstalledMods, type ModUpdateResult } from './mod-install';
+import { makeClaudeRunner, MIN_CLAUDE_VERSION, readPackageVersion, updateInstalledMods, type ModUpdateResult } from './instalar';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const HOME = process.env.HOME || homedir();
@@ -293,8 +291,7 @@ export function renderOverride(mounts: AccountMount[], generatedAt: Date = new D
 export function modHint(mod: Pick<ModUpdateResult, 'installed' | 'unavailable'>): string[] {
   if (mod.installed || mod.unavailable) return [];
   return [
-    `  Uso de 5h/semanal ao vivo e responder pelo escritório: npm run mod:install (uma vez; Claude Code ${MIN_CLAUDE_VERSION}+).`,
-    '  Em versões anteriores do Claude Code: npm run usage:install e npm run hooks:install. Sem eles, vale o cache do /usage.',
+    `  Uso de 5h/semanal ao vivo: npm run instalar (uma vez; Claude Code ${MIN_CLAUDE_VERSION}+). Sem ele, vale o cache do /usage.`,
   ];
 }
 
@@ -658,7 +655,7 @@ async function up(opts: Options, port: number): Promise<void> {
   say('  Logs: npm run docker:logs · Parar: npm run docker:down');
 }
 
-/** Atualiza o mod de quem já instalou (ver mod-install.ts). Nada aqui derruba o docker:up. */
+/** Atualiza o mod de quem já instalou (ver instalar.ts). Nada aqui derruba o docker:up. */
 function updateMods(dirs: string[], accounts: DetectedAccount[]): Pick<ModUpdateResult, 'installed' | 'unavailable'> {
   try {
     const labels = dirs.map((dir, i) => ({ dir, label: `Conta ${accounts[i]?.short ?? tildify(dir)}` }));

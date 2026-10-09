@@ -10,6 +10,14 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Alterado
+
+- **A instalação do mod é só pelo `claude plugin`.** `npm run instalar` (e `instalar:status` e `desinstalar`) substitui
+  `mod:install`, `usage:install` e `hooks:install` e seus pares: o Expediente deixa de editar o `settings.json` das
+  contas. O plugin de permissões passa a ser opcional (`npm run instalar -- --com-permissoes`) e é recusado na conta
+  onde o plugin de permissões do projeto de origem estiver ativo. Antes de instalar, roda `claude plugin validate --strict`; Claude Code
+  anterior ao 2.1.287 é recusado.
+
 ## [0.4.0] - 2026-10-08
 
 ### Alterado

@@ -14,8 +14,8 @@
 //    Sem comando original, não imprime nada.
 //
 // Regras: Node puro e sem dependências; qualquer falha na captura é ignorada em silêncio — o
-// statusline nunca pode quebrar nem ficar lento por causa do Expediente. Instalação automática
-// (com backup do settings.json): npm run usage:install.
+// statusline nunca pode quebrar nem ficar lento por causa do Expediente. Não há mais instalador: o mod do
+// Expediente (npm run instalar) grava o mesmo arquivo.
 import { spawn } from 'node:child_process';
 import { mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';

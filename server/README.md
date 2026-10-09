@@ -16,7 +16,7 @@ npm run build && npm start   # produção: serve dist/client
 | Atividades, tarefas, título, números | `<config>/projects/<cwd>/<sessionId>.jsonl` (lê o último ~1 MB no boot; o começo em segundo plano) |
 | Subagentes (inclusive de workflows) | `<config>/projects/<cwd>/<sessionId>/subagents/**/agent-*.jsonl` + `.meta.json` |
 | Conta (e-mail, organização) e cache de uso | `~/.claude.json` (conta padrão) ou `<config>/.claude.json` — só esses campos |
-| Uso ao vivo (5h e semanal) | `~/.expediente/host/uso/<conta>.json`, gravado pelo mod do Expediente (`npm run mod:install`) ou pelo `scripts/statusline-tap.mjs` (`npm run usage:install`) |
+| Uso ao vivo (5h e semanal) | `~/.expediente/host/uso/<conta>.json`, gravado pelo mod do Expediente (`npm run instalar`) ou pelo `scripts/statusline-tap.mjs` |
 | Atalho da conta (`c`, `d`...) | linhas `alias x='... claude ...'` de `~/.zshrc`, `~/.bashrc`, `~/.zprofile`, `~/.bash_profile` |
 
 **Forks** (subagentes que herdam o contexto do pai): o transcript começa com uma linha `fork-context-ref`, a
@@ -196,8 +196,7 @@ trava do terminal (recurso ligado e `Host` local, senão 403) e só aceitam `GET
 ## Responder pelo escritório
 
 O hook `PermissionRequest` do Claude Code (`mod/expediente-permissoes/hooks/permission-hook.mjs`, com `matcher: "*"`:
-pelo plugin `expediente-permissoes` no Claude Code 2.1.287+ ou instalado em `<conta>/settings.json` por
-`npm run hooks:install`) roda **junto** com o diálogo de permissão do terminal: vale o que
+pelo plugin `expediente-permissoes`, Claude Code 2.1.287+) roda **junto** com o diálogo de permissão do terminal: vale o que
 responder primeiro. Em subagentes em segundo plano o Claude Code roda o hook antes e só mostra o diálogo depois que
 ele sai. O hook manda o pedido (`session_id`, `agent_id`/`agent_type`, `cwd`, `tool_name`, `tool_input` com textos
 cortados, `permission_suggestions` e o próprio `timeout_ms`) e espera; com `decided` imprime
@@ -248,7 +247,7 @@ Duas fontes, ambas arquivos locais (nada de credenciais nem chamadas de rede); v
 
 - `statusline` (**recomendada**, `accounts/statusline.ts`): o Claude Code envia ao comando de statusline um JSON
   com `rate_limits` (`five_hour`/`seven_day`: `used_percentage` e `resets_at` em segundos). O
-  `scripts/statusline-tap.mjs`, instalado na frente do statusline de cada conta por `npm run usage:install`,
+  `scripts/statusline-tap.mjs`, quando posto na frente do statusline de uma conta,
   grava só esses números em `~/.expediente/host/uso/<conta>.json` (casado com a conta pelo `configDir`; senão pelo
   `accountId`). No Claude Code 2.1.287+ o mod do Expediente grava o mesmo arquivo (ver abaixo);
 - `cache`: o `cachedUsageUtilization` que o próprio Claude Code grava ao rodar `/usage`, relido a cada 60 s.

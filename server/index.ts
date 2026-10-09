@@ -210,7 +210,7 @@ server.listen(config.port, config.host, () => {
   if (off === undefined) log.info('   Terminal somente leitura: ligado (acesso só local).');
   else log.info(`   Terminal somente leitura: desligado (${terminalOffReason(process.env) ?? off})${terminalOffReason(process.env) ? '' : '; liga sozinho quando o docker-up confirmar a publicação'}.`);
   log.info(timeline ? `   Linha do tempo (timelapse): gravando em ${timelineDir}.` : '   Linha do tempo (timelapse): gravação desligada (EXPEDIENTE_TIMELINE).');
-  log.info(`   Responder pelo escritório: ${off === undefined ? 'ligado (precisa do mod: npm run mod:install; ou do hook antigo: npm run hooks:install)' : 'desligado (mesma trava do terminal)'}.`);
+  log.info(`   Responder pelo escritório: ${off === undefined ? 'ligado (precisa do plugin de permissões: npm run instalar -- --com-permissoes)' : 'desligado (mesma trava do terminal)'}.`);
 });
 
 let shuttingDown = false;

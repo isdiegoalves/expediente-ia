@@ -6,7 +6,6 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_TIMEOUT_S, hookCommand, hookEntry, STATUS_MESSAGE } from '../../scripts/hooks-install';
 
 const ROOT = resolve(__dirname, '../..');
 const PLUGINS = ['expediente', 'expediente-permissoes'];
@@ -92,13 +91,12 @@ describe('plugin expediente-permissoes', () => {
   const dir = join(ROOT, 'mod/expediente-permissoes');
   const hooks = settingsHooks(json('mod/expediente-permissoes/hooks/hooks.json'));
 
-  it('o mesmo hook do instalador: PermissionRequest, matcher "*", tempo limite e mensagem iguais', () => {
-    const installed = hookEntry(hookCommand('node', '/x/permission-hook.mjs', { port: 4848, timeoutS: DEFAULT_TIMEOUT_S }), { port: 4848, timeoutS: DEFAULT_TIMEOUT_S });
+  it('o hook: PermissionRequest, matcher "*", tempo limite e mensagem', () => {
     expect(hooks).toHaveLength(1);
     expect(hooks[0]).toEqual({
       event: 'PermissionRequest',
       matcher: '*',
-      hook: { type: 'command', command: 'node "${CLAUDE_PLUGIN_ROOT}/hooks/permission-hook.mjs"', timeout: installed.timeout, statusMessage: STATUS_MESSAGE },
+      hook: { type: 'command', command: 'node "${CLAUDE_PLUGIN_ROOT}/hooks/permission-hook.mjs"', timeout: 330, statusMessage: 'Aguardando resposta no Expediente' },
     });
   });
 

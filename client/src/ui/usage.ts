@@ -28,12 +28,8 @@ export function sourceLabel(u: NonNullable<AccountInfo['usage']>): string {
  */
 export const USAGE_SETUP_STEPS: readonly [string, string][] = [
   [
-    'npm run mod:install',
+    'npm run instalar',
     'Recomendado: instala o mod do Expediente no Claude Code (2.1.287 ou mais novo), que passa o uso de 5 h e da semana ao vivo. Rode na pasta do Expediente, no computador onde o Claude Code roda; nas sessões já abertas, `/reload-plugins`.',
-  ],
-  [
-    'npm run usage:install',
-    'No Claude Code anterior ao 2.1.287: liga um tap na linha de status, que passa os mesmos números ao vivo.',
   ],
   ['/usage', 'Sem instalar nada: rode `/usage` no Claude Code desta conta para atualizar o cache (os números envelhecem até a próxima vez).'],
 ];

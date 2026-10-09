@@ -164,45 +164,29 @@ Agora abra o Claude Code em qualquer projeto e veja o seu agente chegar pelo ele
 ### 3. Instale o mod do Expediente no Claude Code (recomendado)
 
 ```bash
-npm run mod:install                        # o mod e o plugin de permissões, em cada conta
-npm run mod:install -- --sem-permissoes    # só o mod, sem responder permissões pelo escritório
+npm run instalar                         # o mod, em cada conta
+npm run instalar -- --com-permissoes     # também o plugin de permissões (responder pelo escritório)
 ```
 
 O Expediente traz um [mod](https://code.claude.com/docs/en/plugins/mods/overview) (um plugin que roda dentro do
-Claude Code) e o instala em cada conta, pelo próprio `claude plugin`, a partir desta pasta. Com ele:
+Claude Code) e o instala em cada conta **só pelo `claude plugin`**, a partir desta pasta: o instalador nunca edita o
+`settings.json` de ninguém, nunca desinstala plugin do Habblaud e recusa o `expediente-permissoes` na conta onde o
+`habblaud-permissoes` estiver ativo (os dois responderiam o mesmo pedido). Com o mod:
 
 - o **uso de 5 horas e semanal** de cada conta aparece ao vivo no Expediente;
 - o terminal mostra uma linha quando **outra sessão precisa de você** (permissão ou resposta);
 - o comando **`/escritorio`** passa a existir no Claude Code;
-- dá para **aprovar ou recusar pelo escritório** os pedidos de permissão ("Do you want to…"), com o plugin
-  `expediente-permissoes` (veja [Responder pelo escritório](#responder-pelo-escritório)).
+- com `--com-permissoes`, dá para **aprovar ou recusar pelo escritório** os pedidos de permissão ("Do you want
+  to…"), com o plugin `expediente-permissoes` (veja [Responder pelo escritório](#responder-pelo-escritório)).
 
-Precisa do **Claude Code 2.1.287 ou mais novo** (`claude --version`). O mod roda dentro de cada sessão, com as suas
-permissões, e acessa só o que está listado em [`mod/README.md`](mod/README.md); para conferir sem rodar nada,
-`claude plugin validate mod/expediente` mostra os eventos que ele trata e as chamadas que faz. Sessões já abertas
-carregam o mod com `/reload-plugins` (ou ao reabrir). Se a conta tinha o jeito antigo (abaixo), o `mod:install` tira o
-tap e o hook do `settings.json` (com backup), porque o mod faz o mesmo. Confira com `npm run mod:status`; para
-desfazer: `npm run mod:uninstall`.
+Precisa do **Claude Code 2.1.287 ou mais novo** (`claude --version`); em versão anterior o instalador recusa a conta.
+Antes de tocar nas contas, ele roda `claude plugin validate --strict` nesta pasta. O mod roda dentro de cada sessão,
+com as suas permissões, e acessa só o que está listado em [`mod/README.md`](mod/README.md); para conferir sem rodar
+nada, `claude plugin validate mod/expediente` mostra os eventos que ele trata e as chamadas que faz. Sessões já
+abertas carregam o mod com `/reload-plugins` (ou ao reabrir). Confira com `npm run instalar:status`; para desfazer:
+`npm run desinstalar`.
 
-> O mod é lido desta pasta. Se mover a pasta, rode `npm run mod:install` de novo.
-
-<details>
-<summary><b>Claude Code anterior ao 2.1.287: o jeito antigo</b></summary>
-
-Sem mods, o uso ao vivo e o responder pelo escritório vêm de dois instaladores que editam o `settings.json` de cada
-conta (com backup antes):
-
-```bash
-npm run usage:install    # põe um "tap" na frente do statusline de cada conta, que captura o uso de 5h/semanal
-npm run hooks:install    # acrescenta o hook PermissionRequest, para responder permissões pelo escritório
-```
-
-O seu statusline continua aparecendo igual. Para desfazer: `npm run usage:uninstall` e `npm run hooks:uninstall`.
-Os dois apontam para esta pasta: se mover a pasta, rode-os de novo (até lá, o statusline das contas mostra erro).
-Quando atualizar o Claude Code, troque pelo mod: o `npm run mod:install` tira o tap e o hook antigos (com backup) para
-não ficarem dois capturando o uso ou respondendo o mesmo pedido.
-
-</details>
+> O mod é lido desta pasta. Se mover a pasta, rode `npm run instalar` de novo.
 
 ### Atualizar
 
@@ -215,11 +199,11 @@ versão também estão no [`CHANGELOG.md`](CHANGELOG.md)). Para atualizar:
 ```bash
 git pull
 npm install
-npm run docker:up        # ou: npm run build && npm start (e depois npm run mod:install)
+npm run docker:up        # ou: npm run build && npm start (e depois npm run instalar)
 ```
 
 O `docker:up` também atualiza o mod nas contas em que ele já está instalado (nunca instala sozinho) e avisa:
-"Mod atualizado para 0.3.0 na Conta D; sessões abertas: /reload-plugins". No modo Node, rode `npm run mod:install`
+"Mod atualizado para 0.3.0 na Conta D; sessões abertas: /reload-plugins". No modo Node, rode `npm run instalar`
 depois de atualizar. Para não consultar o GitHub, use `EXPEDIENTE_UPDATE_CHECK=0` (no `.env`, para o Docker).
 
 #### Vindo do CodeTown
@@ -228,15 +212,15 @@ O Expediente se chamava **CodeTown** até a 0.3.2. Depois do `git pull`, rode um
 
 ```bash
 npm install
-npm run mod:install      # troca o marketplace e os plugins codetown pelos expediente, em cada conta
+npm run instalar         # troca o marketplace e os plugins codetown pelos expediente, em cada conta
 npm run docker:up        # tira o container codetown e copia os dados do volume antigo para o novo
 ```
 
-- **Mod:** até o `mod:install`, o Claude Code das contas reclama do marketplace `codetown` (as pastas
+- **Mod:** até o `instalar`, o Claude Code das contas reclama do marketplace `codetown` (as pastas
   `mod/codetown*` mudaram de nome). O `docker:up` avisa, mas não troca sozinho.
 - **Docker:** o volume antigo (`codetown_codetown-data`) fica intacto. Depois de conferir que os nomes dos personagens
   vieram, apague-o com `docker volume rm codetown_codetown-data`, e a imagem antiga com `docker image rm codetown:local`.
-- **Pasta local:** `~/.codetown` vira `~/.expediente` sozinha (no servidor, no `docker:up` e no `mod:install`).
+- **Pasta local:** `~/.codetown` vira `~/.expediente` sozinha (no servidor, no `docker:up` e no `instalar`).
 - **Navegador:** preferências e moedinhas passam para as chaves novas na primeira vez que a página abre.
 - **Variáveis:** as `CODETOWN_*` não valem mais; renomeie para `EXPEDIENTE_*` no `.env` (ex.: `EXPEDIENTE_PORT`). O
   servidor e o `docker:up` avisam quando acham uma antiga.
@@ -248,19 +232,18 @@ npm run docker:up        # tira o container codetown e copia os dados do volume 
 ### Desinstalar
 
 ```bash
-npm run mod:uninstall                       # tira o mod, o plugin de permissões e o marketplace das contas
+npm run desinstalar                         # tira o mod, o plugin de permissões e o marketplace das contas
 npm run docker:down                         # para o container
 docker volume rm expediente_expediente-data     # apaga os dados do container (nomes, linha do tempo e estatísticas)
 docker image rm expediente:local              # apaga a imagem
 rm -rf ~/.expediente                          # apaga os dados locais (uso capturado, nomes, linha do tempo e estatísticas)
 ```
 
-Depois é só apagar a pasta do projeto — rode o `mod:uninstall` **antes**, senão o Claude Code das contas passa a
-reclamar do marketplace que sumiu. Se você usou o jeito antigo, rode também `npm run usage:uninstall` (devolve o
-statusline original) e `npm run hooks:uninstall` (tira o hook de permissão); sem eles, o statusline das contas passa
-a dar erro (e o hook, a falhar em silêncio). O `mod:install`, que tira o tap e o hook antigos, e os instaladores e
-desinstaladores antigos deixam cópias `settings.json.expediente-backup-<data>` na pasta de cada conta (ex.:
-`~/.claude/`); apague-as se não precisar mais.
+Depois é só apagar a pasta do projeto — rode o `desinstalar` **antes**, senão o Claude Code das contas passa a
+reclamar do marketplace que sumiu. Se você instalou pelo jeito antigo (instaladores que editavam o `settings.json` e
+que não existem mais), o tap de statusline e o hook de permissão continuam lá: tire-os da conta à mão
+(`statusLine.command` e `hooks.PermissionRequest`). Esses instaladores deixaram cópias
+`settings.json.expediente-backup-<data>` na pasta de cada conta (ex.: `~/.claude/`); apague-as se não precisar mais.
 
 ## Como usar
 
@@ -352,8 +335,7 @@ Os personagens andam mais rápido no replay, mas nas velocidades altas quem fica
 chega à mesa; pular para outro ponto mostra todos já no lugar.
 ### Responder pelo escritório
 
-Com o plugin de permissões instalado (`npm run mod:install`, que o instala junto com o mod; no Claude Code anterior
-ao 2.1.287, `npm run hooks:install`), quando um agente pede permissão — rodar um comando, editar um arquivo, abrir
+Com o plugin de permissões instalado (`npm run instalar -- --com-permissoes`), quando um agente pede permissão — rodar um comando, editar um arquivo, abrir
 uma página — o pedido aparece no escritório: o personagem levanta a mão, um aviso com **Responder**
 surge na tela e, nos detalhes do agente, o cartão **Pede permissão** mostra o comando (ou o diff da edição) com os
 botões:
@@ -367,16 +349,14 @@ O diálogo continua aparecendo no terminal ao mesmo tempo, e vale o que você re
 terminal, o pedido some do escritório sozinho. O contador **precisam de você** (e a tecla `P`) leva até cada pedido.
 Perguntas do agente (`AskUserQuestion`) continuam só no terminal.
 
-- O pedido passa por um hook `PermissionRequest` do Claude Code (o do plugin, ou o do jeito antigo), que só o desvia
+- O pedido passa por um hook `PermissionRequest` do Claude Code (o do plugin), que só o desvia
   quando há **alguma página do Expediente aberta** neste computador; com o Expediente parado ou sem nenhuma página, ele
   sai na hora e o terminal segue normal.
 - Sem resposta pelo escritório em 5 minutos, o pedido volta a valer só no terminal (as opções do plugin estão em
-  [`mod/README.md`](mod/README.md); no jeito antigo, `npm run hooks:install -- --timeout 120` muda o tempo e
-  `--port`, a porta). Em **subagentes em segundo plano** o Claude Code só mostra o diálogo no terminal depois que o
+  [`mod/README.md`](mod/README.md)). Em **subagentes em segundo plano** o Claude Code só mostra o diálogo no terminal depois que o
   hook termina: responda pelo escritório ou use **Responder no terminal**.
 - Funciona com a mesma trava do terminal somente leitura: só com o Expediente acessível apenas pelo próprio
-  computador e aberto por `http://localhost`. Confira com `npm run mod:status` (ou `npm run hooks:status`, no jeito
-  antigo).
+  computador e aberto por `http://localhost`. Confira com `npm run instalar:status`.
 - No modo demonstração, os agentes fictícios também pedem permissão (de mentira), para experimentar.
 
 ### GitHub no escritório
@@ -443,27 +423,20 @@ alias d='CLAUDE_CONFIG_DIR=~/.claude-conta2 claude'
 
 vira **Conta C** e **Conta D**. Só valem atalhos de até 3 letras; contas sem atalho recebem A, B…
 
-**De onde vêm os números.** O jeito recomendado é o mod do Expediente (`npm run mod:install`, Claude Code 2.1.287+):
+**De onde vêm os números.** O jeito recomendado é o mod do Expediente (`npm run instalar`, Claude Code 2.1.287+):
 dentro de cada sessão, ele recebe do próprio Claude Code os limites do plano e guarda só os percentuais de 5 horas e
 da semana (e quando reiniciam) em `~/.expediente/host/uso/<conta>.json`. Os números chegam depois da próxima resposta de
-cada conta. Confira com `npm run mod:status`. Em versões anteriores do Claude Code, o tap de statusline
-(`npm run usage:install`) faz o mesmo pelo comando de statusline, no mesmo arquivo.
+cada conta. Confira com `npm run instalar:status`.
 
 <details>
-<summary><b>Detalhes do tap e do cache do /usage</b></summary>
+<summary><b>Detalhes do que o mod grava e do cache do /usage</b></summary>
 
-- O `usage:install` (jeito antigo) altera, em `<conta>/settings.json`, **só** o campo `statusLine.command`: o comando
-  original (ex.: `npx -y ccstatusline`) passa a rodar através de `node "<pasta do Expediente>/scripts/statusline-tap.mjs" --
-  <comando original>`. Uma cópia do arquivo vai antes para `settings.json.expediente-backup-<data>`. Se a conta não tinha
-  statusline, é criado um que só captura o uso. `npm run usage:install -- --dry-run` mostra o que mudaria sem gravar.
-- O tap repassa o mesmo JSON ao seu statusline (saída e código de saída continuam os dele) e grava **somente**
-  `{accountId, configDir, fetchedAt, five_hour, seven_day}` — nada de prompts, custos ou caminhos de projeto. Qualquer
-  falha na captura é ignorada: o statusline nunca quebra por causa do Expediente.
+- O mod grava **somente** `{accountId, configDir, fetchedAt, five_hour, seven_day}` — nada de prompts, custos ou
+  caminhos de projeto. Qualquer falha na captura é ignorada: a sessão nunca quebra por causa do Expediente.
 
 | Fonte | Como funciona |
 | --- | --- |
-| **Mod do Expediente** (recomendado) | Ao vivo, como descrito acima. Substitui o tap: o `mod:install` tira o tap da conta. |
-| Tap de statusline (Claude Code anterior ao 2.1.287) | Ao vivo, pelo comando de statusline, no mesmo arquivo. |
+| **Mod do Expediente** (recomendado) | Ao vivo, como descrito acima. |
 | Cache do `/usage` (sempre ligado) | O Claude Code grava o último resultado do comando `/usage`. No modo Node, o Expediente relê a cada 60 s; no Docker, vale o valor lido no último `npm run docker:up`. Só muda quando alguém roda `/usage`. |
 
 As fontes são arquivos locais: nenhuma lê senhas ou tokens, nem faz chamadas de rede. Vale sempre a fonte com os
@@ -569,11 +542,10 @@ das contas (letra, e-mail, organização) são lidos no host pelo `docker:up` e 
 
 ## Privacidade e segurança
 
-- **Só leitura:** o Expediente nunca grava nas pastas do Claude Code. As exceções são os instaladores, que você roda:
-  o `npm run mod:install` / `mod:uninstall` usa o próprio `claude plugin` (que registra o marketplace e os plugins
-  no `settings.json` e em `<conta>/plugins/`) e, na instalação, tira o tap e o hook antigos com backup; no jeito
-  antigo, o `npm run usage:install` / `usage:uninstall` muda só o `statusLine.command` do `settings.json` e o
-  `npm run hooks:install` / `hooks:uninstall`, só a lista `hooks.PermissionRequest` — sempre com backup antes.
+- **Só leitura:** o Expediente nunca grava nas pastas do Claude Code. A exceção é o instalador, que você roda:
+  o `npm run instalar` / `desinstalar` usa só o próprio `claude plugin` (que registra o marketplace e os plugins
+  no `settings.json` e em `<conta>/plugins/`); o Expediente nunca edita o `settings.json` por conta própria, e um teste
+  falha se algum arquivo do repositório passar a gravar nele.
 - **O mod:** roda dentro de cada sessão do Claude Code, com as suas permissões (como todo mod), e faz só o que está
   listado em [`mod/README.md`](mod/README.md) — `claude plugin validate mod/expediente` mostra os eventos e as chamadas,
   sem rodar nada. Grava só os percentuais de uso de 5 horas e da semana (e quando reiniciam) em
@@ -606,8 +578,8 @@ das contas (letra, e-mail, organização) são lidos no host pelo `docker:up` e 
   erro, tempo esgotado —, sai sem decidir: vale o terminal. O comando completo ou o diff só saem do servidor para
   quem abriu a página pelo próprio computador. "Sempre permitir" só aplica uma regra que o próprio Claude Code sugeriu
   para aquele pedido. Atenção: qualquer programa ou pessoa que consiga abrir `http://localhost:4848` nesta máquina
-  também consegue responder; em computadores compartilhados com outros usuários, não instale o hook
-  (`npm run mod:install -- --sem-permissoes`).
+  também consegue responder; em computadores compartilhados com outros usuários, não instale o plugin de
+  permissões (ele só entra com `npm run instalar -- --com-permissoes`).
 - **Estatísticas do Meu dia:** só números agregados (tempo por status, contagens, tokens, custo) com nomes de projeto,
   conta e agente, guardados em `EXPEDIENTE_DATA_DIR/stats/` por 30 dias — nada da conversa.
 - **O que aparece na tela:** resumos das atividades (ferramenta, arquivo, comando ou consulta), títulos das sessões,
@@ -627,7 +599,7 @@ das contas (letra, e-mail, organização) são lidos no host pelo `docker:up` e 
 | `claude plugin test mod/expediente` | Testes do mod (sem sessão, conta nem rede). |
 | `claude plugin validate .` | Valida o marketplace (`.claude-plugin/marketplace.json`); com `mod/expediente` ou `mod/expediente-permissoes`, valida o plugin e lista os eventos e as chamadas do mod. |
 | `claude --plugin-dir mod/expediente` | Abre uma sessão com o mod desta pasta, sem instalar (edite e rode `/reload-plugins`). |
-| `npm run mod:status` | Mostra, por conta, o marketplace, os plugins e as versões instaladas. |
+| `npm run instalar:status` | Mostra, por conta, o marketplace, os plugins e as versões instaladas. |
 | `npm run demo:timeline` | Gera uma linha do tempo fictícia (simulador do modo demonstração) para o timelapse. |
 | `npm run release` | Publica a versão do `package.json` no GitHub (tag e release com as notas do `CHANGELOG.md`). |
 
@@ -679,8 +651,8 @@ Só aparecem sessões **abertas** do Claude Code. Confira se há alguma rodando 
 <details>
 <summary><b>O uso aparece como "sem dados" ou "desatualizado"</b></summary>
 
-Rode `npm run mod:install` (ou, no Claude Code anterior ao 2.1.287, `npm run usage:install`) e confira com
-`npm run mod:status` (ou `npm run usage:status`). Os números chegam depois da próxima resposta numa sessão aberta
+Rode `npm run instalar` e confira com
+`npm run instalar:status`. Os números chegam depois da próxima resposta numa sessão aberta
 daquela conta; numa sessão aberta antes da instalação, rode `/reload-plugins` ou reabra a sessão. Um **—** no lugar
 do percentual quer dizer que a janela reiniciou desde a última coleta.
 
@@ -689,7 +661,7 @@ do percentual quer dizer que a janela reiniciou desde a última coleta.
 <details>
 <summary><b>O mod não carrega numa sessão</b></summary>
 
-Rode `npm run mod:status`: ele mostra a versão do Claude Code (o mod precisa da 2.1.287 ou mais nova) e, por conta,
+Rode `npm run instalar:status`: ele mostra a versão do Claude Code (o mod precisa da 2.1.287 ou mais nova) e, por conta,
 se o marketplace aponta para esta pasta e se os plugins estão instalados e ligados. Numa sessão aberta antes da
 instalação, rode `/reload-plugins`; o `/plugin` mostra, embaixo das abas, os mods carregados (ex.:
 `1 mod active · expediente`). Mods não rodam com `"disableAllHooks": true` no `settings.json` da conta nem com
@@ -719,12 +691,10 @@ diz se o terminal está ligado e, se não estiver, por quê.
 <details>
 <summary><b>O pedido de permissão não aparece no escritório</b></summary>
 
-Rode `npm run mod:status`: ele diz, por conta, se o plugin `expediente-permissoes` está instalado e ligado (e se
-sobrou o hook antigo junto, o que faria dois responderem) e se o Expediente está respondendo pedidos. No jeito antigo,
-`npm run hooks:status` diz se o hook está instalado e apontando para esta pasta. O pedido só é desviado com alguma
+Rode `npm run instalar:status`: ele diz, por conta, se o plugin `expediente-permissoes` está instalado e ligado e se o
+Expediente está respondendo pedidos. O pedido só é desviado com alguma
 página do Expediente aberta por `http://localhost` (ou `127.0.0.1`) e com o terminal somente leitura ligado (mesma
-trava). Sessões abertas antes da instalação carregam o plugin com `/reload-plugins` (ou ao reabrir). No jeito antigo,
-se o Expediente usa outra porta, reinstale com `npm run hooks:install -- --port <porta>`. Perguntas do agente
+trava). Sessões abertas antes da instalação carregam o plugin com `/reload-plugins` (ou ao reabrir). Perguntas do agente
 (`AskUserQuestion`) não passam pelo hook.
 
 </details>

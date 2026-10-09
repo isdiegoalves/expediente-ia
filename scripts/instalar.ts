@@ -144,7 +144,7 @@ export function accountEnv(env: NodeJS.ProcessEnv, dir: string, home: string): N
 }
 
 // ---------------------------------------------------------------------------------------------
-// Funções puras (testadas em server/test/mod-install.test.ts)
+// Funções puras (testadas em server/test/instalar.test.ts)
 // ---------------------------------------------------------------------------------------------
 
 type Rec = Record<string, unknown>;

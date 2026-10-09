@@ -6,5 +6,5 @@
   },
   // Os scripts do host em TypeScript (docker-up, instaladores do tap de statusline, do hook de permissão e do mod,
   // gerador do timelapse fictício, publicação de versão) também são verificados.
-  "include": [".", "../shared", "../scripts/docker-up.ts", "../scripts/instalar.ts", "../scripts/statusline-install.ts", "../scripts/hooks-install.ts", "../scripts/mod-install.ts", "../scripts/demo-timeline.ts", "../scripts/release.ts"]
+  "include": [".", "../shared", "../scripts/docker-up.ts", "../scripts/instalar.ts", "../scripts/demo-timeline.ts", "../scripts/release.ts"]
 }
