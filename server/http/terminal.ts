@@ -14,6 +14,7 @@ import { demoTerminalEntries } from '../../shared/demo/terminal';
 import type { Activity, AgentInfo, TerminalEntry, TerminalInit } from '../../shared/types';
 import { errMsg, log } from '../log';
 import type { Office } from '../model/office';
+import { sanitizeOutput } from '../model/saida';
 import { FileTail } from '../sources/tail';
 import { createTerminalParser, type TerminalParser } from '../sources/terminal';
 import { sendJson } from './app';
@@ -260,7 +261,7 @@ export class TerminalStreams {
     res.write('retry: 2000\n\n');
     const s: Stream = { res, timer: null };
     this.streams.add(s);
-    this.write(s, frame('init', init));
+    this.write(s, frame('init', sanitizeOutput(init)));
     s.timer = setInterval(() => this.pump(s, source, id), source.intervalMs);
     s.timer.unref?.();
     const drop = () => this.drop(s);
@@ -300,8 +301,8 @@ export class TerminalStreams {
       log.warnOnce(`terminal:${agentId}:${errMsg(err)}`, `Terminal de ${agentId}: ${errMsg(err)}`);
       return;
     }
-    if (r.init) this.write(s, frame('init', r.init));
-    if (r.append?.length) this.write(s, frame('append', r.append));
+    if (r.init) this.write(s, frame('init', sanitizeOutput(r.init)));
+    if (r.append?.length) this.write(s, frame('append', sanitizeOutput(r.append)));
     // O agente sumiu (demo desligado ou sessão simulada encerrada): o stream fica aberto só com pings.
     if (r.stop && s.timer) {
       clearInterval(s.timer);

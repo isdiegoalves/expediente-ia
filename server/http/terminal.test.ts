@@ -309,6 +309,26 @@ describe('terminal somente leitura: transporte', () => {
     }
   });
 
+  it('init e append saem com segredo mascarado; caminho dentro da conversa fica como está', async () => {
+    const env = await serve();
+    try {
+      const file = join(env.dir, 't.jsonl');
+      const ghp = 'ghp_aB3dE6gH9jK2mN5pQ8sT1vW4yZ7cF0hJ3kL6';
+      const msg = (id: string) => JSON.stringify({ id, text: `lê /p/loja/a.ts com ${ghp}` });
+      writeLines(file, [msg('a')]);
+      env.paths.set(MAIN, file);
+      const s = await open(env.base, route(MAIN));
+      await waitFor(() => expect(inits(s)).toHaveLength(1));
+      appendFileSync(file, `${msg('b')}\n`);
+      await waitFor(() => expect(appendIds(s)).toEqual(['b']));
+      expect(s.raw).not.toContain('ghp_aB3');
+      expect(s.raw).toContain('lê /p/loja/a.ts com gh*_***');
+      s.close();
+    } finally {
+      await env.close();
+    }
+  });
+
   it('transcript truncado ou substituído: parser novo e init de novo', async () => {
     let parsers = 0;
     const env = await serve({ streams: { createParser: () => (parsers++, fakeParser()) } });

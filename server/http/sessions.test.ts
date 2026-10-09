@@ -178,7 +178,9 @@ describe('histórico de sessões: listagem', () => {
         [OPEN_SID, true, '.claude:7'],
         [SID, false, undefined],
       ]);
-      expect(body.sessions[1]).toMatchObject({ account: '.claude', title: 'Carrinho de compras', projectDir: encodeCwd(CWD) });
+      expect(body.sessions[1]).toMatchObject({ account: '.claude', title: 'Carrinho de compras', projectDir: 'demo' });
+      expect(r.body).not.toContain(encodeCwd(CWD));
+      expect(r.body).not.toContain(CWD);
     } finally {
       await env.close();
     }

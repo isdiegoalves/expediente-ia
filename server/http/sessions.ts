@@ -5,7 +5,7 @@
 // precisa ser uma das conhecidas, o id precisa ter formato de UUID e o transcript precisa ficar dentro da
 // pasta projects/ da conta (sources/history.ts): nada de path traversal.
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { RecentSessionsResponse } from '../../shared/types';
+import type { RecentSession, RecentSessionsResponse } from '../../shared/types';
 import { errMsg, log } from '../log';
 import { sanitizeOutput } from '../model/saida';
 import { HISTORY_DAYS, HISTORY_LIMIT, type SessionHistory } from '../sources/history';
@@ -39,6 +39,14 @@ function decode(segment: string): string | undefined {
   }
 }
 
+const ultimo = (path: string, sep: string | RegExp) => path.split(sep).filter(Boolean).pop();
+
+/** `project` e `projectDir` (o cwd codificado, sem como recuperar as barras) saem só com o nome da pasta. */
+function pastaApenas(s: RecentSession): RecentSession {
+  const nome = s.project ? ultimo(s.project, '/') : undefined;
+  return { ...s, ...(s.project ? { project: nome ?? s.project } : {}), projectDir: nome ?? ultimo(s.projectDir, '-') ?? s.projectDir };
+}
+
 /** Atende /api/sessions/* (a rota já foi reconhecida pelo prefixo em http/app.ts). */
 export function handleSessionsRoute(req: IncomingMessage, res: ServerResponse, path: string, deps: SessionRoutesDeps): void {
   const method = req.method ?? 'GET';
@@ -58,7 +66,7 @@ export function handleSessionsRoute(req: IncomingMessage, res: ServerResponse, p
       .list()
       .then((sessions) => {
         const body: RecentSessionsResponse = {
-          sessions: sessions.map((s) => (s.project ? { ...s, project: s.project.split('/').filter(Boolean).pop() ?? s.project } : s)),
+          sessions: sessions.map(pastaApenas),
           days: HISTORY_DAYS,
           limit: HISTORY_LIMIT,
         };
