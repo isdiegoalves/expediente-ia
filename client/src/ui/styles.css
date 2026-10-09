@@ -3185,6 +3185,26 @@ a.ui-btn {
   font-weight: 600;
 }
 
+.ui-tip__task {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.3;
+  color: var(--ui-text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ui-tip__since {
+  margin-left: auto;
+  padding-left: 8px;
+  font-weight: 500;
+  font-size: 11px;
+  color: var(--ui-muted);
+  white-space: nowrap;
+}
+
 .ui-tip .ui-status-dot {
   width: 7px;
   height: 7px;
@@ -6993,4 +7013,25 @@ html.is-replay #world {
   font-weight: 600;
   color: var(--lv-warn);
   background: color-mix(in srgb, var(--lv-warn) 16%, transparent);
+}
+
+/* Título da sessão na lista de agentes (o mesmo do hover do personagem). */
+.ui-agent__task {
+  display: block;
+  margin-top: 1px;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.3;
+  color: var(--ui-text);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Há quanto tempo o agente está ocioso, na linha do nome (no lugar do "Principal"). */
+.ui-agent__since {
+  flex: none;
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--ui-muted);
+  white-space: nowrap;
 }
