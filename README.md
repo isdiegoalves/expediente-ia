@@ -111,8 +111,8 @@ ela, e o endereço antigo apaga e é desmontado. Assim o prédio não fica com b
     <td width="34%"><img src="docs/screenshots/mobile.png" alt="Expediente no celular, com o uso das contas no topo" /></td>
     <td>
       <b>Também no celular.</b> A interface se adapta a telas pequenas: o uso das contas fica no topo, a lista de
-      salas vira uma gaveta e os detalhes abrem de baixo para cima. Veja como liberar o acesso pela rede local em
-      <a href="#abrir-no-celular-opcional">Abrir no celular</a>.
+      salas vira uma gaveta e os detalhes abrem de baixo para cima. O Expediente só atende o próprio computador, então
+      o celular não o alcança pela rede.
     </td>
   </tr>
 </table>
@@ -204,22 +204,6 @@ não ficarem dois capturando o uso ou respondendo o mesmo pedido.
 
 </details>
 
-### Abrir no celular (opcional)
-
-Por padrão o Expediente só aceita conexões do próprio computador. Para abrir no celular (no mesmo Wi-Fi), com Docker:
-
-```bash
-printf 'EXPEDIENTE_BIND=0.0.0.0\n' > .env
-npm run docker:up -- --no-build
-```
-
-Depois abra `http://<ip-do-computador>:4848` no celular (no macOS: `ipconfig getifaddr en0`; se vier vazio,
-`ipconfig getifaddr en1`). No modo Node, use `EXPEDIENTE_HOST=0.0.0.0 npm start`.
-
-> ⚠️ Com isso, qualquer aparelho da rede vê a atividade dos agentes (comandos, arquivos, títulos das sessões). Use
-> só em redes de confiança. O [terminal somente leitura](#terminal-somente-leitura) fica desligado enquanto a porta
-> estiver exposta. Para voltar: apague o `.env` e rode `npm run docker:up -- --no-build`.
-
 ### Atualizar
 
 A versão em uso aparece na barra superior, ao lado de "Conectado", e em **Configurações › Sobre**. A cada 6 horas o
@@ -254,7 +238,7 @@ npm run docker:up        # tira o container codetown e copia os dados do volume 
   vieram, apague-o com `docker volume rm codetown_codetown-data`, e a imagem antiga com `docker image rm codetown:local`.
 - **Pasta local:** `~/.codetown` vira `~/.expediente` sozinha (no servidor, no `docker:up` e no `mod:install`).
 - **Navegador:** preferências e moedinhas passam para as chaves novas na primeira vez que a página abre.
-- **Variáveis:** as `CODETOWN_*` não valem mais; renomeie para `EXPEDIENTE_*` no `.env` (ex.: `EXPEDIENTE_BIND`). O
+- **Variáveis:** as `CODETOWN_*` não valem mais; renomeie para `EXPEDIENTE_*` no `.env` (ex.: `EXPEDIENTE_PORT`). O
   servidor e o `docker:up` avisam quando acham uma antiga.
 - **Repositório:** agora é `github.com/marmottajr/habblaud` (o GitHub redireciona o endereço antigo). Para acertar o
   clone: `git remote set-url origin https://github.com/marmottajr/habblaud.git`. A pasta local pode continuar com o
@@ -347,10 +331,8 @@ dá para digitar nem interferir no agente. Vale para agentes principais e subage
   por dia, com busca por título, projeto ou conta. Uma sessão encerrada abre no terminal com projeto, título e data no
   cabeçalho e "Sessão encerrada às …" no rodapé; uma sessão ainda aberta abre o terminal ao vivo do agente.
 
-Como o terminal (e o histórico) mostra a conversa inteira, ele só existe quando o Expediente está acessível **apenas pelo
-próprio computador** (o padrão) e só abre por `http://localhost` ou `http://127.0.0.1`. Com a porta liberada para a rede
-(`EXPEDIENTE_BIND=0.0.0.0` ou `EXPEDIENTE_HOST=0.0.0.0`), ele fica desligado. Detalhes em
-[Privacidade e segurança](#privacidade-e-segurança).
+Como o terminal (e o histórico) mostra a conversa inteira, o Expediente só é acessível **pelo próprio computador** e o terminal só abre por `http://localhost` ou `http://127.0.0.1`. Com a porta liberada para a rede
+Detalhes em [Privacidade e segurança](#privacidade-e-segurança).
 
 ### Timelapse do dia
 
@@ -496,20 +478,17 @@ Tudo funciona sem configurar nada. Se precisar ajustar, use variáveis de ambien
 
 | Variável | Padrão | Para quê |
 | --- | --- | --- |
-| `EXPEDIENTE_PORT` | `4848` | Porta HTTP (no Docker, a porta publicada no host). |
-| `EXPEDIENTE_HOST` | `127.0.0.1` | Interface do servidor no modo Node. Fora de `127.0.0.1`/`localhost`, o terminal somente leitura fica desligado. |
-| `EXPEDIENTE_BIND` | `127.0.0.1` | Só Docker (no `.env`): onde a porta é publicada. `0.0.0.0` libera a rede local (e desliga o terminal somente leitura). |
+| `EXPEDIENTE_PORT` | `4848` | Porta HTTP no modo Node. No Docker a porta é fixa: `127.0.0.1:4848`. |
 | `EXPEDIENTE_CLAUDE_DIRS` | detecção automática | Pastas das contas, separadas por vírgula (ex.: `/caminho/conta1,/caminho/conta2`). |
 | `EXPEDIENTE_DATA_DIR` | `~/.expediente` | Onde o Expediente guarda os próprios dados (nomes dos personagens, linha do tempo do timelapse e estatísticas do Meu dia). |
 | `EXPEDIENTE_TIMELINE` | ligado | `0` desliga a gravação da linha do tempo (os dias já gravados continuam no timelapse). No Docker fica sempre ligado. |
 | `EXPEDIENTE_USAGE_DIR` | `~/.expediente/usage` | Onde o mod (ou o tap de statusline) grava o uso. |
 | `EXPEDIENTE_DEMO` | desligado | `1` liga o modo demonstração ao iniciar. |
-| `EXPEDIENTE_ALLOWED_HOSTS` | — | Nomes extras aceitos no endereço (ex.: `meu-mac.local`), além de `localhost` e IPs. |
-| `EXPEDIENTE_TERMINAL` | ligado (só com acesso local) | `0` desliga o terminal somente leitura. Com a porta exposta ele já fica desligado, sem opção de ligar. |
+| `EXPEDIENTE_TERMINAL` | ligado | `0` desliga o terminal somente leitura. |
 | `EXPEDIENTE_UPDATE_CHECK` | ligado | `0` desliga a verificação de versão nova (uma consulta às releases do repositório no GitHub a cada 6 h). |
 | `EXPEDIENTE_ACCOUNTS` | — | JSON para personalizar nome, letra ou cor, casado pelo nome da pasta da conta. Ex.: `[{"id":".claude-conta2","name":"Trabalho","short":"T","color":"#5cc97b"}]`. |
 
-**No Docker**, valem `EXPEDIENTE_PORT`, `EXPEDIENTE_BIND`, `EXPEDIENTE_ALLOWED_HOSTS`, `EXPEDIENTE_DEMO`, `EXPEDIENTE_TERMINAL` e
+**No Docker**, valem `EXPEDIENTE_DEMO`, `EXPEDIENTE_TERMINAL` e
 `EXPEDIENTE_UPDATE_CHECK` (no `.env` ou no ambiente) e `EXPEDIENTE_CLAUDE_DIRS`, `EXPEDIENTE_USAGE_DIR` e `EXPEDIENTE_ACCOUNTS` (lidas pelo `docker:up`
 no host); as demais ficam fixas dentro do container. Opções: `npm run docker:up -- --no-build` (sobe sem reconstruir),
 `npm run docker:down` (para) e `npm run docker:logs` (acompanha os logs).
@@ -601,7 +580,7 @@ das contas (letra, e-mail, organização) são lidos no host pelo `docker:up` e 
   `~/.expediente/usage/<conta>.json`; para a linha de "precisa de você" e o `/escritorio`, só fala com o Expediente em
   `127.0.0.1`. Não lê a conversa, não chama o modelo e não envia nada para fora do computador. Ele é lido desta
   pasta: o que estiver nela (inclusive depois de um `git pull`) é o que roda.
-- **Só local, por padrão:** o servidor só aceita conexões do próprio computador; liberar a rede local é opcional.
+- **Só local, por padrão:** o servidor só aceita conexões do próprio computador e não há opção para liberar a rede.
   Não há telemetria. A única chamada externa é a verificação de versão nova: a cada 6 horas, uma consulta anônima,
   sem token, à API pública do GitHub (`api.github.com/repos/marmottajr/habblaud/releases/latest`). Ela não envia nada
   sobre as suas sessões; o GitHub vê só o seu IP e a versão em uso, que vai no `User-Agent`.
@@ -613,10 +592,9 @@ das contas (letra, e-mail, organização) são lidos no host pelo `docker:up` e 
 - **Protegido contra sites maliciosos:** o servidor recusa endereços que não sejam `localhost`/IP (DNS rebinding) e
   `POST` vindos de outras origens (CSRF), e não deixa a página ser embutida em outros sites.
 - **Terminal somente leitura só local:** a conversa completa das sessões (e o histórico das sessões encerradas, com os
-  títulos) só sai do servidor com o Expediente acessível apenas pelo próprio computador (`EXPEDIENTE_HOST` local no Node;
-  `EXPEDIENTE_BIND` local no Docker) — não há como
-  ligá-lo com a porta exposta — e cada pedido precisa vir por `localhost`/`127.0.0.1`: IPs da rede e nomes de
-  `EXPEDIENTE_ALLOWED_HOSTS` (proxies, túneis) são recusados. Segredos são mascarados e textos longos truncados antes
+  títulos) só sai do servidor com o Expediente acessível apenas pelo próprio computador (127.0.0.1 no Node; porta publicada
+  só em 127.0.0.1 no Docker, sem variável que mude isso) e cada pedido precisa vir por `localhost`/`127.0.0.1`: IPs
+  da rede e pedidos com `X-Forwarded-For` de fora do loopback são recusados. Segredos são mascarados e textos longos truncados antes
   de chegar ao navegador; no modo demonstração, a conversa é fictícia. `EXPEDIENTE_TERMINAL=0` desliga de vez.
 - **Linha do tempo do timelapse:** só os resumos que já aparecem na tela (atividade em uma linha, status, títulos,
   uso das contas, sem e-mails, comandos completos ou conversas), gravados em `~/.expediente/timeline/` e apagados depois
@@ -723,27 +701,16 @@ instalação, rode `/reload-plugins`; o `/plugin` mostra, embaixo das abas, os m
 <summary><b>"A porta 4848 já está em uso"</b></summary>
 
 Outro Expediente (Node ou Docker) já está rodando. Pare-o (`npm run docker:down`, ou Ctrl+C no terminal do
-`npm start`) ou use outra porta: `EXPEDIENTE_PORT=4848 npm run docker:up` (Docker) ou `EXPEDIENTE_PORT=4848 npm start`
-(Node).
-
-</details>
-
-<details>
-<summary><b>Não abre no celular</b></summary>
-
-Confira se criou o `.env` com `EXPEDIENTE_BIND=0.0.0.0` e recriou o container (`npm run docker:up -- --no-build`), se
-o celular está no mesmo Wi-Fi e se o firewall do computador permite conexões na porta 4848. Por IP funciona direto;
-para abrir por um nome (ex.: `meu-mac.local`), acrescente `EXPEDIENTE_ALLOWED_HOSTS=meu-mac.local` (no Docker, no mesmo
-`.env`).
+`npm start`) ou use outra porta no modo Node: `EXPEDIENTE_PORT=4849 npm start`.
 
 </details>
 
 <details>
 <summary><b>O terminal somente leitura não abre</b></summary>
 
-O terminal só existe com o Expediente acessível apenas pelo próprio computador. Confira se o `.env` não tem
-`EXPEDIENTE_BIND=0.0.0.0` (ou, no modo Node, se não usou `EXPEDIENTE_HOST=0.0.0.0`) nem `EXPEDIENTE_TERMINAL=0`, e abra por
-`http://localhost:4848` (pelo IP da rede ou por um nome de `EXPEDIENTE_ALLOWED_HOSTS` ele é recusado). No Docker, um container
+Confira se o `.env` não tem
+`EXPEDIENTE_TERMINAL=0` e abra por
+`http://localhost:4848` (pelo IP da rede ele é recusado). No Docker, um container
 criado antes desse recurso precisa ser recriado: `npm run docker:up`. O log de inicialização (`npm run docker:logs`)
 diz se o terminal está ligado e, se não estiver, por quê.
 

@@ -10,7 +10,7 @@ import { NameStore } from '../model/names';
 import { Office, type OfficeDeps } from '../model/office';
 import { tempDir } from '../test/fixtures';
 import { createApiHandler, type ApiDeps } from './app';
-import { createRequestGuard, hostAllowed, hostnameOf, isLoopbackHost, originAllowed, parseAllowedHosts } from './guard';
+import { createRequestGuard, hostAllowed, hostnameOf, isLoopbackHost, originAllowed } from './guard';
 import { Hub } from './sse';
 import { createStaticHandler, IMMUTABLE, REVALIDATE } from './static';
 
@@ -49,7 +49,7 @@ async function start(extra: Partial<ApiDeps> = {}, officeExtra: Partial<OfficeDe
   hub.start();
   const api = createApiHandler({ office, hub, accounts, sources: () => [], version: '9.9.9', inDocker: false, ...extra });
   const serveStatic = createStaticHandler(dist);
-  const guard = createRequestGuard({ allowedHosts: new Set(['expediente.lan']) });
+  const guard = createRequestGuard();
   const server = http.createServer((req, res) => {
     if (guard(req, res)) return;
     const url = new URL(req.url ?? '/', 'http://x');
@@ -166,7 +166,7 @@ describe('API HTTP', () => {
     expect((await raw(env.base, '/api/health', { headers: { Host: `localhost:${port}` } })).status).toBe(200);
     expect((await raw(env.base, '/api/health', { headers: { Host: `[::1]:${port}` } })).status).toBe(200);
     expect((await raw(env.base, '/api/health', { headers: { Host: `192.168.0.10:${port}` } })).status).toBe(200);
-    expect((await raw(env.base, '/api/health', { headers: { Host: `expediente.lan:${port}` } })).status).toBe(200);
+    expect((await raw(env.base, '/api/health', { headers: { Host: `expediente.lan:${port}` } })).status).toBe(403);
   });
 
   it('CSRF: POST exige JSON e origem local', async () => {
@@ -297,20 +297,18 @@ describe('GET /api/mod/summary (mod do Claude Code)', () => {
 });
 
 describe('guarda de Host/Origin', () => {
-  const allowed = parseAllowedHosts(' Meu-Mac.local:4848 , expediente.lan ');
 
-  it('hostnameOf e EXPEDIENTE_ALLOWED_HOSTS', () => {
-    expect([...allowed]).toEqual(['meu-mac.local', 'expediente.lan']);
+  it('hostnameOf', () => {
     expect(hostnameOf('LocalHost:4848')).toBe('localhost');
     expect(hostnameOf('[::1]:4848')).toBe('::1');
     expect(hostnameOf('a b')).toBeUndefined();
     expect(hostnameOf('[::1]lixo')).toBeUndefined();
   });
 
-  it('Host: IPs, localhost e liberados sim; domínios de fora não', () => {
-    expect(hostAllowed(undefined, allowed)).toBe(true);
-    for (const h of ['localhost:4848', 'app.localhost', '127.0.0.1:4848', '[::1]:1', '10.0.0.5:4848', 'meu-mac.local:4848']) expect(hostAllowed(h, allowed)).toBe(true);
-    for (const h of ['attacker.example:4848', 'localhost.attacker.example', '127.0.0.1.nip.io', '', 'x y']) expect(hostAllowed(h, allowed)).toBe(false);
+  it('Host: IPs e localhost sim; domínios de fora não', () => {
+    expect(hostAllowed(undefined)).toBe(true);
+    for (const h of ['localhost:4848', 'app.localhost', '127.0.0.1:4848', '[::1]:1', '10.0.0.5:4848']) expect(hostAllowed(h)).toBe(true);
+    for (const h of ['attacker.example:4848', 'meu-mac.local:4848', 'localhost.attacker.example', '127.0.0.1.nip.io', '', 'x y']) expect(hostAllowed(h)).toBe(false);
   });
 
   it('isLoopbackHost: só localhost, *.localhost, 127.x e ::1 (terminal somente leitura)', () => {
@@ -320,14 +318,14 @@ describe('guarda de Host/Origin', () => {
     }
   });
 
-  it('Origin: ausente, mesma origem ou local', () => {
-    expect(originAllowed(undefined, 'localhost:4848', allowed)).toBe(true);
-    expect(originAllowed('http://localhost:4848', 'localhost:4848', allowed)).toBe(true);
-    expect(originAllowed('http://localhost:5173', '127.0.0.1:4848', allowed)).toBe(true); // Vite dev com proxy
-    expect(originAllowed('http://192.168.0.10:4848', '192.168.0.10:4848', allowed)).toBe(true);
-    expect(originAllowed('http://attacker.example', 'localhost:4848', allowed)).toBe(false);
-    expect(originAllowed('http://1.2.3.4', 'localhost:4848', allowed)).toBe(false);
-    expect(originAllowed('null', 'localhost:4848', allowed)).toBe(false);
-    expect(originAllowed('file://', 'localhost:4848', allowed)).toBe(false);
+  it('Origin: ausente ou da mesma origem do Host', () => {
+    expect(originAllowed(undefined, 'localhost:4848')).toBe(true);
+    expect(originAllowed('http://localhost:4848', 'localhost:4848')).toBe(true);
+    expect(originAllowed('http://192.168.0.10:4848', '192.168.0.10:4848')).toBe(true);
+    expect(originAllowed('http://localhost:5173', '127.0.0.1:4848')).toBe(false);
+    expect(originAllowed('http://attacker.example', 'localhost:4848')).toBe(false);
+    expect(originAllowed('http://1.2.3.4', 'localhost:4848')).toBe(false);
+    expect(originAllowed('null', 'localhost:4848')).toBe(false);
+    expect(originAllowed('file://', 'localhost:4848')).toBe(false);
   });
 });

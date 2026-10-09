@@ -86,9 +86,9 @@ festa) ou 10 min. Push só avisa. O mesmo CI visto de novo em 2 min não repete 
 O snapshot (SSE e `GET /api/snapshot`) leva só as últimas 8 atividades de cada agente em `recent`; o histórico
 de até 200 (inclusive o começo de transcripts longos, lido em segundo plano) vem de `GET /api/agents/:id`.
 
-Borda (`http/guard.ts`, vale para API, estáticos e Vite): `Host` precisa ser `localhost`/`*.localhost`, um IP
-ou um nome de `EXPEDIENTE_ALLOWED_HOSTS` (contra DNS rebinding) → senão 403; `POST` em `/api/*` exige
-`Content-Type: application/json` (415) e `Origin` da mesma origem ou local (403), contra CSRF. Respostas JSON
+Borda (`http/guard.ts`, vale para API, estáticos e Vite): `Host` precisa ser `localhost`/`*.localhost` ou um IP
+(contra DNS rebinding) → senão 403; `X-Forwarded-For` com endereço fora do loopback → 403; `POST` em `/api/*` exige
+`Content-Type: application/json` (415) e `Origin` da mesma origem do `Host` (403), contra CSRF. Respostas JSON
 saem com `nosniff` e `Cross-Origin-Resource-Policy: same-origin`, sem CORS.
 
 Cada versão tem a sua seção no `CHANGELOG.md`; um teste falha se a versão do `package.json` não tiver seção, e o
@@ -105,16 +105,11 @@ manda `append` com as entradas novas. Transcript truncado/substituído ou trocad
 de `shared/demo/terminal.ts` (atualizada a cada 500 ms). Ping a cada 15 s, no máximo 8 terminais ao mesmo tempo,
 cliente com mais de 8 MB acumulados é desconectado.
 
-O recurso só existe com **bind local** (`config.ts`, `terminalOffReason`), já que mostra a conversa inteira:
+A porta só é alcançável pelo próprio computador: fora do container o Node escuta em 127.0.0.1; dentro dele, em
+`0.0.0.0` (modo vindo de `/.dockerenv`), e o `docker-compose.yml` publica `127.0.0.1:4848:4848`. Nenhuma variável
+muda isso. `EXPEDIENTE_TERMINAL=0` desliga o recurso (`config.ts`, `terminalOffReason`).
 
-- Node: `EXPEDIENTE_HOST` loopback (127.0.0.0/8, `::1`, `localhost`); `0.0.0.0`, `::` ou IP de rede desligam;
-- Docker: o processo sempre escuta em `0.0.0.0` dentro do container, então vale a porta publicada no host,
-  `EXPEDIENTE_BIND` (o `docker-compose.yml` repassa o mesmo valor ao container): loopback liga; ausente, vazia ou
-  qualquer outra desliga;
-- `EXPEDIENTE_TERMINAL=0` desliga sempre; nenhuma variável liga o terminal com a porta exposta.
-
-Além disso, cada requisição precisa de `Host` local (`localhost`, `*.localhost`, 127.x ou `[::1]`): IPs da rede e
-nomes de `EXPEDIENTE_ALLOWED_HOSTS` (proxies, túneis) recebem 403. O estado sai em `meta.terminal` do snapshot e em
+Além disso, cada requisição precisa de `Host` local (`localhost`, `*.localhost`, 127.x ou `[::1]`): IPs da rede recebem 403. O estado sai em `meta.terminal` do snapshot e em
 `terminal` no `/api/health`. Erros antes do stream respondem JSON `{error}`: 403 (desligado ou acesso que não é
 local), 404 (agente ou transcript desconhecido), 405 (método que não é `GET`), 429 (terminais demais) e 500
 (transcript ilegível).
@@ -229,18 +224,14 @@ sugestão inválidos), 404 (pedido desconhecido, já entregue ou expirado), 405,
 
 | Variável | Padrão | Uso |
 | --- | --- | --- |
-| `EXPEDIENTE_PORT` | `4848` | porta HTTP |
-| `EXPEDIENTE_HOST` | `127.0.0.1` | interface (o Docker usa `0.0.0.0`); fora do loopback, o terminal somente leitura fica desligado |
-| `EXPEDIENTE_BIND` | — (Compose: `127.0.0.1`) | só Docker: interface do host onde a porta é publicada, repassada ao container; só loopback liga o terminal somente leitura |
-| `EXPEDIENTE_TERMINAL` | — | `0` desliga o terminal somente leitura (não liga com a porta exposta) |
+| `EXPEDIENTE_PORT` | `4848` | porta HTTP no modo Node (o Docker publica sempre `127.0.0.1:4848`) |
+| `EXPEDIENTE_TERMINAL` | — | `0` desliga o terminal somente leitura |
 | `EXPEDIENTE_CLAUDE_DIRS` | — | config dirs separados por vírgula; substitui a detecção (`~/.claude*` com `projects/` ou `sessions/` + `CLAUDE_CONFIG_DIR`) |
 | `EXPEDIENTE_DATA_DIR` | `~/.expediente` (Docker: `/data`) | estado do Expediente (nomes persistidos em `names.json`, linha do tempo em `timeline/`, estatísticas do Meu dia em `stats/`, última verificação de versão em `updates.json`) |
 | `EXPEDIENTE_TIMELINE` | ligado | `0` desliga a gravação da linha do tempo do timelapse |
 | `EXPEDIENTE_DEMO` | desligado | `1` liga o modo demonstração ao iniciar |
-| `EXPEDIENTE_IN_DOCKER` | auto (`/.dockerenv`) | `1` = não confere PIDs (são do host) |
 | `EXPEDIENTE_ACCOUNTS` | — | JSON com metadados das contas vindos do host (Docker): `[{id, configDir, mountDir, short, name, email, organization, plan, color, cachedUsage}]`, casados por `id`, `mountDir` ou `configDir` |
 | `EXPEDIENTE_USAGE_DIR` | `~/.expediente/usage` (Docker: `/usage`) | pasta do uso capturado pelo tap de statusline ou pelo mod do Claude Code, relida a cada 5 s |
-| `EXPEDIENTE_ALLOWED_HOSTS` | — | nomes extras aceitos no `Host`/`Origin` (vírgula); `localhost`, `*.localhost` e IPs sempre valem |
 
 No hook de permissão (ambiente do Claude Code; os argumentos `--port`/`--timeout` gravados pelo instalador têm
 preferência): `EXPEDIENTE_PORT` (porta do Expediente, padrão `4848`), `EXPEDIENTE_PERMISSION_TIMEOUT` (segundos de espera

@@ -68,7 +68,7 @@ const hub = new Hub(office);
 // "Meu dia": amostra o escritório a cada segundo e persiste em <dataDir>/stats/ (ver history/daystats.ts).
 const stats = new DayStatsService({ dir: join(config.dataDir, 'stats'), snapshot: () => hub.current() });
 stats.load();
-// Terminal somente leitura: só existe com bind local (ver terminalOffReason em config.ts).
+// Terminal somente leitura: desligável por EXPEDIENTE_TERMINAL (ver terminalOffReason em config.ts).
 const terminals = config.terminal ? new TerminalStreams({ office, transcriptPathOf: (id) => watcher.transcriptPathOf(id) }) : undefined;
 // Histórico do terminal (sessões recentes, abertas ou encerradas): mesma trava.
 const history = config.terminal
@@ -152,7 +152,7 @@ if (config.dev) {
 }
 
 // Host/Origin/Content-Type: barra DNS rebinding e CSRF antes de qualquer rota (inclusive o Vite).
-const guard = createRequestGuard({ allowedHosts: config.allowedHosts });
+const guard = createRequestGuard();
 
 server.on('request', (req, res) => {
   const url = parseUrl(req);
@@ -184,7 +184,7 @@ server.listen(config.port, config.host, () => {
   }
   if (office.isDemo()) log.info('   Modo demonstração ligado (agentes simulados misturados aos reais).');
   if (config.terminal) log.info('   Terminal somente leitura: ligado (acesso só local).');
-  else log.info(`   Terminal somente leitura: desligado (${terminalOffReason(process.env, config.host, config.inDocker)}).`);
+  else log.info(`   Terminal somente leitura: desligado (${terminalOffReason(process.env)}).`);
   log.info(timeline ? `   Linha do tempo (timelapse): gravando em ${timelineDir}.` : '   Linha do tempo (timelapse): gravação desligada (EXPEDIENTE_TIMELINE).');
   log.info(`   Responder pelo escritório: ${config.terminal ? 'ligado (precisa do mod: npm run mod:install; ou do hook antigo: npm run hooks:install)' : 'desligado (mesma trava do terminal)'}.`);
 });

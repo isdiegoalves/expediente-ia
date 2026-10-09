@@ -27,9 +27,7 @@ FROM node:24-alpine AS runtime
 
 # EXPEDIENTE_USAGE_DIR: onde o docker-up monta (somente leitura) o uso capturado pelo tap de statusline.
 ENV NODE_ENV=production \
-    EXPEDIENTE_HOST=0.0.0.0 \
     EXPEDIENTE_PORT=4848 \
-    EXPEDIENTE_IN_DOCKER=1 \
     EXPEDIENTE_DATA_DIR=/data \
     EXPEDIENTE_USAGE_DIR=/usage
 

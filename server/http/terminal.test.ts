@@ -30,46 +30,20 @@ describe('trava do terminal somente leitura (config)', () => {
     }
   });
 
-  it('Node: decide o EXPEDIENTE_HOST', () => {
-    for (const host of ['127.0.0.1', 'localhost', '::1']) expect(terminalOffReason({}, host, false)).toBeUndefined();
-    expect(terminalOffReason({}, '0.0.0.0', false)).toBe('a porta está exposta na rede: EXPEDIENTE_HOST=0.0.0.0');
-    for (const host of ['::', '192.168.0.10', 'meu-mac.local']) expect(terminalOffReason({}, host, false)).toMatch(/exposta na rede/);
-    // EXPEDIENTE_BIND só vale no Docker: não liga o modo Node exposto.
-    expect(terminalOffReason({ EXPEDIENTE_BIND: '127.0.0.1' }, '0.0.0.0', false)).toBeDefined();
-  });
-
-  it('Docker: decide o EXPEDIENTE_BIND (ausente ou vazio = desligado)', () => {
-    expect(terminalOffReason({ EXPEDIENTE_BIND: '127.0.0.1' }, '0.0.0.0', true)).toBeUndefined();
-    expect(terminalOffReason({ EXPEDIENTE_BIND: '[::1]' }, '0.0.0.0', true)).toBeUndefined();
-    expect(terminalOffReason({}, '0.0.0.0', true)).toMatch(/EXPEDIENTE_BIND não chegou/);
-    expect(terminalOffReason({ EXPEDIENTE_BIND: '  ' }, '0.0.0.0', true)).toMatch(/EXPEDIENTE_BIND não chegou/);
-    expect(terminalOffReason({ EXPEDIENTE_BIND: '0.0.0.0' }, '0.0.0.0', true)).toBe('a porta está exposta na rede: EXPEDIENTE_BIND=0.0.0.0');
-    expect(terminalOffReason({ EXPEDIENTE_BIND: '192.168.0.10' }, '0.0.0.0', true)).toMatch(/exposta na rede/);
-    // No container o host do processo não conta (é sempre 0.0.0.0).
-    expect(terminalOffReason({ EXPEDIENTE_BIND: '0.0.0.0' }, '127.0.0.1', true)).toBeDefined();
-  });
-
-  it('EXPEDIENTE_TERMINAL só desliga: não há como ligar com a porta exposta', () => {
-    for (const v of ['0', 'false', 'off', 'nao']) {
-      expect(terminalOffReason({ EXPEDIENTE_TERMINAL: v }, '127.0.0.1', false)).toBe(`EXPEDIENTE_TERMINAL=${v}`);
-      expect(terminalOffReason({ EXPEDIENTE_TERMINAL: v, EXPEDIENTE_BIND: '127.0.0.1' }, '0.0.0.0', true)).toMatch(/EXPEDIENTE_TERMINAL/);
-    }
-    expect(terminalOffReason({ EXPEDIENTE_TERMINAL: '1' }, '127.0.0.1', false)).toBeUndefined();
-    expect(terminalOffReason({ EXPEDIENTE_TERMINAL: '' }, '127.0.0.1', false)).toBeUndefined();
-    expect(terminalOffReason({ EXPEDIENTE_TERMINAL: '1' }, '0.0.0.0', false)).toBeDefined();
-    expect(terminalOffReason({ EXPEDIENTE_TERMINAL: 'sim', EXPEDIENTE_BIND: '0.0.0.0' }, '0.0.0.0', true)).toBeDefined();
+  it('EXPEDIENTE_TERMINAL só desliga', () => {
+    for (const v of ['0', 'false', 'off', 'nao']) expect(terminalOffReason({ EXPEDIENTE_TERMINAL: v })).toBe(`EXPEDIENTE_TERMINAL=${v}`);
+    for (const v of ['1', 'sim', '', undefined]) expect(terminalOffReason({ EXPEDIENTE_TERMINAL: v })).toBeUndefined();
+    expect(terminalOffReason({})).toBeUndefined();
   });
 
   it('loadConfig preenche ServerConfig.terminal', () => {
     const tmp = tempDir();
     try {
-      const terminal = (env: NodeJS.ProcessEnv) => loadConfig({ HOME: tmp.dir, EXPEDIENTE_IN_DOCKER: '0', ...env }, []).terminal;
-      expect(terminal({})).toBe(true);
-      expect(terminal({ EXPEDIENTE_HOST: '0.0.0.0' })).toBe(false);
-      expect(terminal({ EXPEDIENTE_TERMINAL: '0' })).toBe(false);
-      expect(terminal({ EXPEDIENTE_IN_DOCKER: '1', EXPEDIENTE_HOST: '0.0.0.0' })).toBe(false);
-      expect(terminal({ EXPEDIENTE_IN_DOCKER: '1', EXPEDIENTE_HOST: '0.0.0.0', EXPEDIENTE_BIND: '127.0.0.1' })).toBe(true);
-      expect(terminal({ EXPEDIENTE_IN_DOCKER: '1', EXPEDIENTE_HOST: '0.0.0.0', EXPEDIENTE_BIND: '0.0.0.0' })).toBe(false);
+      for (const noContainer of [false, true]) {
+        const terminal = (env: NodeJS.ProcessEnv) => loadConfig({ HOME: tmp.dir, ...env }, [], noContainer).terminal;
+        expect(terminal({})).toBe(true);
+        expect(terminal({ EXPEDIENTE_TERMINAL: '0' })).toBe(false);
+      }
     } finally {
       tmp.cleanup();
     }
@@ -127,7 +101,7 @@ async function serve(opts: { terminal?: boolean; streams?: Partial<TerminalOptio
   const paths = new Map<string, string>();
   const terminals = new TerminalStreams({ office, transcriptPathOf: (id) => paths.get(id), createParser: fakeParser, pollMs: 20, demoPollMs: 20, ...opts.streams });
   const api = createApiHandler({ office, hub, accounts, sources: () => [], version: 't', inDocker: false, terminal, terminals });
-  const guard = createRequestGuard({ allowedHosts: new Set(['expediente.lan']) });
+  const guard = createRequestGuard();
   const server = http.createServer((req, res) => {
     if (guard(req, res)) return;
     if (!api(req, res, new URL(req.url ?? '/', 'http://x'))) res.writeHead(404).end();
@@ -237,13 +211,13 @@ describe('terminal somente leitura: rota', () => {
     }
   });
 
-  it('Host que não é local (IP da rede ou nome de EXPEDIENTE_ALLOWED_HOSTS): 403; localhost abre', async () => {
+  it('Host que não é local (IP da rede): 403; localhost abre', async () => {
     const env = await serve();
     try {
       const file = join(env.dir, 't.jsonl');
       writeLines(file, [line('a')]);
       env.paths.set(MAIN, file);
-      for (const host of [`192.168.0.10:${env.port}`, `expediente.lan:${env.port}`]) {
+      for (const host of [`192.168.0.10:${env.port}`]) {
         const r = await open(env.base, route(MAIN), { headers: { Host: host } });
         expect(r.status).toBe(403);
         expect(JSON.parse(r.body).error).toMatch(/próprio computador/);

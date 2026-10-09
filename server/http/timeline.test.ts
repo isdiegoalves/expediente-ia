@@ -40,7 +40,7 @@ async function start(): Promise<Env> {
   const office = new Office({ names: new NameStore(null), version: 't', startedAt: Date.now(), accounts: (s) => accounts.list(s), sources: () => [], accountName: () => undefined });
   const hub = new Hub(office, { throttleMs: 10 });
   const api = createApiHandler({ office, hub, accounts, sources: () => [], version: 't', inDocker: false, timeline: createTimelineHandler({ dir, recording: true }) });
-  const guard = createRequestGuard({ allowedHosts: new Set() });
+  const guard = createRequestGuard();
   const server = http.createServer((req, res) => {
     if (guard(req, res)) return;
     if (!api(req, res, new URL(req.url ?? '/', 'http://x'))) {

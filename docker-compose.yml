@@ -15,18 +15,14 @@ services:
     image: expediente:local
     container_name: expediente
     restart: unless-stopped
-    # Os transcripts são sensíveis: por padrão a porta é publicada SÓ na interface local do host
-    # (EXPEDIENTE_BIND=0.0.0.0 no .env libera a rede local; veja o README).
+    # Os transcripts são sensíveis: a porta é publicada SÓ na interface local do host, sem variável que mude isso.
     ports:
-      - "${EXPEDIENTE_BIND:-127.0.0.1}:${EXPEDIENTE_PORT:-4848}:4848"
+      - "127.0.0.1:4848:4848"
     volumes:
       - expediente-data:/data
     # Opções que podem vir do .env (ou do ambiente) para dentro do container.
     environment:
-      EXPEDIENTE_ALLOWED_HOSTS: ${EXPEDIENTE_ALLOWED_HOSTS:-}
       EXPEDIENTE_DEMO: ${EXPEDIENTE_DEMO:-}
-      # O mesmo valor da porta publicada acima: o terminal somente leitura só liga com bind local.
-      EXPEDIENTE_BIND: ${EXPEDIENTE_BIND:-127.0.0.1}
       EXPEDIENTE_TERMINAL: ${EXPEDIENTE_TERMINAL:-}
     # Endurecimento: sistema de arquivos só leitura (exceto /data e /tmp), sem capabilities extras.
     read_only: true

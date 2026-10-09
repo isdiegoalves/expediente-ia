@@ -3,22 +3,14 @@
 // 1) DNS rebinding: um site malicioso pode fazer o próprio domínio resolver para 127.0.0.1 e,
 //    assim, ler /api/snapshot "como se fosse a mesma origem". O navegador manda o cabeçalho Host
 //    com o domínio do atacante, então só aceitamos Host que seja um IP literal, `localhost`
-//    (ou `*.localhost`) ou um nome liberado em EXPEDIENTE_ALLOWED_HOSTS.
+//    (ou `*.localhost`).
 // 2) CSRF: requisições que mudam estado (POST) exigem `Content-Type: application/json` — o que um
 //    formulário ou um fetch "simples" de outro site não consegue enviar sem preflight de CORS, que
-//    este servidor nunca autoriza — e, quando há `Origin`, ele precisa ser da mesma origem ou local.
+//    este servidor nunca autoriza — e, quando há `Origin`, ele precisa ser da mesma origem do Host.
+// 3) Proxy: `X-Forwarded-For` com endereço fora do loopback indica pedido repassado de outra máquina.
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { isIP } from 'node:net';
-
-/** Nomes liberados por EXPEDIENTE_ALLOWED_HOSTS (lista separada por vírgula; porta é ignorada). */
-export function parseAllowedHosts(raw: string | undefined): Set<string> {
-  const out = new Set<string>();
-  for (const item of (raw ?? '').split(',')) {
-    const name = hostnameOf(item.trim());
-    if (name) out.add(name);
-  }
-  return out;
-}
+import { isLoopbackBind } from '../config';
 
 /**
  * Nome do host (minúsculo, sem porta e sem colchetes no IPv6) a partir de um cabeçalho Host
@@ -47,8 +39,7 @@ function isLoopbackName(name: string): boolean {
 
 /**
  * Cabeçalho Host local (`localhost`, `*.localhost`, 127.x ou `[::1]`; porta ignorada)? Usado pelo terminal
- * somente leitura, que só atende quem abriu o Expediente pelo próprio computador: um IP da rede ou um nome
- * de EXPEDIENTE_ALLOWED_HOSTS (proxy, túnel) não serve. Ausente ou inválido: false.
+ * somente leitura, que só atende quem abriu o Expediente pelo próprio computador: um IP da rede não serve. Ausente ou inválido: false.
  */
 export function isLoopbackHost(host: string | undefined): boolean {
   const name = hostnameOf(host);
@@ -56,24 +47,20 @@ export function isLoopbackHost(host: string | undefined): boolean {
 }
 
 /**
- * Host aceito? IP literal (não há DNS envolvido, logo não há rebinding), `localhost`/`*.localhost`
- * (os navegadores resolvem sempre para o loopback) ou um nome de EXPEDIENTE_ALLOWED_HOSTS.
+ * Host aceito? IP literal (não há DNS envolvido, logo não há rebinding) ou `localhost`/`*.localhost`
+ * (os navegadores resolvem sempre para o loopback).
  * Sem cabeçalho Host (HTTP/1.0, ferramentas de linha de comando): aceito — navegadores sempre enviam.
  */
-export function hostAllowed(host: string | undefined, allowed: ReadonlySet<string>): boolean {
+export function hostAllowed(host: string | undefined): boolean {
   if (host === undefined) return true;
   const name = hostnameOf(host);
   if (!name) return false;
-  return isIP(name) !== 0 || isLoopbackName(name) || allowed.has(name);
+  return isIP(name) !== 0 || isLoopbackName(name);
 }
 
-/**
- * Origin aceito para requisições que mudam estado: ausente (curl, scripts), da mesma origem que o
- * Host da requisição, local (localhost/loopback) ou um nome de EXPEDIENTE_ALLOWED_HOSTS.
- */
-export function originAllowed(origin: string | undefined, host: string | undefined, allowed: ReadonlySet<string>): boolean {
+/** Origin aceito para requisições que mudam estado: ausente (curl, scripts) ou da mesma origem do Host. */
+export function originAllowed(origin: string | undefined, host: string | undefined): boolean {
   if (origin === undefined) return true;
-  if (origin === 'null') return false;
   let url: URL;
   try {
     url = new URL(origin);
@@ -81,9 +68,13 @@ export function originAllowed(origin: string | undefined, host: string | undefin
     return false;
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
-  if (host !== undefined && url.host.toLowerCase() === host.trim().toLowerCase()) return true;
-  const name = hostnameOf(url.host);
-  return !!name && (isLoopbackName(name) || allowed.has(name));
+  return host !== undefined && url.host.toLowerCase() === host.trim().toLowerCase();
+}
+
+/** `X-Forwarded-For` ausente, ou com todos os endereços no loopback (127.x, ::1, ::ffff:127.x). */
+export function forwardedAllowed(value: string | string[] | undefined): boolean {
+  if (value === undefined) return true;
+  return [value].flat().join(',').split(',').every((addr) => isLoopbackBind(addr));
 }
 
 export function isJsonContentType(value: string | undefined): boolean {
@@ -101,32 +92,30 @@ function reject(res: ServerResponse, status: number, message: string): void {
   res.end(body);
 }
 
-export interface GuardOptions {
-  /** Nomes extras aceitos no Host/Origin (EXPEDIENTE_ALLOWED_HOSTS). */
-  allowedHosts?: ReadonlySet<string>;
-}
-
 /**
  * Devolve um filtro para o início de cada requisição: responde (e devolve true) quando a
  * requisição deve ser recusada; senão devolve false e não toca na resposta.
  */
-export function createRequestGuard(opts: GuardOptions = {}): (req: IncomingMessage, res: ServerResponse) => boolean {
-  const allowed = opts.allowedHosts ?? new Set<string>();
+export function createRequestGuard(): (req: IncomingMessage, res: ServerResponse) => boolean {
   return (req, res) => {
+    const forwarded = req.headers['x-forwarded-for'];
+    if (!forwardedAllowed(forwarded)) {
+      reject(res, 403, 'Pedido repassado de fora do próprio computador.');
+      return true;
+    }
     const host = req.headers.host;
-    if (!hostAllowed(host, allowed)) {
+    if (!hostAllowed(host)) {
       reject(
         res,
         403,
-        `Host não permitido: ${String(host).slice(0, 100)}. Abra o Expediente por http://localhost (ou pelo IP) ` +
-          'ou libere o nome em EXPEDIENTE_ALLOWED_HOSTS.',
+        `Host não permitido: ${String(host).slice(0, 100)}. Abra o Expediente por http://localhost (ou pelo IP).`,
       );
       return true;
     }
     const method = req.method ?? 'GET';
     if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return false;
     const origin = typeof req.headers.origin === 'string' ? req.headers.origin : undefined;
-    if (!originAllowed(origin, host, allowed)) {
+    if (!originAllowed(origin, host)) {
       reject(res, 403, 'Origem não permitida.');
       return true;
     }

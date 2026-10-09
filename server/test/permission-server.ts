@@ -65,7 +65,7 @@ export async function servePermissions(opts: { enabled?: boolean; viewers?: numb
     terminal: enabled,
     permissions: registry ? createPermissionRoutes(registry) : undefined,
   });
-  const guard = createRequestGuard({ allowedHosts: new Set(['expediente.lan']) });
+  const guard = createRequestGuard();
   const server = http.createServer((req, res) => {
     if (guard(req, res)) return;
     if (!api(req, res, new URL(req.url ?? '/', 'http://x'))) res.writeHead(404).end();

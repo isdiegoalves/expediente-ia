@@ -33,10 +33,10 @@ describe('trava local', () => {
     expect((await request(srv.base, '/api/health')).json).toMatchObject({ permissions: false });
   });
 
-  it('Host que não é local (proxy/túnel de EXPEDIENTE_ALLOWED_HOSTS ou IP da rede): 403', async () => {
+  it('Host que não é local (IP da rede): 403', async () => {
     srv = await servePermissions();
     expect((await request(srv.base, '/api/health')).json).toMatchObject({ permissions: true });
-    for (const host of ['expediente.lan', '192.168.0.10:4848']) {
+    for (const host of ['192.168.0.10:4848']) {
       const r = await request(srv.base, '/api/permissions', { method: 'POST', body: hookJson(), headers: { Host: host } });
       expect(r.status, host).toBe(403);
       expect(r.json).toMatchObject({ error: expect.stringMatching(/próprio computador/) });
