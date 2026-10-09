@@ -1,5 +1,5 @@
 {
-  "fonte": "Catálogo de modelos embutido no Claude Code 2.1.295 (binário local, objeto pricing_tiers + models[].context). Preços em USD por milhão de tokens.",
+  "fonte": "Preços da tabela pública da Anthropic (https://docs.claude.com/en/docs/about-claude/pricing); os números e as janelas de contexto foram tirados do catálogo do Claude Code 2.1.295 instalado, o mesmo que calcula o cost-state. Preços em USD por milhão de tokens.",
   "janelaPadrao": 200000,
   "janelaEstendida": 1000000,
   "modelos": {
