@@ -100,6 +100,9 @@ export interface AgentStats {
   subagents: number;
 }
 
+/** De onde a sessão do agente principal veio, pelo `entrypoint` e `kind` do registro de sessões. */
+export type AgentOrigin = 'app desktop' | 'terminal' | 'sdk' | 'segundo plano';
+
 export interface AgentInfo {
   /** Estável enquanto o agente existir. Principal: "<conta>:<pid>". Sub: "<sessionId>:<agentId>". */
   id: string;
@@ -116,6 +119,10 @@ export interface AgentInfo {
   /** Título da sessão (principal) ou descrição da tarefa (sub). */
   title?: string;
   sessionId: string;
+  /** Selo de origem do agente principal; ausente quando o registro não diz. */
+  origin?: AgentOrigin;
+  /** `local_<uuid>` da sessão no app desktop; só com `origin === 'app desktop'` e a ponte tendo casado a sessão. */
+  appSessionId?: string;
   /** Conta de origem = AccountInfo.id (basename do config dir, ex.: ".claude", ".claude-conta2"). */
   account: string;
   status: AgentStatus;

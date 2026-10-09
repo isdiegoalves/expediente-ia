@@ -24,6 +24,7 @@ import { DemoSimulator } from '../../shared/demo/simulator';
 import { describeGitHubEvent, githubEventKey, RoomEffects, type GitHubEvent } from '../../shared/github';
 import { hash32 } from '../../shared/hash';
 import { applyPermission } from '../permissions/registry';
+import { origemDoAgente } from '../sources/sessoes-app';
 import type { NameStore } from './names';
 import { normalizeCwd, roomDisplayNames, SlotAllocator } from './rooms';
 import { sanitizeOutput } from './saida';
@@ -61,6 +62,8 @@ export interface OfficeDeps {
   terminal?: boolean | (() => boolean);
   /** Pedidos de permissão pendentes por agente (PermissionRegistry.snapshot), postos no snapshot. */
   permissions?: () => ReadonlyMap<string, PermissionRequestInfo>;
+  /** cliSessionId -> `local_<uuid>` das sessões do app desktop (SessoesAppReader.read). */
+  sessoesApp?: () => ReadonlyMap<string, string>;
   now?: () => number;
 }
 
@@ -86,6 +89,9 @@ export interface MainInput {
   startedAt: number;
   status: AgentStatus;
   waitingFor?: string;
+  /** `entrypoint` e `kind` do registro de sessões, de onde sai o selo de origem. */
+  entrypoint?: string;
+  kind?: string;
 }
 
 export interface SubInput {
@@ -100,6 +106,8 @@ export interface SubInput {
 
 interface AgentRecord {
   info: AgentInfo;
+  /** Registro de sessões do agente principal (selo de origem). */
+  registro?: { entrypoint?: string; kind?: string };
   history: Activity[];
   removeAt?: number;
   /** Início do turno atual (para "Concluiu em X"). */
@@ -232,7 +240,7 @@ export class Office {
   detail(id: string): AgentDetail | undefined {
     const rec = this.agents.get(id);
     const demo = rec ? undefined : this.demoSnap?.agents.find((a) => a.id === id);
-    if (rec) return this.out({ agent: cloneAgent(rec.info), history: rec.history.slice() });
+    if (rec) return this.out({ agent: this.withOrigin(cloneAgent(rec.info), rec), history: rec.history.slice() });
     return demo ? this.out({ agent: cloneAgent(demo), history: demo.recent.slice() }) : undefined;
   }
 
@@ -277,7 +285,7 @@ export class Office {
       seed: hash32(p.id),
     };
     if (p.status === 'waiting') info.waitingFor = p.waitingFor ?? 'responder no terminal';
-    const rec: AgentRecord = { info, history: [] };
+    const rec: AgentRecord = { info, history: [], registro: { entrypoint: p.entrypoint, kind: p.kind } };
     if (p.status === 'working') rec.turnStart = now;
     this.agents.set(p.id, rec);
     const acc = this.deps.accountName(p.account);
@@ -759,6 +767,13 @@ export class Office {
 
   // ---------------------------------------------------------------- internos
 
+  private withOrigin(a: AgentInfo, rec: AgentRecord): AgentInfo {
+    if (a.kind !== 'main' || !rec.registro) return a;
+    const o = origemDoAgente(rec.registro, this.deps.sessoesApp?.().get(a.sessionId));
+    if (o) Object.assign(a, o);
+    return a;
+  }
+
   private build(): OfficeSnapshot {
     const now = this.now();
     const entries = new Map(this.rooms);
@@ -780,7 +795,7 @@ export class Office {
       if (effect) room.effect = { ...effect };
     }
     const perms = this.deps.permissions?.();
-    const real = [...this.agents.values()].map((r) => applyPermission(cloneAgent(r.info), perms?.get(r.info.id)));
+    const real = [...this.agents.values()].map((r) => this.withOrigin(applyPermission(cloneAgent(r.info), perms?.get(r.info.id)), r));
     const trim = (a: AgentInfo): AgentInfo => (a.recent.length > SNAPSHOT_RECENT ? { ...a, recent: a.recent.slice(-SNAPSHOT_RECENT) } : a);
     const sessions = new Map<string, number>();
     for (const a of real) if (a.kind === 'main' && a.status !== 'offline') sessions.set(a.account, (sessions.get(a.account) ?? 0) + 1);

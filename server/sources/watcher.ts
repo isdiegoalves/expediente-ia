@@ -302,6 +302,8 @@ export class ClaudeWatcher {
         startedAt: entry.startedAt ?? this.now(),
         status: st.status ?? 'idle',
         waitingFor: st.waitingFor,
+        entrypoint: entry.entrypoint,
+        kind: entry.kind,
       });
     } else if (t.sessionId !== entry.sessionId) {
       // /clear ou /resume no mesmo processo: mesmo personagem, transcript novo.

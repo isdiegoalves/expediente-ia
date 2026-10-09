@@ -22,6 +22,7 @@ import { Office } from './model/office';
 import { openMainAgent, SessionHistory } from './sources/history';
 import { createPermissionRoutes } from './permissions/http';
 import { PermissionRegistry } from './permissions/registry';
+import { SessoesAppReader } from './sources/sessoes-app';
 import { ClaudeWatcher } from './sources/watcher';
 import { createBuildReader } from './build';
 
@@ -44,6 +45,7 @@ const names = new NameStore(join(config.dataDir, 'names.json'));
 names.load();
 
 // Office, contas e watcher se referenciam (avisos de mudança / fontes): ligação tardia.
+const sessoesApp = new SessoesAppReader(config.sessoesAppFile);
 const late: { office?: Office; watcher?: ClaudeWatcher; permissions?: PermissionRegistry } = {};
 const accounts = new AccountsService({
   dirs: config.claudeDirs,
@@ -63,6 +65,7 @@ const office = new Office({
   accountName: (id) => accounts.find(id)?.detected.name,
   terminal: gate.on,
   permissions: () => late.permissions?.snapshot() ?? new Map(),
+  sessoesApp: () => sessoesApp.read(Date.now()),
 });
 const watcher = new ClaudeWatcher({ accounts, office, inDocker: config.inDocker });
 late.office = office;
@@ -110,6 +113,15 @@ const ticker = setInterval(() => {
     log.warnOnce(`tick:${errMsg(err)}`, `Falha no relógio do escritório: ${errMsg(err)}`);
   }
 }, 250);
+
+// O mapa do app muda sem o registro de sessões mudar: avisa o escritório para refazer o snapshot.
+let mapaDoApp = '';
+const mapaTimer = setInterval(() => {
+  const atual = JSON.stringify([...sessoesApp.read(Date.now())]);
+  if (atual === mapaDoApp) return;
+  mapaDoApp = atual;
+  office.markDirty();
+}, 5_000);
 
 const api = createApiHandler({
   office,
@@ -199,6 +211,7 @@ function shutdown(signal: string): void {
   shuttingDown = true;
   log.info(`Encerrando (${signal})…`);
   clearInterval(ticker);
+  clearInterval(mapaTimer);
   stats.stop();
   watcher.stop();
   accounts.stop();
