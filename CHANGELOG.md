@@ -24,6 +24,10 @@ do meio (0.**3**.0).
   troca: alguns sistemas de arquivos reaproveitam o número (inode) do arquivo apagado, e só o inode era comparado.
   Agora, quando o sistema informa o momento de criação do arquivo, ele também entra na comparação, e a leitura
   recomeça do início do arquivo novo.
+- O `npm install` alterava o `package-lock.json` (o do repositório estava desatualizado em relação ao
+  `package.json`), e por isso o `git pull` da versão seguinte parava com "Your local changes … would be
+  overwritten". Agora o arquivo fica igual. Quem já tem a alteração roda uma vez `git checkout -- package-lock.json`
+  antes do `git pull`.
 
 ## [0.4.0] - 2026-10-08
 
