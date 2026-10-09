@@ -38,6 +38,9 @@ instaladores de sempre (`npm run usage:install` e `npm run hooks:install`). A in
   seleciona por nome `sessionId`, `cliSessionId` e `isArchived` (nada mais do arquivo é copiado) e grava
   `~/.expediente/host/sessoes-app.json` (`{geradoEm, sessoes}`) num `.tmp` trocado por `mv -f`. Só relê o arquivo
   cujo tamanho ou data mudou; se o arquivo final tem menos de 4 s, a sessão pula a rodada. Só em sessões que desenham.
+- **Amostra horária:** ao ligar e a cada 10 min confere se já há `~/.expediente/host/amostras/<hora>-<conta>.json`; se não há, lê
+  `pid`, `entrypoint` e `kind` do registro de sessões da conta e, por pid vivo, o nome do programa de cada processo da cadeia de
+  pais (`ps -o ppid=,comm=`, só o último trecho do caminho). Grava só contagens: `{hora, registro, programas}`. Só em sessões que desenham.
 
 ### O que ele acessa
 
@@ -47,14 +50,14 @@ carregar o módulo; nada fora desta lista é chamado):
 ```
 ❯ ./register.ts hooks: session.start, session.measure, command.run{command=escritorio}
 ❯ ./register.ts answers its own command: command.run{command=escritorio}
-❯ ./register.ts calls: $.clock.after (via askExpediente), $.clock.every (via ligarPonte, schedule), $.clock.now (via rodarPonte, writeUsage), $.command.register, $.env.get (via readEnv, rodarPonte), $.fs.list (via arquivosDoApp), $.fs.read (via rodarPonte), $.fs.stat (via rodarPonte), $.fs.write (via rodarPonte, writeUsage), $.http.fetch (via askExpediente), $.process.run (via rodarPonte), $.session.id (via poll, rodarPonte), $.session.surfaces (via ligarPonte, poll), $.session.usage, $.ui.status (via setStatus)
+❯ ./register.ts calls: $.clock.after (via askExpediente), $.clock.every (via ligarAmostrador, ligarPonte, schedule), $.clock.now (via amostrarRegistro, rodarPonte, writeUsage), $.command.register, $.env.get (via amostrarRegistro, readEnv, rodarPonte), $.fs.list (via amostrarRegistro, arquivosDoApp), $.fs.read (via amostrarRegistro, rodarPonte), $.fs.stat (via amostrarRegistro, rodarPonte), $.fs.write (via amostrarRegistro, rodarPonte, writeUsage), $.http.fetch (via askExpediente), $.process.run (via amostrarRegistro, rodarPonte), $.session.id (via poll, rodarPonte), $.session.surfaces (via ligarAmostrador, ligarPonte, poll), $.session.usage, $.ui.status (via setStatus)
 ❯ ./register.ts env writes: nothing
 ❯ ./register.ts env reads: CLAUDE_CONFIG_DIR, EXPEDIENTE_PORT, EXPEDIENTE_USAGE_DIR, HOME
 ```
 
 Em palavras: só observa (nenhum hook decide nada: não aprova ferramentas, não muda prompts, não lê mensagens),
-grava dois arquivos em `~/.expediente/host` (o de uso e o `sessoes-app.json`, este por `mv`, o único uso de
-`$.process`), fala só com `127.0.0.1` e lê quatro variáveis de ambiente. `$.clock.after` é o
+grava três tipos de arquivo em `~/.expediente/host` (o de uso, o `sessoes-app.json`, este por `mv`, e uma amostra por hora em
+`amostras/`), roda `$.process` só para o `mv` e para `ps -o ppid=,comm=`, fala só com `127.0.0.1` e lê quatro variáveis de ambiente. `$.clock.after` é o
 prazo de 2 s de cada pergunta ao Expediente (`$.http.fetch` não aceita AbortSignal).
 
 ## `expediente-permissoes` — responder permissões pelo escritório

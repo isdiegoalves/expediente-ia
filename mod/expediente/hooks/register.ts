@@ -1,6 +1,6 @@
 // Mod do Expediente (Claude Code 2.1.287+): liga cada sessão ao escritório sem ler a conversa.
 //
-// Faz quatro coisas pequenas, e `claude plugin validate` lista exatamente o que o módulo chama (a saída
+// Faz cinco coisas pequenas, e `claude plugin validate` lista exatamente o que o módulo chama (a saída
 // está no mod/README.md):
 //
 // 1. Uso do plano (substitui o tap de statusline): em `session.start` e a cada `session.measure`
@@ -15,15 +15,17 @@
 // 3. /escritorio: resumo do escritório, respondido pelo próprio mod (não chama o modelo, não gasta uso).
 // 4. Ponte do app desktop (ponte.ts): a cada 5 s copia 3 campos por sessão do app para
 //    ~/.expediente/host/sessoes-app.json, que o servidor no container lê.
+// 5. Amostra horária (amostra.ts): contagem por entrypoint × kind e nomes de programa da cadeia de pais das sessões vivas.
 //
 // Regras: nenhum hook lança (um hook que lança é pulado, mas o que ele deixou pela metade fica): cada
-// passo tem seu try/catch e falha = silêncio. $.process só para trocar o arquivo da ponte (mv); nada de
+// passo tem seu try/catch e falha = silêncio. $.process só para trocar o arquivo da ponte (mv) e para o ps da amostra; nada de
 // $.model, $.prompt, decisão de ferramenta nem leitura da conversa; a rede é só 127.0.0.1. O estado fica em variáveis do módulo: um
 // hot reload recomeça do zero, o que aqui custa no máximo uma regravação a mais do arquivo de uso.
 //
 // Análise estática do Claude Code: cada chamada é escrita por extenso ($.noun.método), o nome do evento é
 // sempre uma string literal e `$` só é passado para funções declaradas no topo deste arquivo.
 import type { EngineInterface, Register, SessionRateLimit } from 'claude-code'
+import { AMOSTRA_MS, argvPaiDe, arquivoAmostraOf, contarMix, contarProgramas, horaDe, lerEntradaRegistro, MAX_NIVEIS, MAX_PIDS, paiDe, type EntradaRegistro } from './amostra'
 import { appDirOf, filtrarSessaoApp, FRESCO_MS, PONTE_MS, sessoesAppFileOf, type SessaoApp } from './ponte'
 
 /** Porta padrão do Expediente (a mesma do servidor, do hook de permissão e do docker-compose). */
@@ -247,6 +249,7 @@ let lastStatus: string | undefined | null = null
 let timer: { cancel: () => void } | undefined
 let timerMs = 0
 let ponteTimer: { cancel: () => void } | undefined
+let amostraTimer: { cancel: () => void } | undefined
 /** Uma pergunta por vez: um Expediente lento não acumula perguntas. */
 let polling = false
 
@@ -386,6 +389,59 @@ async function ligarPonte($: EngineInterface): Promise<void> {
   })
 }
 
+let amostrando = false
+
+/** Uma rodada do amostrador: no máximo uma amostra por hora e por conta. Pode lançar: quem chama engole. */
+async function amostrarRegistro($: EngineInterface): Promise<void> {
+  if (amostrando) return
+  amostrando = true
+  try {
+    const e = await readEnv($)
+    const home = (await $.env.get('HOME'))?.trim()
+    if (!home || !e.configDir) return
+    const hora = horaDe(await $.clock.now())
+    const arquivo = arquivoAmostraOf(home, hora, e.accountId ?? 'conta')
+    if (await $.fs.stat(arquivo).catch(() => undefined)) return
+    const pasta = `${e.configDir}/sessions`
+    const entradas: EntradaRegistro[] = []
+    for (const f of (await $.fs.list(pasta)).slice(0, MAX_PIDS)) {
+      if (f.kind !== 'file' || !f.name.endsWith('.json')) continue
+      const entrada = await $.fs.read(`${pasta}/${f.name}`).then(lerEntradaRegistro, () => undefined)
+      if (entrada) entradas.push(entrada)
+    }
+    const vivas: EntradaRegistro[] = []
+    const nomes: string[] = []
+    for (const entrada of entradas) {
+      let pid = entrada.pid
+      let nivel = 0
+      let viva = false
+      while (nivel++ < MAX_NIVEIS) {
+        const ps = await $.process.run(argvPaiDe(pid))
+        const pai = ps.exitCode === 0 ? paiDe(ps.stdout) : undefined
+        if (!pai) break
+        if (nivel === 1) viva = true
+        nomes.push(pai.nome)
+        if (pai.ppid <= 1) break
+        pid = pai.ppid
+      }
+      if (viva) vivas.push(entrada)
+    }
+    if (!vivas.length) return
+    await $.fs.write(arquivo, `${JSON.stringify({ hora, registro: contarMix(vivas), programas: contarProgramas(nomes) })}\n`)
+  } finally {
+    amostrando = false
+  }
+}
+
+/** Amostra já ao ligar e depois a cada 10 min (a hora vira entre uma rodada e outra), só onde a sessão desenha. */
+async function ligarAmostrador($: EngineInterface): Promise<void> {
+  if (amostraTimer || !(await $.session.surfaces()).length) return
+  amostraTimer = $.clock.every(AMOSTRA_MS, () => {
+    void amostrarRegistro($).catch(() => undefined)
+  })
+  void amostrarRegistro($).catch(() => undefined)
+}
+
 /** Uma rodada do aviso embaixo do prompt. Nunca lança. */
 async function poll($: EngineInterface): Promise<void> {
   if (polling) return
@@ -447,6 +503,11 @@ export const register: Register = (on) => {
       await ligarPonte($)
     } catch {
       // sem a ponte, o resto segue
+    }
+    try {
+      await ligarAmostrador($)
+    } catch {
+      // sem a amostra, o resto segue
     }
     return next(e)
   })
