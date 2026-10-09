@@ -24,6 +24,15 @@ export function argvLeitorPainel(pid: number): string[] {
   return ['/bin/sh', '-c', LEITOR_ZELLIJ, 'leitor', pidValido(pid)]
 }
 
+export function argvProgramaDe(pid: number): string[] {
+  return ['ps', '-o', 'comm=', '-p', pidValido(pid)]
+}
+
+/** O pid de uma sessão só vale se ainda for o `claude`: o Docker não confirma e o sistema reusa pids. */
+export function ehClaude(saida: string): boolean {
+  return /(?:^|\/)claude$/.test(saida.trim())
+}
+
 /** Para o cliente `zellij attach` vivo, nunca para o processo `claude`: o valor deste vem de um WezTerm morto. */
 export function argvLeitorClienteWezTerm(pid: number): string[] {
   return ['/bin/sh', '-c', LEITOR_WEZTERM, 'leitor', pidValido(pid)]

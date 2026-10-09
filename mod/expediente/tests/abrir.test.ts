@@ -1,6 +1,6 @@
 // Testes da lista permitida do `open` e da validação dos ids do foco. Nada aqui executa comando.
 import { describe, expect, test } from 'claude-code/testing'
-import { argvAbrir } from '../hooks/abrir'
+import { abrirUrl, argvAbrir } from '../hooks/abrir'
 import { argvAtivarPainelWezTerm, argvFocoZellij } from '../hooks/painel'
 
 const UUID = '11111111-aaaa-4aaa-8aaa-111111111111'
@@ -58,5 +58,34 @@ describe('argv de foco só com ids no formato', () => {
     expect(() => argvAtivarPainelWezTerm({ WEZTERM_PANE: 'x', WEZTERM_UNIX_SOCKET: '/a/gui-sock-1' })).toThrow()
     expect(() => argvAtivarPainelWezTerm({ WEZTERM_PANE: '0', WEZTERM_UNIX_SOCKET: '/a/outro' })).toThrow()
     expect(() => argvAtivarPainelWezTerm({ WEZTERM_PANE: '0', WEZTERM_UNIX_SOCKET: '/a/gui-sock-1 --x' })).toThrow()
+  })
+})
+
+describe('abrirUrl', () => {
+  const APP = 'claude://code/continue?session=local_aaaa-1'
+
+  test('URL fora da lista não chega ao run, nem chamada direto, e avisa', async () => {
+    const rodados: string[][] = []
+    const avisos: string[] = []
+    const urls = ['file:///etc/passwd', 'https://example.com/', 'http://localhost:4848/api/agentes/x/ir?abrir=1', `${APP}&prompt=x`, '--help', '']
+    for (const url of urls) {
+      await abrirUrl(async (argv) => void rodados.push(argv), (t) => void avisos.push(t), url)
+    }
+    expect(rodados).toEqual([])
+    expect(avisos).toHaveLength(urls.length)
+    expect(avisos[0]).toMatch(/fora da lista permitida/)
+  })
+
+  test('URL da lista roda exatamente o argv da lista; falha do run vira aviso, sem lançar', async () => {
+    const rodados: string[][] = []
+    const avisos: string[] = []
+    await abrirUrl(async (argv) => void rodados.push(argv), (t) => void avisos.push(t), APP)
+    expect(rodados).toEqual([['open', APP]])
+    expect(avisos).toEqual([])
+    const falha = async () => {
+      throw new Error('sem processo')
+    }
+    await abrirUrl(falha, (t) => void avisos.push(t), APP)
+    expect(avisos).toEqual(['Expediente: não deu para abrir o app'])
   })
 })

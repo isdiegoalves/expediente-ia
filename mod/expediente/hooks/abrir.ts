@@ -6,3 +6,17 @@ export function argvAbrir(url: string): string[] | undefined {
   if (typeof url !== 'string') return undefined
   return APP.test(url) || RESUME.test(url) ? ['open', url] : undefined
 }
+
+/** A guarda fica aqui, no ponto que executa: `run` só recebe o argv que a lista permitida devolve. */
+export async function abrirUrl(run: (argv: string[]) => Promise<unknown>, toast: (texto: string) => void, url: string): Promise<void> {
+  const argv = argvAbrir(url)
+  if (!argv) {
+    toast('Expediente: link recusado, fora da lista permitida')
+    return
+  }
+  try {
+    await run(argv)
+  } catch {
+    toast('Expediente: não deu para abrir o app')
+  }
+}

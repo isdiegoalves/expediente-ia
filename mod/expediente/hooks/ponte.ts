@@ -1,6 +1,6 @@
 // Ponte do app desktop: lê os JSON de sessão do app e grava ~/.expediente/host/sessoes-app.json com 3 campos
 // por sessão, que é o que o servidor (no container, sem acesso à pasta do app) enxerga. As chamadas a `$` ficam
-// em register.ts: a análise do Claude Code não segue `$` por um import.
+// em register.tsx: a análise do Claude Code não segue `$` por um import.
 export const PONTE_MS = 5_000
 /** Arquivo final gravado há menos que isto: outra sessão já fez a rodada. */
 export const FRESCO_MS = 4_000

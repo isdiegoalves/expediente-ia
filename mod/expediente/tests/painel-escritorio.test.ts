@@ -24,6 +24,9 @@ interface Sessao {
   ir: Record<string, unknown>
 }
 
+const CLAUDE = '/Users/fulano/.local/bin/claude\n'
+const ehPrograma = (argv: readonly string[]) => argv[0] === 'ps' && argv[1] === '-o' && argv[2] === 'comm='
+
 function nonce(n: number): string {
   return String(n).padStart(32, '0')
 }
@@ -111,26 +114,51 @@ describe('painel do /escritorio', () => {
   test('terminal viva com painel do zellij: Focar roda zellij e depois o WezTerm, e só ao apertar; a cópia vem rotulada', async ($, on) => {
     const w = mundo(on, {
       sessoes: [{ id: '.claude:507', ir: { estado: 'vivo', origin: 'terminal', comando: FORK, aviso: AVISO, links: [] } }],
-      processo: (argv) => (argv[0] === '/bin/sh' ? { stdout: 'ZELLIJ_PANE_ID=17\nZELLIJ_SESSION_NAME=main\n' } : {}),
+      processo: (argv) => (ehPrograma(argv) ? { stdout: CLAUDE } : argv[0] === '/bin/sh' ? { stdout: 'ZELLIJ_PANE_ID=17\nZELLIJ_SESSION_NAME=main\n' } : {}),
     })
     await $.command.run(RUN)
-    expect(w.rodados.map((a) => a[0])).toEqual(['/bin/sh'])
+    expect(w.rodados.map((a) => a[0])).toEqual(['ps', '/bin/sh'])
     const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
     expect(await ui.find({ text: AVISO })).toBeDefined()
     expect(await ui.find({ type: 'Button', text: /Copiar comando \(cria uma cópia\)/ })).toBeDefined()
     await ui.press({ key: 'focar:.claude:507' })
     await ui.unmount()
-    expect(w.rodados.slice(1)).toEqual([
+    expect(w.rodados.slice(2)).toEqual([
       ['zellij', '--session', 'main', 'action', 'focus-pane-id', 'terminal_17'],
       ['open', '-a', 'WezTerm'],
     ])
     expect(w.copiados).toEqual([])
   })
 
+  test('pid que não é mais o claude (reusado por outro programa): sem Focar, sem ler o painel, só a cópia', async ($, on) => {
+    const w = mundo(on, {
+      sessoes: [{ id: '.claude:507', ir: { estado: 'vivo', origin: 'terminal', comando: FORK, aviso: AVISO, links: [] } }],
+      processo: (argv) => (ehPrograma(argv) ? { stdout: '-zsh\n' } : argv[0] === '/bin/sh' ? { stdout: 'ZELLIJ_PANE_ID=17\nZELLIJ_SESSION_NAME=main\n' } : {}),
+    })
+    await $.command.run(RUN)
+    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    expect(await ui.find({ type: 'Button', text: /^Focar$/ })).toBeUndefined()
+    expect(await ui.find({ type: 'Button', text: /Copiar comando/ })).toBeDefined()
+    await ui.unmount()
+    expect(w.rodados.map((a) => a[0])).toEqual(['ps'])
+  })
+
+  test('pid cujo programa não dá para conferir (ps falha): sem Focar', async ($, on) => {
+    const w = mundo(on, {
+      sessoes: [{ id: '.claude:507', ir: { estado: 'vivo', origin: 'terminal', comando: FORK, aviso: AVISO, links: [] } }],
+      processo: (argv) => (ehPrograma(argv) ? { exitCode: 1 } : argv[0] === '/bin/sh' ? { stdout: 'ZELLIJ_PANE_ID=17\nZELLIJ_SESSION_NAME=main\n' } : {}),
+    })
+    await $.command.run(RUN)
+    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    expect(await ui.find({ type: 'Button', text: /^Focar$/ })).toBeUndefined()
+    await ui.unmount()
+    expect(w.rodados.map((a) => a[0])).toEqual(['ps'])
+  })
+
   test('foco que falha: avisa e copia o comando seguro', async ($, on) => {
     const w = mundo(on, {
       sessoes: [{ id: '.claude:507', ir: { estado: 'vivo', origin: 'terminal', comando: FORK, aviso: AVISO, links: [] } }],
-      processo: (argv) => (argv[0] === '/bin/sh' ? { stdout: 'ZELLIJ_PANE_ID=17\nZELLIJ_SESSION_NAME=main\n' } : argv[0] === 'zellij' ? { exitCode: 1 } : {}),
+      processo: (argv) => (ehPrograma(argv) ? { stdout: CLAUDE } : argv[0] === '/bin/sh' ? { stdout: 'ZELLIJ_PANE_ID=17\nZELLIJ_SESSION_NAME=main\n' } : argv[0] === 'zellij' ? { exitCode: 1 } : {}),
     })
     await $.command.run(RUN)
     const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
@@ -144,7 +172,7 @@ describe('painel do /escritorio', () => {
   test('ramo genérico: sem zellij, o tty vai para o osascript do app que está rodando', async ($, on) => {
     const w = mundo(on, {
       sessoes: [{ id: '.claude:508', ir: { estado: 'vivo', origin: 'terminal', comando: FORK, aviso: AVISO, links: [] } }],
-      processo: (argv) => (argv[0] === 'ps' ? { stdout: 'ttys005\n' } : argv[0] === 'pgrep' ? { exitCode: argv[2] === 'Terminal' ? 0 : 1 } : argv[0] === 'osascript' ? { stdout: 'ok\n' } : {}),
+      processo: (argv) => (ehPrograma(argv) ? { stdout: CLAUDE } : argv[0] === 'ps' ? { stdout: 'ttys005\n' } : argv[0] === 'pgrep' ? { exitCode: argv[2] === 'Terminal' ? 0 : 1 } : argv[0] === 'osascript' ? { stdout: 'ok\n' } : {}),
     })
     await $.command.run(RUN)
     const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
@@ -203,19 +231,18 @@ describe('painel do /escritorio', () => {
     expect(w.copiados).toEqual([retomar])
   })
 
-  test('com o painel desenhado, o nonce renova a cada 30 s; fechado, para de perguntar', async ($, on) => {
+  test('com o painel desenhado, o nonce renova a cada 15 s; fechado, para de perguntar', async ($, on) => {
     const w = mundo(on, { sessoes: [{ id: '.claude:11', ir: { estado: 'vivo', origin: 'app desktop', comando: FORK, aviso: AVISO, links: [{ rotulo: 'Abrir a sessão no app', href: APP }] } }] })
     await $.command.run(RUN)
     const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
     expect(w.emitidos()).toBe(1)
-    await w.clock.advance(30_000)
+    await w.clock.advance(15_000)
     expect(w.emitidos()).toBe(2)
     expect((await ui.find({ type: 'Link', text: /Abrir no app/ }))?.props.href).toContain(`n=${nonce(2)}`)
     await ui.unmount()
     await w.clock.advance(30_000)
     await w.clock.advance(30_000)
-    await w.clock.advance(30_000)
-    expect(w.emitidos()).toBeLessThanOrEqual(4)
+    expect(w.emitidos()).toBeLessThanOrEqual(5)
     const antes = w.emitidos()
     await w.clock.advance(60_000)
     expect(w.emitidos()).toBe(antes)

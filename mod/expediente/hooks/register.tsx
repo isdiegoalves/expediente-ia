@@ -8,7 +8,7 @@
 //    <EXPEDIENTE_USAGE_DIR ou ~/.expediente/host/uso>/<conta>.json no MESMO formato do scripts/statusline-tap.mjs
 //    ({accountId, configDir, fetchedAt, five_hour, seven_day}, `resets_at` em segundos) mais
 //    `source: "mod"`. O servidor lê esses arquivos em server/accounts/statusline.ts.
-// 2. Uma linha embaixo do prompt quando OUTRA sessão precisa de você: a cada 5 s pergunta ao Expediente
+// 2. Uma linha embaixo do prompt quando OUTRA sessão precisa de você: a cada 4 s pergunta ao Expediente
 //    local (GET /api/mod/summary, que já tira da lista esta sessão e os subagentes dela). Fora do ar, a
 //    linha some e as perguntas passam a ser a cada 30 s até ele voltar. Só onde a sessão desenha
 //    (`$.session.surfaces()` vazia = `claude -p`/SDK: nada a mostrar, nada a perguntar).
@@ -19,17 +19,19 @@
 // 5. Amostra horária (amostra.ts): contagem por entrypoint × kind e nomes de programa da cadeia de pais das sessões vivas.
 //
 // Regras: nenhum hook lança (um hook que lança é pulado, mas o que ele deixou pela metade fica): cada
-// passo tem seu try/catch e falha = silêncio. $.process só para trocar o arquivo da ponte (mv) e para o ps da amostra; nada de
+// passo tem seu try/catch e falha = silêncio. $.process roda só argv fixo, sem shell montado de texto alheio: mv (ponte),
+// pgrep e o próprio ps (amostra, tty, confirmação do programa do pid), o leitor de ZELLIJ_*/WEZTERM_* (foco), zellij, open -a WezTerm, osascript
+// (foco) e open com URL da lista permitida (abrir o app); nada de
 // $.model, $.prompt, decisão de ferramenta nem leitura da conversa; a rede é só 127.0.0.1. O estado fica em variáveis do módulo: um
 // hot reload recomeça do zero, o que aqui custa no máximo uma regravação a mais do arquivo de uso.
 //
 // Análise estática do Claude Code: cada chamada é escrita por extenso ($.noun.método), o nome do evento é
 // sempre uma string literal e `$` só é passado para funções declaradas no topo deste arquivo.
 import type { EngineInterface, HttpResponse, Register, RenderSurface, SessionRateLimit } from 'claude-code'
-import { argvAbrir } from './abrir'
+import { abrirUrl } from './abrir'
 import { acoesDaSessao, detalheTexto, lerIr, listaTexto, nomeDaLinha, pidDoId, porEstado, type IrView } from './escritorio'
 import { offlineText, outdatedText, parseSummary, statusText, summaryText, type Summary } from './resumo'
-import { argvAppRodando, argvFocoTerminalApp, argvFocoZellij, argvLeitorPainel, argvTrazerWezTerm, argvTtyDe, lerPainel, lerTty, type PainelZellij } from './painel'
+import { argvAppRodando, argvFocoTerminalApp, argvFocoZellij, argvLeitorPainel, argvProgramaDe, argvTrazerWezTerm, argvTtyDe, ehClaude, lerPainel, lerTty, type PainelZellij } from './painel'
 import { AMOSTRA_MS, argvPaiDe, arquivoAmostraOf, contarMix, contarProgramas, ehAmostraDaConta, horaDe, lerEntradaRegistro, marcadorAmostraOf, MAX_AMOSTRAS, MAX_NIVEIS, MAX_PIDS, paiDe, pastaAmostrasOf, type EntradaRegistro } from './amostra'
 import { appDirOf, filtrarSessaoApp, FRESCO_MS, PONTE_MS, sessoesAppFileOf, type SessaoApp } from './ponte'
 
@@ -38,7 +40,7 @@ export { offlineText, outdatedText, parseSummary, statusText, summaryText, type 
 /** Porta padrão do Expediente (a mesma do servidor, do hook de permissão e do docker-compose). */
 export const DEFAULT_PORT = 4848
 /** Intervalo das perguntas ao Expediente; fora do ar, recua para o segundo até ele voltar. */
-export const POLL_MS = 5_000
+export const POLL_MS = 4_000
 export const OFFLINE_POLL_MS = 30_000
 /** Quanto esperar o Expediente local responder (`$.http.fetch` não aceita AbortSignal: a corrida é com um timer). */
 export const FETCH_TIMEOUT_MS = 2_000
@@ -238,7 +240,7 @@ function setStatus($: EngineInterface, text: string | undefined): void {
   $.ui.status(text)
 }
 
-/** (Re)agenda as perguntas: 5 s com o Expediente no ar, 30 s fora do ar. */
+/** (Re)agenda as perguntas: 4 s com o Expediente no ar, 30 s fora do ar. */
 function schedule($: EngineInterface, ms: number): void {
   if (timer && timerMs === ms) return
   timer?.cancel()
@@ -408,8 +410,8 @@ async function poll($: EngineInterface): Promise<void> {
 // ---------------------------------------------------------------------------------------------
 
 const PAINEL = 'escritorio'
-/** O nonce do /ir vale 60 s: com o painel aberto, renova a cada 30 s. */
-export const RENOVA_MS = 30_000
+/** O nonce do /ir vale 60 s e só abre uma vez: com o painel aberto, renova a cada 15 s. */
+export const RENOVA_MS = 15_000
 const FOCO_VALIDO_MS = 5 * 60_000
 const MAX_SESSOES_PAINEL = 20
 
@@ -434,6 +436,11 @@ async function acharFoco($: EngineInterface, id: string): Promise<{ zellij?: Pai
   if (guardado && agora - guardado.em < FOCO_VALIDO_MS) return guardado
   const achado: { em: number; zellij?: PainelZellij; tty?: string } = { em: agora }
   try {
+    const programa = await $.process.run(argvProgramaDe(pid), { timeoutMs: 5_000 })
+    if (programa.exitCode !== 0 || !ehClaude(programa.stdout)) {
+      focos.set(id, achado)
+      return achado
+    }
     const lido = await $.process.run(argvLeitorPainel(pid), { timeoutMs: 5_000 })
     const zellij = lerPainel(lido.stdout)
     if (zellij) achado.zellij = zellij
@@ -483,16 +490,11 @@ async function renovar($: EngineInterface): Promise<void> {
 }
 
 async function abrirNoApp($: EngineInterface, url: string): Promise<void> {
-  const argv = argvAbrir(url)
-  if (!argv) {
-    $.ui.toast('Expediente: link recusado, fora da lista permitida')
-    return
-  }
-  try {
-    await $.process.run(argv, { timeoutMs: 10_000 })
-  } catch {
-    $.ui.toast('Expediente: não deu para abrir o app')
-  }
+  await abrirUrl(
+    (argv) => $.process.run(argv, { timeoutMs: 10_000 }),
+    (texto) => $.ui.toast(texto),
+    url,
+  )
 }
 
 async function copiarComando($: EngineInterface, comando: string, surface: RenderSurface): Promise<void> {

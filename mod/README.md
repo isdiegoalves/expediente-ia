@@ -15,7 +15,7 @@ partir da 2.1.287; a API ainda é "early access" e pode mudar entre versões. A 
   um limite anda um ponto) lê `$.session.usage().rateLimits` e grava `~/.expediente/host/uso/<conta>.json` (ou em
   `EXPEDIENTE_USAGE_DIR`) no mesmo formato do tap de statusline, mais `"source": "mod"`. O seu statusline fica intocado. A conta é a pasta de `CLAUDE_CONFIG_DIR` (o primeiro
   item) ou `~/.claude`. Valores iguais gravados há menos de 10 s não são regravados; falha ao gravar = silêncio.
-- **"Precisa de você" embaixo do prompt:** a cada 5 s pergunta ao Expediente local
+- **"Precisa de você" embaixo do prompt:** a cada 4 s pergunta ao Expediente local
   (`GET http://127.0.0.1:<EXPEDIENTE_PORT ou 4848>/api/mod/summary`) quem está esperando, já sem esta sessão e os
   subagentes dela, e mostra `🏢 Valentina precisa de você em loja-virtual` ou
   `🏢 2 precisam de você: Valentina (loja-virtual), Elias (app-mobile)` (até 3 nomes, depois "e mais N").
@@ -39,14 +39,14 @@ partir da 2.1.287; a API ainda é "early access" e pode mudar entre versões. A 
 
   Fora do ar: `O Expediente não respondeu em http://localhost:4848. Para subir: npm run docker:up na pasta do Expediente.`
 
-  Onde a sessão desenha, o comando também abre o painel "Escritório" com o caminho de cada sessão, renovado a cada 30 s
+  Onde a sessão desenha, o comando também abre o painel "Escritório" com o caminho de cada sessão, renovado a cada 15 s
   enquanto está aberto. Sessão do app: no terminal, o link `claude://code/continue?session=local_…` e o botão "Abrir"
   (`open`, só para URL da lista permitida); no app, o link `http://localhost:<porta>/api/agentes/<id>/ir?abrir=1&n=<nonce>`
   (o servidor confere o nonce e responde 302 para o app). Sessão de terminal viva: "Focar" (painel do zellij e WezTerm à
   frente; ramo genérico por tty para Terminal e iTerm2) quando o painel foi achado, e sempre a cópia
   `claude --resume <id> --fork-session` rotulada como cópia; `kind=bg`: `claude attach <id>`; encerrada:
   `cd -- '<cwd>' && claude --resume <id>`. No app o comando aparece num bloco para selecionar (ali não há como copiar).
-  Para achar o painel, o mod lê do processo da sessão só `ZELLIJ_PANE_ID` e `ZELLIJ_SESSION_NAME`, filtrados na origem.
+  Para achar o painel, o mod confere com `ps` que o pid ainda é o `claude` (senão não oferece "Focar") e lê do processo da sessão só `ZELLIJ_PANE_ID` e `ZELLIJ_SESSION_NAME`, filtrados na origem.
 
 - **Ponte do app desktop:** a cada 5 s lê `~/Library/Application Support/Claude/claude-code-sessions/*/*/local_*.json`,
   seleciona por nome `sessionId`, `cliSessionId` e `isArchived` (nada mais do arquivo é copiado) e grava

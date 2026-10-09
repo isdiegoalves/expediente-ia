@@ -4,7 +4,7 @@
 import type { CommandRunInput, HttpResponse, On, SessionRateLimit } from 'claude-code'
 import { describe, expect, mock, test } from 'claude-code/testing'
 import type { UsoAgente } from '../hooks/escritorio'
-import { configDirOf, normalizePath, parseSummary, statusText, usageDirOf, windowOf, type Summary, type WaitingAgent } from '../hooks/register'
+import { configDirOf, FETCH_TIMEOUT_MS, normalizePath, OFFLINE_POLL_MS, POLL_MS, parseSummary, statusText, usageDirOf, windowOf, type Summary, type WaitingAgent } from '../hooks/register'
 
 const NOW = Date.parse('2026-10-06T12:00:00Z')
 const SEC = (iso: string) => Date.parse(iso) / 1_000
@@ -148,40 +148,59 @@ describe('linha embaixo do prompt', () => {
     const w = world(on, { answer: () => summary(list) })
     await $.session.start(START)
     expect(w.fetches).toEqual([])
-    await w.clock.advance(5_000)
+    await w.clock.advance(POLL_MS)
     expect(w.fetches).toEqual([`${SUMMARY_URL}?account=.claude-conta2&session=sess-1`])
     expect(w.statuses).toEqual([undefined])
     list = [waiting('Valentina', 'loja-virtual')]
-    await w.clock.advance(5_000)
+    await w.clock.advance(POLL_MS)
     expect(w.statuses.at(-1)).toBe('🏢 Valentina precisa de você em loja-virtual')
-    await w.clock.advance(5_000)
+    await w.clock.advance(POLL_MS)
     expect(w.statuses.length).toBe(2)
     list = [waiting('Valentina', 'loja-virtual'), waiting('Elias', 'app-mobile')]
-    await w.clock.advance(5_000)
+    await w.clock.advance(POLL_MS)
     expect(w.statuses.at(-1)).toBe('🏢 2 precisam de você: Valentina (loja-virtual), Elias (app-mobile)')
     list = [...list, waiting('Bia', 'site'), waiting('Caio', 'api'), waiting('Dora', 'docs')]
-    await w.clock.advance(5_000)
+    await w.clock.advance(POLL_MS)
     expect(w.statuses.at(-1)).toBe('🏢 5 precisam de você: Valentina (loja-virtual), Elias (app-mobile), Bia (site) e mais 2')
     list = []
-    await w.clock.advance(5_000)
+    await w.clock.advance(POLL_MS)
     expect(w.statuses.at(-1)).toBeUndefined()
     expect(w.statuses.length).toBe(5)
+  })
+
+  test('pior caso: o servidor só vê a espera 1 s depois do evento e a pergunta do mod acabou de passar; a linha sai em até 5 s', async ($, on) => {
+    const VARREDURA_MS = 1_000
+    const LIMITE_MS = 5_000
+    let agora = 0
+    const visivelApos = 2 * POLL_MS
+    const w = world(on, { answer: () => summary(agora > visivelApos ? [waiting('Valentina', 'loja-virtual')] : []) })
+    await $.session.start(START)
+    const andar = async (ms: number) => {
+      for (let t = 0; t < ms; t += 1_000) {
+        agora += 1_000
+        await w.clock.advance(1_000)
+      }
+    }
+    await andar(visivelApos - VARREDURA_MS)
+    expect(w.statuses.at(-1)).toBeUndefined()
+    await andar(LIMITE_MS)
+    expect(w.statuses.at(-1)).toBe('🏢 Valentina precisa de você em loja-virtual')
   })
 
   test('Expediente fora do ar: limpa a linha e recua para 30 s até voltar', async ($, on) => {
     let up = false
     const w = world(on, { answer: () => (up ? summary([waiting('Valentina', 'loja-virtual')]) : 'offline') })
     await $.session.start(START)
-    await w.clock.advance(5_000)
+    await w.clock.advance(POLL_MS)
     expect(w.fetches.length).toBe(1)
     expect(w.statuses).toEqual([undefined])
-    await w.clock.advance(25_000)
+    await w.clock.advance(OFFLINE_POLL_MS - 1)
     expect(w.fetches.length).toBe(1)
     up = true
-    await w.clock.advance(5_000)
+    await w.clock.advance(1)
     expect(w.fetches.length).toBe(2)
     expect(w.statuses.at(-1)).toBe('🏢 Valentina precisa de você em loja-virtual')
-    await w.clock.advance(5_000)
+    await w.clock.advance(POLL_MS)
     expect(w.fetches.length).toBe(3)
   })
 
@@ -189,12 +208,12 @@ describe('linha embaixo do prompt', () => {
     let hang = false
     const w = world(on, { answer: () => (hang ? 'hang' : summary([waiting('Valentina', 'loja-virtual')])) })
     await $.session.start(START)
-    await w.clock.advance(5_000)
+    await w.clock.advance(POLL_MS)
     expect(w.statuses).toEqual(['🏢 Valentina precisa de você em loja-virtual'])
     hang = true
-    await w.clock.advance(5_000)
+    await w.clock.advance(POLL_MS)
     expect(w.statuses.length).toBe(1)
-    await w.clock.advance(2_000)
+    await w.clock.advance(FETCH_TIMEOUT_MS)
     expect(w.statuses).toEqual(['🏢 Valentina precisa de você em loja-virtual', undefined])
   })
 
