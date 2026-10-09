@@ -52,9 +52,19 @@ describe('leitor de painel', () => {
   });
 });
 
+const padroes = [/\bps\s+-[A-Za-z]*e[A-Za-z]*\b/, /\bps\s+e{1,2}w*\b/, /\beww\b/, /\bps\b[^\n]*\s-E\b/, /\/proc\/[0-9]+\/environ/, /\benviron\b/, /\benvp\b/, /KERN_PROCARGS/];
+
+describe('padrões do teste estático', () => {
+  it.each(['ps -eww -p 1', 'ps eww -p 1', 'ps -E -p 1', 'ps -axe', 'ps -ef'])('pega %s', (s) => {
+    expect(padroes.some((p) => p.test(s))).toBe(true);
+  });
+  it.each(['o ps recebe só -o ppid=,comm=', 'ps -o ppid=,comm= -p 1', 'ps -axo pid=,command='])('deixa passar %s', (s) => {
+    expect(padroes.some((p) => p.test(s))).toBe(false);
+  });
+});
+
 describe('leitura de ambiente de outro processo', () => {
   it('nenhum outro arquivo do repositório lê ambiente de processo', () => {
-    const padroes = [/\bps\s+-?[A-Za-z]*e[A-Za-z]*\b/, /\beww\b/, /\bps\b[^\n]*\s-E\b/, /\/proc\/[0-9]+\/environ/, /\benviron\b/, /\benvp\b/, /KERN_PROCARGS/];
     const proprios = ['mod/expediente/hooks/painel.ts', 'server/test/leitor-painel.test.ts', 'mod/expediente/tests/painel.test.ts'];
     const arquivos = execFileSync('git', ['ls-files', '-z', '--', 'mod', 'server', 'shared', 'scripts', 'client/src'], { encoding: 'utf8' })
       .split('\0')
