@@ -1,6 +1,6 @@
-// Assets opcionais gerados por IA (quadros, pôsteres e a placa da recepção).
-// GET /assets/manifest.json -> { wallArt: [{ id, kind, file, w, h, tiles, variant?, framed? }], brand: { signage?, mark? } }.
-// Se o manifesto não existir (ou falhar), o mundo segue só com a arte procedural.
+// Decoração em PNG do tema ativo (quadros, pôsteres, a placa da recepção e o logo): `decoracao` do tema.
+// Arquivo que não carrega fica de fora e o mundo segue com a arte procedural.
+import { tema, urlDoTema } from '../tema';
 
 export interface WallArtAsset {
   id: string;
@@ -28,70 +28,42 @@ export interface WorldAssets {
   mark?: BrandAsset;
 }
 
-interface ManifestFile {
-  file: string;
-  w: number;
-  h: number;
-}
-
-interface Manifest {
-  wallArt?: (ManifestFile & { id: string; kind: string; tiles?: number; variant?: string; framed?: ManifestFile })[];
-  brand?: { signage?: ManifestFile; mark?: ManifestFile };
-}
-
-function loadImage(file: string): Promise<HTMLImageElement | null> {
+function loadImage(arquivo: string): Promise<HTMLImageElement | null> {
   return new Promise((resolve) => {
     const img = new Image();
     img.decoding = 'async';
     img.onload = () => resolve(img.naturalWidth > 0 ? img : null);
     img.onerror = () => resolve(null);
-    img.src = `/assets/${file.replace(/^\/+/, '')}`;
+    img.src = urlDoTema(arquivo);
   });
 }
 
-function validFile(f: unknown): f is ManifestFile {
-  if (!f || typeof f !== 'object') return false;
-  const o = f as Record<string, unknown>;
-  return typeof o.file === 'string' && o.file.length > 0 && !o.file.includes('..');
-}
+const brand = async (arquivo: string): Promise<BrandAsset | undefined> => {
+  const img = await loadImage(arquivo);
+  return img ? { img, w: img.naturalWidth, h: img.naturalHeight } : undefined;
+};
 
-export async function loadWorldAssets(signal?: AbortSignal): Promise<WorldAssets | null> {
-  try {
-    const res = await fetch('/assets/manifest.json', { signal, cache: 'no-cache' });
-    if (!res.ok || !(res.headers.get('content-type') ?? '').includes('json')) return null;
-    const m = (await res.json()) as Manifest;
-    const wallArt: WallArtAsset[] = [];
-    const list = Array.isArray(m.wallArt) ? m.wallArt : [];
-    const imgs = await Promise.all(list.map((a) => (validFile(a) ? loadImage(a.file) : Promise.resolve(null))));
-    const framed = await Promise.all(list.map((a) => (validFile(a.framed) ? loadImage(a.framed.file) : Promise.resolve(null))));
-    list.forEach((a, i) => {
-      const img = imgs[i];
-      if (!img || (a.kind !== 'painting' && a.kind !== 'poster')) return;
-      const w = img.naturalWidth;
-      const h = img.naturalHeight;
-      // sem "tiles" no manifesto: deduz pela largura (pinturas largas não cabem num quadro de 2 tiles)
-      const tiles = typeof a.tiles === 'number' && a.tiles > 0 ? a.tiles : a.kind === 'poster' ? 1 : w > 40 ? 4 : 2;
-      const f = framed[i];
-      wallArt.push({
-        id: String(a.id),
-        kind: a.kind,
-        img,
-        w,
-        h,
-        tiles,
-        variant: typeof a.variant === 'string' ? a.variant : undefined,
-        framed: f ? { img: f, w: f.naturalWidth, h: f.naturalHeight } : undefined,
-      });
+export async function loadWorldAssets(): Promise<WorldAssets | null> {
+  const { quadros, marca } = tema().decoracao;
+  const imgs = await Promise.all(quadros.map((q) => loadImage(q.arquivo)));
+  const framed = await Promise.all(quadros.map((q) => (q.moldura ? loadImage(q.moldura.arquivo) : Promise.resolve(null))));
+  const wallArt: WallArtAsset[] = [];
+  quadros.forEach((q, i) => {
+    const img = imgs[i];
+    if (!img) return;
+    const f = framed[i];
+    wallArt.push({
+      id: q.id,
+      kind: q.tipo,
+      img,
+      w: img.naturalWidth,
+      h: img.naturalHeight,
+      tiles: q.tiles ?? (q.tipo === 'poster' ? 1 : img.naturalWidth > 40 ? 4 : 2),
+      variant: q.variante,
+      framed: f ? { img: f, w: f.naturalWidth, h: f.naturalHeight } : undefined,
     });
-    const brand = async (f: ManifestFile | undefined): Promise<BrandAsset | undefined> => {
-      if (!validFile(f)) return undefined;
-      const img = await loadImage(f.file);
-      return img ? { img, w: img.naturalWidth, h: img.naturalHeight } : undefined;
-    };
-    const [signage, mark] = await Promise.all([brand(m.brand?.signage), brand(m.brand?.mark)]);
-    if (!wallArt.length && !signage && !mark) return null;
-    return { wallArt, signage, mark };
-  } catch {
-    return null;
-  }
+  });
+  const [signage, mark] = await Promise.all([brand(marca.placa.arquivo), brand(marca.logo.arquivo)]);
+  if (!wallArt.length && !signage && !mark) return null;
+  return { wallArt, signage, mark };
 }

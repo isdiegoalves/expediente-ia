@@ -44,7 +44,7 @@ function isTypingTarget(t: EventTarget | null): boolean {
   return t.isContentEditable || t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement;
 }
 
-export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi): void {
+export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi, aviso?: string): void {
   const storage = safeLocalStorage();
   let prefs: UiPrefs = loadPrefs(storage);
   let selection: Selection = world.getSelection();
@@ -153,6 +153,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
   drawer = new Drawer(ctx, terminal);
   const feed = new FeedPanel(ctx);
   const toasts = new Toasts(ctx);
+  if (aviso) toasts.push({ id: 'tema', level: 'warn', text: aviso, at: Date.now() });
   settings = new SettingsPopover(ctx, notifier, sound);
   help = new HelpDialog();
   const day = new DayLauncher(ctx, (el) => root.append(el));

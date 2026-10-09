@@ -2,6 +2,7 @@
 import type { UiComponent, UiContext } from './context';
 import { h, iconButton, setAttr, setHidden, setText, setTitle, setVariant } from './dom';
 import { formatDuration, formatInt } from './format';
+import { tema, urlDoTema } from '../tema';
 import { FALLBACK_MARK, ICONS } from './icons';
 import { computeCounters, shellLine, shellWaitIn, shellWaitingAgents, waitingAgents, type Counters } from './model';
 import { TIMELAPSE_ICONS } from './timelapse';
@@ -48,7 +49,7 @@ export class TopBar implements UiComponent {
   constructor(private ctx: UiContext) {
     // Marca: usa o logo do projeto se existir; senão, o prédio em pixels.
     const mark = h('span', { class: 'ui-brand__mark' });
-    const logo = h('img', { attrs: { src: '/assets/brand/logo-mark.png', srcset: '/assets/brand/logo-mark@4x.png 4x', alt: '', width: 32, height: 32, draggable: 'false' } });
+    const logo = h('img', { attrs: { src: urlDoTema(tema().decoracao.marca.logo.arquivo), alt: '', width: 32, height: 32, draggable: 'false' } });
     logo.addEventListener('error', () => {
       mark.innerHTML = FALLBACK_MARK;
     });

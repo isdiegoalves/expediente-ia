@@ -5,6 +5,9 @@
 // Os itens são POSICIONADOS em ordem decrescente de prioridade (quem chega depois desvia, vira
 // só o ícone ou é descartado) e DESENHADOS em ordem crescente (o mais importante fica por cima).
 import { TILE } from '../../art/api';
+import { withAlpha } from '../../art/core/color';
+import { coresDerivadas } from '../../tema/cores';
+import { tema } from '../../tema';
 import type { WorldOptions } from '../api';
 import type { Camera } from '../camera';
 import { COL_W, CORRIDOR_Y, SOUTH_Y } from '../constants';
@@ -445,9 +448,9 @@ export class Overlay {
     ctx.textAlign = 'center';
     const cx = Math.round(x + w / 2);
     const cy = Math.round(y + h / 2) + 0.5;
-    ctx.fillStyle = dark ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.45)';
+    ctx.fillStyle = dark ? coresDerivadas().placa.sombraEscura : coresDerivadas().placa.sombraClara;
     ctx.fillText(t, cx, cy + 1);
-    ctx.fillStyle = dark ? '#f5f1e6' : '#26303e';
+    ctx.fillStyle = dark ? coresDerivadas().placa.textoEscuro : coresDerivadas().placa.textoClaro;
     ctx.fillText(t, cx, cy);
     ctx.textAlign = 'left';
     // contas presentes: bolinhas na cor da conta, no canto da placa
@@ -461,7 +464,7 @@ export class Overlay {
       ctx.fillStyle = acc.color;
       ctx.fill();
       ctx.lineWidth = 1;
-      ctx.strokeStyle = 'rgba(20,24,36,0.65)';
+      ctx.strokeStyle = tema().paleta.canvas.rotuloContorno;
       ctx.stroke();
       dx += r * 2 + 2;
     }
@@ -494,11 +497,11 @@ export class Overlay {
     const y = Math.round(cy - h - 4);
     ctx.save();
     ctx.globalAlpha = lit ? 1 : 0.8;
-    ctx.fillStyle = 'rgba(16,20,32,0.28)';
+    ctx.fillStyle = tema().paleta.canvas.rotuloSombra;
     ctx.beginPath();
     ctx.roundRect(x, y + 2, w, h, 7);
     ctx.fill();
-    ctx.fillStyle = 'rgba(22,27,40,0.9)';
+    ctx.fillStyle = tema().paleta.canvas.rotuloFundo;
     ctx.beginPath();
     ctx.roundRect(x, y, w, h, 7);
     ctx.fill();
@@ -509,7 +512,7 @@ export class Overlay {
     let dx = x + 10;
     if (!compact) {
       ctx.font = ROOM_FONT;
-      ctx.fillStyle = '#f3f5fa';
+      ctx.fillStyle = tema().paleta.canvas.rotuloTexto;
       ctx.fillText(text, x + 10, y + h / 2 + 1);
       dx = x + 10 + tw + 8;
     }
@@ -522,12 +525,12 @@ export class Overlay {
       dx += 10;
     }
     if (countText) {
-      ctx.fillStyle = 'rgba(255,255,255,0.14)';
+      ctx.fillStyle = coresDerivadas().chip.realce;
       ctx.beginPath();
       ctx.roundRect(dx + 2, y + 4, cw - 4, h - 8, 5);
       ctx.fill();
       ctx.font = LABEL_FONT;
-      ctx.fillStyle = '#dfe5f2';
+      ctx.fillStyle = tema().paleta.canvas.rotuloTexto;
       ctx.fillText(countText, dx + 7, y + h / 2 + 0.5);
     }
     ctx.restore();
@@ -545,12 +548,12 @@ export class Overlay {
     const h = 18;
     const x = Math.round(cx - w / 2);
     const y = Math.round(cy - h - 4);
-    ctx.fillStyle = 'rgba(22,27,40,0.62)';
+    ctx.fillStyle = tema().paleta.canvas.compactoFundo;
     ctx.beginPath();
     ctx.roundRect(x, y, w, h, 6);
     ctx.fill();
     ctx.font = font;
-    ctx.fillStyle = '#e8ecf5';
+    ctx.fillStyle = tema().paleta.canvas.compactoTexto;
     ctx.fillText(text, x + 7, y + h / 2 + 1);
     this.place(x, y, w, h);
   }
@@ -695,9 +698,7 @@ export class Overlay {
     const { x, y, w, h } = b;
     const headX = this.sx(b.head.x);
     const tone = b.tone;
-    const bg = tone === 'alert' ? '#ffcf4a' : tone === 'deliver' ? '#e2f0ff' : tone === 'shell' ? '#1d2433' : tone === 'say' ? '#ffffff' : '#fffdf8';
-    const border = tone === 'alert' ? '#c58f10' : tone === 'deliver' ? '#7aa7d9' : tone === 'shell' ? '#4b5d7e' : tone === 'say' ? 'rgba(40,48,66,0.38)' : 'rgba(40,48,66,0.22)';
-    const fg = tone === 'alert' ? '#3b2a00' : tone === 'deliver' ? '#17324f' : tone === 'shell' ? '#b9f6b4' : tone === 'say' ? '#1d2330' : '#232a36';
+    const { fundo: bg, borda: border, texto: fg } = coresDerivadas().balao[tone];
     const pulse = tone === 'alert' ? 1 + Math.sin(now / 160) * 0.035 : 1;
     ctx.save();
     ctx.globalAlpha = b.alpha;
@@ -718,7 +719,7 @@ export class Overlay {
     }
     const tailX = Math.max(x + 8, Math.min(x + w - 8, Math.round(headX)));
     // sombra
-    ctx.fillStyle = 'rgba(16,20,32,0.22)';
+    ctx.fillStyle = coresDerivadas().sombraDoBalao;
     ctx.beginPath();
     ctx.roundRect(x, y + 2, w, h, 7);
     ctx.fill();
@@ -781,11 +782,11 @@ export class Overlay {
       const y = Math.round(py - 16 - (1 - Math.min(1, k)) * 4);
       ctx.save();
       ctx.globalAlpha = Math.max(0, Math.min(1, k));
-      ctx.fillStyle = 'rgba(16,20,32,0.2)';
+      ctx.fillStyle = coresDerivadas().sombraDoBalaoLeve;
       ctx.beginPath();
       ctx.arc(x, y + 1.5, r, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = '#ffffff';
+      ctx.fillStyle = coresDerivadas().balao.say.fundo;
       ctx.beginPath();
       ctx.arc(x, y, r, 0, Math.PI * 2);
       ctx.moveTo(x - side * 4, y + r - 2);
@@ -818,7 +819,7 @@ export class Overlay {
       const y = Math.round(this.sy(head.y) + 4 * this.zoom - t * 24);
       ctx.globalAlpha = t < 0.12 ? t / 0.12 : Math.max(0, 1 - Math.max(0, t - 0.6) / 0.4);
       ctx.lineWidth = 3;
-      ctx.strokeStyle = 'rgba(20,24,36,0.85)';
+      ctx.strokeStyle = withAlpha(coresDerivadas().escuro, 0.85);
       ctx.strokeText(f.text, x, y);
       ctx.fillStyle = f.color;
       ctx.fillText(f.text, x, y);
@@ -867,7 +868,8 @@ export class Overlay {
     const { nameW, chipW, badgeW } = this.labelWidth(l);
     const { x, y, w, h } = l;
     const selected = sel.agent === ch.id;
-    ctx.fillStyle = selected ? 'rgba(18,96,140,0.95)' : ch.mode === 'wait' ? 'rgba(120,78,0,0.92)' : 'rgba(22,26,38,0.82)';
+    const et = coresDerivadas().etiqueta;
+    ctx.fillStyle = selected ? et.selecionada : ch.mode === 'wait' ? et.espera : et.normal;
     ctx.beginPath();
     ctx.roundRect(x, y, w, h, 7.5);
     ctx.fill();
@@ -879,26 +881,26 @@ export class Overlay {
       ctx.fill();
       ctx.font = CHIP_FONT;
       ctx.textAlign = 'center';
-      ctx.fillStyle = luminance(acc.color) > 0.62 ? '#1d2330' : '#ffffff';
+      ctx.fillStyle = luminance(acc.color) > 0.62 ? et.chipEscuro : et.chipClaro;
       ctx.fillText(acc.short.slice(0, 1), cx + 5, y + h / 2 + 0.5);
       ctx.textAlign = 'left';
       cx += chipW;
     }
     ctx.font = LABEL_FONT;
-    ctx.fillStyle = '#f5f7fb';
+    ctx.fillStyle = tema().paleta.canvas.rotuloTexto;
     ctx.fillText(ch.info.name, cx + 1, y + h / 2 + 0.5);
     cx += nameW + 4;
     if (badgeW) {
-      ctx.fillStyle = ch.appearance.lanyard ?? '#f2b33d';
+      ctx.fillStyle = ch.appearance.lanyard ?? et.cracha;
       ctx.beginPath();
       ctx.roundRect(cx, y + 3, badgeW, h - 6, 4);
       ctx.fill();
       ctx.font = BADGE_FONT;
-      ctx.fillStyle = '#2a2000';
+      ctx.fillStyle = et.textoDoCracha;
       ctx.fillText('SUB', cx + 3.5, y + h / 2 + 0.5);
     } else if (sub) {
       // selo compacto: pontinho na cor do crachá
-      ctx.fillStyle = ch.appearance.lanyard ?? '#f2b33d';
+      ctx.fillStyle = ch.appearance.lanyard ?? et.cracha;
       ctx.beginPath();
       ctx.arc(x + w - 3, y + 3, 2.5, 0, Math.PI * 2);
       ctx.fill();

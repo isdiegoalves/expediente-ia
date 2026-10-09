@@ -2,8 +2,13 @@
 // Assim tábuas de madeira, veios de mármore e manchas do cimento continuam de um tile para o
 // outro sem emendas, e o cache fica limitado ao tamanho do mundo (não ao formato das áreas).
 import { TILE, type FloorKind } from '../api';
-import { mix, parseColor, ramp, shade, type RGBA } from '../core/color';
+import { mix, parseColor, ramp, shade, toHex, type RGBA } from '../core/color';
 import { PixelBuf } from '../core/pixbuf';
+import { tema } from '../../tema';
+
+const { piso, salas, mundo, nucleo } = tema().paleta;
+const destaqueDaSala = (i: number): string => salas[i % salas.length].destaque;
+const FLORES = [mundo.anelHover, destaqueDaSala(6), destaqueDaSala(7), destaqueDaSala(3)];
 
 export const CHUNK_TILES = 8;
 export const CHUNK_PX = CHUNK_TILES * TILE;
@@ -83,7 +88,7 @@ function paintTile(b: PixelBuf, kind: FloorKind, tx: number, ty: number, o: Floo
   switch (kind) {
     case 'carpet': {
       // Placas de carpete modular: trama discreta que alterna de direção (xadrez de orientação).
-      const c1 = o.tint ?? '#c9d1dc';
+      const c1 = o.tint ?? piso.carpete[0];
       const c2 = o.tint2 ?? shade(c1, -0.03);
       const odd = (tx + ty) & 1;
       const base = mix(c1, c2, odd ? 0.55 : 0.15);
@@ -104,8 +109,7 @@ function paintTile(b: PixelBuf, kind: FloorKind, tx: number, ty: number, o: Floo
       break;
     }
     case 'tile_check': {
-      const a = '#f2ede4';
-      const c = '#d2d8de';
+      const [a, c] = piso.xadrez;
       for (let qy = 0; qy < 2; qy++) {
         for (let qx = 0; qx < 2; qx++) {
           const col = (qx + qy + tx + ty) % 2 ? c : a;
@@ -119,19 +123,18 @@ function paintTile(b: PixelBuf, kind: FloorKind, tx: number, ty: number, o: Floo
       break;
     }
     case 'tile_white': {
-      const col = '#eef2f5';
-      const grout = '#d3dae1';
+      const [col, grout, brilho, mancha] = piso.azulejo;
       b.rect(0, 0, TILE, TILE, col);
       for (let q = 0; q < 2; q++) {
         b.hline(0, TILE - 1, q * 8 + 7, grout);
         b.vline(q * 8 + 7, 0, TILE - 1, grout);
       }
-      for (let qy = 0; qy < 2; qy++) for (let qx = 0; qx < 2; qx++) b.hline(qx * 8, qx * 8 + 2, qy * 8, '#fbfcfd');
-      if (r(1) < 0.4) b.set(Math.floor(r(2) * 14), Math.floor(r(3) * 14), '#e4eaef');
+      for (let qy = 0; qy < 2; qy++) for (let qx = 0; qx < 2; qx++) b.hline(qx * 8, qx * 8 + 2, qy * 8, brilho);
+      if (r(1) < 0.4) b.set(Math.floor(r(2) * 14), Math.floor(r(3) * 14), mancha);
       break;
     }
     case 'grass': {
-      const g = ramp('#6cab57', 0.045);
+      const g = ramp(piso.grama[0], 0.045);
       const n = noise(tx * TILE, ty * TILE, 48, o.seed + 5);
       const base = mix(g.dk, g.lt, n);
       b.rect(0, 0, TILE, TILE, base);
@@ -153,37 +156,37 @@ function paintTile(b: PixelBuf, kind: FloorKind, tx: number, ty: number, o: Floo
       if (r(99) < 0.12) {
         const fx = 3 + Math.floor(r(100) * 10);
         const fy = 3 + Math.floor(r(101) * 10);
-        const fc = ['#ffffff', '#f7d154', '#f28fb0', '#b9a2f0'][Math.floor(r(102) * 4)];
+        const fc = FLORES[Math.floor(r(102) * FLORES.length)];
         b.set(fx, fy, fc);
         b.set(fx + 1, fy, fc);
         b.set(fx, fy - 1, fc);
-        b.set(fx + 1, fy + 1, '#f2c14e');
+        b.set(fx + 1, fy + 1, FLORES[1]);
       }
       break;
     }
     case 'street': {
       const n = noise(tx * TILE, ty * TILE, 64, o.seed + 9);
-      const col = mix('#4b4f58', '#565a63', n);
+      const col = mix(piso.rua[0], piso.rua[1], n);
       b.rect(0, 0, TILE, TILE, col);
-      for (let i = 0; i < 14; i++) b.set(Math.floor(r(i) * TILE), Math.floor(r(i + 30) * TILE), r(i + 60) < 0.5 ? '#5f636c' : '#43464e');
+      for (let i = 0; i < 14; i++) b.set(Math.floor(r(i) * TILE), Math.floor(r(i + 30) * TILE), r(i + 60) < 0.5 ? piso.rua[2] : piso.rua[3]);
       break;
     }
     default:
-      b.rect(0, 0, TILE, TILE, '#dcdedf');
+      b.rect(0, 0, TILE, TILE, piso.azulejo[3]);
   }
 }
 
 // ------------------------------------------------------------------ pisos contínuos
 
 /** Tabela de cores (RGBA) pré-calculada para escrita rápida. */
-function rgba(c: string): RGBA {
+function paraRgba(c: string): RGBA {
   return parseColor(c);
 }
 
-const WOOD_TONES = ['#c99668', '#c48f61', '#cf9f72', '#c6925f'] as const;
+const WOOD_TONES = piso.madeira;
 /** [tom][0 normal, 1 topo, 2 base, 3 veio, 4 emenda, 5 após emenda, 6 nó]. */
 const WOOD: readonly (readonly RGBA[])[] = WOOD_TONES.map((t) =>
-  [t, shade(t, 0.03), shade(t, -0.075), shade(t, -0.03), shade(t, -0.1), shade(t, 0.03), shade(t, -0.12)].map(rgba),
+  [t, shade(t, 0.03), shade(t, -0.075), shade(t, -0.03), shade(t, -0.1), shade(t, 0.03), shade(t, -0.12)].map(paraRgba),
 );
 
 /** Tábuas de madeira: 4px de altura, 48px de comprimento, emendas desencontradas, veios e nós. */
@@ -212,10 +215,10 @@ function paintWood(b: PixelBuf, x0: number, y0: number, seed: number): void {
 }
 
 const LEVELS = 16;
-const CONCRETE: readonly RGBA[] = Array.from({ length: LEVELS }, (_, i) => rgba(mix('#d6d9dc', '#e4e6e8', i / (LEVELS - 1))));
-const CONCRETE_EDGE: readonly RGBA[] = CONCRETE.map((c) => rgba(shade(`rgb(${c[0]},${c[1]},${c[2]})`, 0.02)));
-const CONCRETE_SEAM = rgba('#c8cdd2');
-const CONCRETE_SPECK = [rgba('#cdd1d5'), rgba('#eceeef')] as const;
+const CONCRETE: readonly RGBA[] = Array.from({ length: LEVELS }, (_, i) => paraRgba(mix(piso.azulejo[1], piso.azulejo[3], i / (LEVELS - 1))));
+const CONCRETE_EDGE: readonly RGBA[] = CONCRETE.map((c) => paraRgba(shade(toHex(c[0], c[1], c[2]), 0.02)));
+const CONCRETE_SEAM = paraRgba(shade(piso.azulejo[1], -0.045));
+const CONCRETE_SPECK = [paraRgba(shade(piso.azulejo[1], -0.025)), paraRgba(mix(piso.azulejo[3], piso.azulejo[2], 0.4))] as const;
 
 /** Cimento polido claro em placas de 2x2 tiles, com manchas suaves contínuas. */
 function paintConcrete(b: PixelBuf, x0: number, y0: number, seed: number): void {
@@ -241,9 +244,9 @@ function paintConcrete(b: PixelBuf, x0: number, y0: number, seed: number): void 
   }
 }
 
-const MARBLE: readonly RGBA[] = Array.from({ length: LEVELS }, (_, i) => rgba(mix('#ebe8e3', '#f5f3f0', i / (LEVELS - 1))));
-const MARBLE_VEIN = [rgba('#e2e3e6'), rgba('#cfd2d7')] as const;
-const MARBLE_SEAM = rgba('#d6d3ce');
+const MARBLE: readonly RGBA[] = Array.from({ length: LEVELS }, (_, i) => paraRgba(mix(mix(piso.xadrez[0], piso.azulejo[1], 0.12), mix(piso.xadrez[0], piso.azulejo[2], 0.6), i / (LEVELS - 1))));
+const MARBLE_VEIN = [paraRgba(mix(piso.azulejo[3], piso.azulejo[1], 0.35)), paraRgba(shade(piso.azulejo[1], -0.03))] as const;
+const MARBLE_SEAM = paraRgba(mix(piso.xadrez[0], piso.rua[0], 0.15));
 
 /** Mármore branco em placas de 2x2 tiles com veios cinza contínuos dentro da placa. */
 function paintMarble(b: PixelBuf, x0: number, y0: number, seed: number): void {
@@ -267,9 +270,9 @@ function paintMarble(b: PixelBuf, x0: number, y0: number, seed: number): void {
   }
 }
 
-const WALK_TONES = ['#d3cdc2', '#cfc8bc', '#d8d2c8'] as const;
+const WALK_TONES = [shade(nucleo.recepcao.base, -0.07), shade(nucleo.recepcao.base, -0.09), shade(nucleo.recepcao.base, -0.05)] as const;
 /** [tom][0 normal, 1 junta, 2 borda clara, 3 mancha]. */
-const WALK: readonly (readonly RGBA[])[] = WALK_TONES.map((t) => [t, '#b8b1a5', shade(t, 0.03), shade(t, -0.05)].map(rgba));
+const WALK: readonly (readonly RGBA[])[] = WALK_TONES.map((t) => [t, shade(nucleo.recepcao.base, -0.17), shade(t, 0.03), shade(t, -0.05)].map(paraRgba));
 
 /** Calçada de placas 16x8 em fileiras desencontradas. */
 function paintSidewalk(b: PixelBuf, x0: number, y0: number, seed: number): void {

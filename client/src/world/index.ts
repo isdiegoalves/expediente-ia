@@ -211,7 +211,7 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
   const offSnapshot = store.on('snapshot', onSnapshot);
   if (store.snapshot) onSnapshot();
 
-  void loadWorldAssets(abort.signal).then((a) => {
+  void loadWorldAssets().then((a) => {
     if (!a) return;
     assets = a;
     renderer.setAssets(a);

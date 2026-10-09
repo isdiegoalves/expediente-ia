@@ -1,5 +1,8 @@
 // Ícones da interface em pixel art (mapas de pixels -> SVG com bordas nítidas), coerentes com o escritório.
 // Cada '#' é um pixel pintado com currentColor; renderizados a 2 px de tela por pixel.
+import { tema } from '../tema';
+
+const { marca } = tema().paleta;
 
 function pixelPaths(rows: readonly string[], palette: Readonly<Record<string, string>>): string {
   let out = '';
@@ -237,7 +240,7 @@ export const ICONS = {
       '.#.sss.#.',
       '#########',
     ],
-    { '#': 'currentColor', s: '#f7c76b' },
+    { '#': 'currentColor', s: marca.estrela },
   ),
   // Janela de terminal com o prompt ">_" (terminal somente leitura).
   terminal: pixelIcon([
@@ -277,7 +280,7 @@ export const FALLBACK_MARK = pixelIcon(
     '..#llllddllll#..',
     '################',
   ],
-  { '#': '#2b3550', l: '#dfe6f2', r: '#ff8a5b', w: '#ffd36b', b: '#7cc8ff', d: '#3a4566' },
+  { '#': marca.simbolo[0], l: marca.simbolo[1], r: marca.simbolo[2], w: marca.simbolo[3], b: marca.simbolo[4], d: marca.simbolo[5] },
   'ui-px-icon ui-mark',
 );
 
@@ -297,4 +300,4 @@ export const WORDMARK_ROWS = [
   's...s..ssss.ssss..ssss..sss..ssss..ssss..ssss',
 ] as const;
 
-export const WORDMARK = pixelIcon(WORDMARK_ROWS, { s: 'rgba(6, 8, 14, 0.62)', c: '#f4f1ea', t: '#fac665' }, 'ui-wordmark');
+export const WORDMARK = pixelIcon(WORDMARK_ROWS, { s: marca.letreiro[0], c: marca.letreiro[1], t: marca.letreiro[2] }, 'ui-wordmark');

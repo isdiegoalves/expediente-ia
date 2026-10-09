@@ -1,6 +1,7 @@
 // Camadas de estado: splash de carregamento, escritório vazio e aviso de conexão perdida.
 import type { UiComponent, UiContext } from './context';
 import { h, prefersReducedMotion, setHidden, setText } from './dom';
+import { tema, urlDoTema } from '../tema';
 import { FALLBACK_MARK } from './icons';
 import { shortcutHint } from './model';
 import { wordmark } from './widgets';
@@ -10,7 +11,7 @@ const DISCONNECTED_BANNER_MS = 8_000;
 
 function brandMark(size: number): HTMLElement {
   const mark = h('span', { class: 'ui-brand__mark' });
-  const img = h('img', { attrs: { src: '/assets/brand/logo-mark@4x.png', alt: '', width: size, height: size, draggable: 'false' } });
+  const img = h('img', { attrs: { src: urlDoTema(tema().decoracao.marca.logo.arquivo), alt: '', width: size, height: size, draggable: 'false' } });
   img.addEventListener('error', () => {
     mark.innerHTML = FALLBACK_MARK;
   });

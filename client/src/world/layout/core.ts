@@ -1,5 +1,7 @@
 // Núcleo do prédio (colunas 0 e 1): recepção com elevadores, banheiros, copa e lounge.
 import type { WallStyle } from '../../art/api';
+import { shade } from '../../art/core/color';
+import { tema } from '../../tema';
 import { COL_W, NORTH_Y, ROOM_H, SOUTH_Y, TILE } from '../constants';
 import { AreaBuilder, SEATED_SORT_BIAS } from './builder';
 import type { AreaLayout } from './types';
@@ -9,14 +11,29 @@ export const RESTROOM_ID = 'core:banheiros';
 export const CAFE_ID = 'core:copa';
 export const LOUNGE_ID = 'core:lounge';
 
-/** Paredes do núcleo: tons claros e neutros (frios), com acabamentos diferentes por ambiente. */
+const { nucleo, salas, piso } = tema().paleta;
+const parede = (p: { base: string; friso: string; padrao: string }): WallStyle => ({ base: p.base, trim: p.friso, pattern: p.padrao as WallStyle['pattern'] });
+const destaqueDaSala = (i: number): string => salas[i % salas.length].destaque;
+
+/** Paredes do núcleo, de `paleta.nucleo`. */
 export const CORE_WALLS = {
-  reception: { base: '#e9e5dc', trim: '#a88e6c', pattern: 'wood_panel' } satisfies WallStyle,
-  restroom: { base: '#dce8ee', trim: '#8fb0c0', pattern: 'tiles' } satisfies WallStyle,
-  cafe: { base: '#eef0ee', trim: '#9aa6ad', pattern: 'plain' } satisfies WallStyle,
-  cafeSplash: { base: '#d9dcdf', trim: '#8d969e', pattern: 'marble' } satisfies WallStyle,
-  lounge: { base: '#e6e2ea', trim: '#8f8aa3', pattern: 'plain' } satisfies WallStyle,
-  glass: { base: '#cfe6f0', trim: '#9fb9c6', pattern: 'glass' } satisfies WallStyle,
+  reception: parede(nucleo.recepcao),
+  restroom: parede(nucleo.banheiros),
+  cafe: parede(nucleo.copa),
+  cafeSplash: parede(nucleo.copaRevestimento),
+  lounge: parede(nucleo.lounge),
+  glass: parede(nucleo.vidro),
+};
+
+/** Tapetes do núcleo: tons dos destaques das salas e do friso das paredes, para acompanhar a paleta. */
+const TAPETE = {
+  recepcaoAzul: shade(destaqueDaSala(0), -0.18),
+  recepcaoFerrugem: shade(destaqueDaSala(9), -0.08),
+  banheiroPias: shade(nucleo.banheiros.friso, -0.1),
+  banheiroBanco: shade(nucleo.banheiros.friso, 0.06),
+  copa: shade(piso.madeira[0], -0.06),
+  loungeVerde: shade(destaqueDaSala(2), -0.2),
+  loungeAreia: shade(nucleo.recepcao.base, -0.1),
 };
 
 /** Centros (em tiles locais) dos dois elevadores na face norte da recepção. */
@@ -26,8 +43,8 @@ export function layoutReception(): AreaLayout {
   const b = new AreaBuilder(RECEPTION_ID, 'reception', { x: 0, y: NORTH_Y, w: COL_W, h: ROOM_H });
   const wall = CORE_WALLS.reception;
   b.floor('marble', 0, 0, 16, 12, 101);
-  b.rug(1.5, 2.2, 6.5, 2.6, '#3d5a80', 102);
-  b.rug(8.6, 6.4, 5.2, 3.2, '#b65f3a', 103);
+  b.rug(1.5, 2.2, 6.5, 2.6, TAPETE.recepcaoAzul, 102);
+  b.rug(8.6, 6.4, 5.2, 3.2, TAPETE.recepcaoFerrugem, 103);
   b.face(0.5, 15, wall);
   b.cap(0, 0, 0.5, 12, wall);
   b.cap(15.5, 0, 0.5, 12, wall);
@@ -76,7 +93,7 @@ export function layoutRestroom(): AreaLayout {
   const wall = CORE_WALLS.restroom;
   b.floor('tile_white', 0, 0, 16, 12, 201);
   // tapetinho só na frente das pias (nada de tapete grande no meio do banheiro)
-  b.rug(2, 3.15, 3, 0.85, '#6fa3b8', 202);
+  b.rug(2, 3.15, 3, 0.85, TAPETE.banheiroPias, 202);
   b.face(0.5, 15, wall, [{ lx: 7, w: 2 }]);
   b.wall('door_frame', 8, undefined, { order: 0.05 });
   b.south(0.5, 15, 11, { ...wall, exterior: true });
@@ -109,7 +126,7 @@ export function layoutRestroom(): AreaLayout {
   const bench = b.furn('bench', 3, 9, undefined, { order: 0.5 });
   for (let i = 0; i < 2; i++) b.seat('bench', 'bench', 3 + i, 9, 'down', undefined, { noFurniture: true, furnitureId: bench });
   b.furn('trash_bin', 9, 10, undefined, { order: 0.6 });
-  b.rug(2.5, 9.9, 3, 0.9, '#9cc3cf', 203);
+  b.rug(2.5, 9.9, 3, 0.9, TAPETE.banheiroBanco, 203);
   b.furn('plant_small', 1, 6, 'flower', { order: 0.24 });
   b.furn('plant_small', 12, 10, 'fern', { order: 0.25 });
   return b.build();
@@ -154,7 +171,7 @@ export function layoutCafe(): AreaLayout {
   b.spot('window', 13, 2, 'up', { dx: 12, dy: 1 });
 
   // mesa comunitária comprida no centro, sobre um tapete, com cadeiras dos dois lados
-  b.rug(2.6, 4.15, 8.8, 3.7, '#b98a5e', 302);
+  b.rug(2.6, 4.15, 8.8, 3.7, TAPETE.copa, 302);
   b.furn('meeting_table', 4, 5, undefined, { order: 0.5 });
   b.furn('meeting_table', 7, 5, undefined, { order: 0.51 });
   for (let i = 0; i < 6; i++) {
@@ -190,8 +207,8 @@ export function layoutLounge(): AreaLayout {
   const b = new AreaBuilder(LOUNGE_ID, 'lounge', { x: COL_W, y: SOUTH_Y, w: COL_W, h: ROOM_H });
   const wall = CORE_WALLS.lounge;
   b.floor('wood', 0, 0, 16, 12, 401);
-  b.rug(1.5, 3.2, 7, 5.2, '#4f8a5b', 402);
-  b.rug(9.2, 4.6, 5.6, 4.4, '#d7c8a8', 403);
+  b.rug(1.5, 3.2, 7, 5.2, TAPETE.loungeVerde, 402);
+  b.rug(9.2, 4.6, 5.6, 4.4, TAPETE.loungeAreia, 403);
   // parede com TV a oeste; vidro a leste; passagem larga no meio
   b.face(0.5, 6.5, wall);
   b.face(10, 5.5, CORE_WALLS.glass);

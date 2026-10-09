@@ -1,6 +1,9 @@
 // Desenho do mundo por frame: camada externa -> pisos -> paredes/itens de parede -> entidades
 // ordenadas por profundidade -> luz/escuridão -> ícones. A passada em espaço de tela (texto
 // nítido) fica em overlay.ts.
+import { shade, toHex, withAlpha } from '../../art/core/color';
+import { tema } from '../../tema';
+import { coresDerivadas } from '../../tema/cores';
 import { TILE, type ArtModule, type CharacterFrameRequest, type IconName, type ScreenMode, type Sprite } from '../../art/api';
 import type { WorldOptions } from '../api';
 import type { WorldAssets } from '../assets';
@@ -72,7 +75,9 @@ const POPCORN_DY: Readonly<Record<string, number>> = { down: 11, up: 8, left: 9,
 const WEB_MAX_OUT = 9;
 /** Tom das bordas da área externa (vinheta) e do gramado além dela. */
 const VIGNETTE_ALPHA = 0.2;
-const VIGNETTE_EDGE = `rgba(18,40,26,${VIGNETTE_ALPHA})`;
+const telhado = tema().paleta.mundo.telhado;
+const VIGNETTE_RGB = coresDerivadas().mundo.vinheta;
+const VIGNETTE_EDGE = withAlpha(toHex(...VIGNETTE_RGB), VIGNETTE_ALPHA);
 
 export class Renderer {
   readonly ctx: CanvasRenderingContext2D;
@@ -112,7 +117,7 @@ export class Renderer {
   assets: WorldAssets | null = null;
   /** Último fator noturno aplicado (usado pelo overlay). */
   night = 0;
-  private clearColor = '#7fae62';
+  private clearColor = tema().paleta.mundo.fundoExterno;
   private grass: CanvasPattern | null = null;
 
   constructor(
@@ -184,7 +189,7 @@ export class Renderer {
     paintShell(this.art, ctx, this.exterior.floors, []);
     // faixas da rua
     const ly = this.exterior.streetY + Math.round(this.exterior.streetH / 2) - 1;
-    ctx.fillStyle = 'rgba(255,236,170,0.75)';
+    ctx.fillStyle = coresDerivadas().mundo.faixaDaRua;
     for (let x = this.baseX + 4; x < this.baseX + c.width; x += 24) ctx.fillRect(x, ly, 12, 2);
     this.shells = [];
     this.shellWindows = [];
@@ -227,7 +232,7 @@ export class Renderer {
         bl += d[i + 2];
       }
       const n = d.length / 4;
-      const avg = `rgb(${Math.round(r / n)},${Math.round(g / n)},${Math.round(bl / n)})`;
+      const avg = toHex(r / n, g / n, bl / n);
       tctx.globalAlpha = 0.6;
       tctx.fillStyle = avg;
       tctx.fillRect(0, 0, 2 * s, 2 * s);
@@ -237,10 +242,10 @@ export class Renderer {
       this.grass = this.ctx.createPattern(tile, 'repeat');
       // cor de fundo (antes do padrão carregar): a média já com o tom da vinheta
       const k = VIGNETTE_ALPHA;
-      this.clearColor = `rgb(${Math.round((r / n) * (1 - k) + 18 * k)},${Math.round((g / n) * (1 - k) + 40 * k)},${Math.round((bl / n) * (1 - k) + 26 * k)})`;
+      this.clearColor = toHex((r / n) * (1 - k) + VIGNETTE_RGB[0] * k, (g / n) * (1 - k) + VIGNETTE_RGB[1] * k, (bl / n) * (1 - k) + VIGNETTE_RGB[2] * k);
     } catch {
       this.grass = null;
-      this.clearColor = '#6f9a5a';
+      this.clearColor = shade(tema().paleta.mundo.fundoExterno, -0.05);
     }
     this.finishBase(ctx, cols);
     this.base = c;
@@ -252,7 +257,7 @@ export class Renderer {
     ctx.save();
     try {
       ctx.globalCompositeOperation = 'saturation';
-      ctx.fillStyle = 'rgba(128,128,128,0.16)';
+      ctx.fillStyle = toHex(128, 128, 128, 41);
       ctx.fillRect(b.x * TILE, b.y * TILE, b.w * TILE, b.h * TILE);
     } catch {
       // navegador sem o modo de mistura: segue sem dessaturar
@@ -303,11 +308,11 @@ export class Renderer {
     }
     // capacho diante da fachada de vidro da entrada (oeste do corredor)
     const my = (CORRIDOR_Y + 1.25) * TILE;
-    ctx.fillStyle = '#3f4652';
+    ctx.fillStyle = telhado[0];
     ctx.fillRect(-1.75 * TILE, my, 1.5 * TILE, 2.5 * TILE);
-    ctx.fillStyle = '#596170';
+    ctx.fillStyle = telhado[1];
     ctx.fillRect(-1.75 * TILE + 2, my + 2, 1.5 * TILE - 4, 2.5 * TILE - 4);
-    ctx.fillStyle = '#4b525f';
+    ctx.fillStyle = telhado[2];
     for (let y = my + 4; y < my + 2.5 * TILE - 4; y += 3) ctx.fillRect(-1.75 * TILE + 3, y, 1.5 * TILE - 6, 1);
     ctx.restore();
   }
@@ -780,7 +785,7 @@ export class Renderer {
 
   private drawSteam(x: number, y: number, now: number, seed: number): void {
     const { ctx } = this;
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = tema().paleta.canvas.rotuloTexto;
     for (let i = 0; i < 3; i++) {
       const ph = ((now / 900 + i / 3 + (seed % 7) / 7) % 1 + 1) % 1;
       ctx.globalAlpha = 0.75 * (1 - ph);
@@ -800,8 +805,8 @@ export class Renderer {
     ctx.globalAlpha = ch.alpha;
     // anéis no chão (seleção, hover, alerta)
     if (ch.mode === 'wait') this.drawAlertRing(x, y, now);
-    if (sel.agent === ch.id) this.drawRing(x, y, '#7fe3ff', now, true);
-    else if (sel.hover === ch.id) this.drawRing(x, y, '#ffffff', now, false);
+    if (sel.agent === ch.id) this.drawRing(x, y, tema().paleta.mundo.anelSelecao, now, true);
+    else if (sel.hover === ch.id) this.drawRing(x, y, tema().paleta.mundo.anelHover, now, false);
     if (!ch.seated) {
       const sh = shadowSprite();
       ctx.drawImage(sh.canvas, x - sh.ax, y - sh.ay);
@@ -1026,7 +1031,7 @@ export class Renderer {
       ctx.globalAlpha = 0.8 * ch.alpha;
       ctx.drawImage(s.canvas, Math.round(gx + gw / 2 - s.ax), Math.round(gy - 6));
       ctx.globalAlpha = 0.28;
-      ctx.fillStyle = '#cfe6f2';
+      ctx.fillStyle = coresDerivadas().mundo.vidro;
       ctx.fillRect(gx, gy, gw, gh);
       ctx.restore();
       return;
@@ -1059,7 +1064,7 @@ export class Renderer {
     const { ctx } = this;
     const ph = (now % 1100) / 1100;
     ctx.save();
-    ctx.strokeStyle = '#ffb11f';
+    ctx.strokeStyle = coresDerivadas().mundo.anelDeAlerta;
     ctx.lineWidth = 1.5;
     ctx.globalAlpha *= 0.9 * (1 - ph);
     ctx.beginPath();
@@ -1138,9 +1143,9 @@ export class Renderer {
       const x = left.x + 9 + (right.x - left.x - 18) * u;
       const baseY = (left.y + right.y) / 2 - 9;
       const arc = Math.sin(Math.PI * ((u * 2) % 1)) * 6;
-      ctx.fillStyle = 'rgba(30,40,60,0.35)';
+      ctx.fillStyle = coresDerivadas().mundo.sombraDaBola;
       ctx.fillRect(Math.round(x) - 1, Math.round(baseY) + 1, 2, 1);
-      ctx.fillStyle = '#ffffff';
+      ctx.fillStyle = tema().paleta.canvas.rotuloTexto;
       ctx.fillRect(Math.round(x) - 1, Math.round(baseY - arc) - 1, 2, 2);
     }
   }
@@ -1177,7 +1182,7 @@ export class Renderer {
       const dark = (1 - light) * strength * cover;
       if (dark <= 0.01) continue;
       const s = vis.layout.shade;
-      ctx.fillStyle = `rgba(8,12,36,${dark})`;
+      ctx.fillStyle = withAlpha(coresDerivadas().mundo.noite, dark);
       ctx.fillRect(s.x, s.y, s.w, s.h);
     }
     this.lighting.drawGlows(ctx, this, view, now);

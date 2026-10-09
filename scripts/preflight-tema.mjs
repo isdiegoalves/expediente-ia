@@ -25,7 +25,7 @@ const ARQUIVOS_COM_COR = [
   'client/src/ui/icons.ts',
 ];
 const LITERAL_DE_COR = /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/g;
-const LITERAIS_SAO_ERRO = false;
+const LITERAIS_SAO_ERRO = true;
 
 const erros = [];
 const avisos = [];
