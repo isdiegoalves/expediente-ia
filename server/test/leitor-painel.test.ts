@@ -52,13 +52,47 @@ describe('leitor de painel', () => {
   });
 });
 
-const padroes = [/\bps\s+-[A-Za-z]*e[A-Za-z]*\b/, /\bps\s+e{1,2}w*\b/, /\beww\b/, /\bps\b[^\n]*\s-E\b/, /\/proc\/[0-9]+\/environ/, /\benviron\b/, /\benvp\b/, /KERN_PROCARGS/];
+const SEP = `["'\\s,]`;
+const FIM = `(?=["'\\s,\\])]|$)`;
+const padroes = [
+  new RegExp(`\\bps\\b[^\\n]{0,80}?${SEP}-[A-Za-z]*[eE][A-Za-z]*${FIM}`),
+  new RegExp(`\\bps${SEP}+[eE]{1,2}w*${FIM}`),
+  /\beww\b/,
+  /\/proc\/[0-9]+\/environ/,
+  /\benviron\b/,
+  /\benvp\b/,
+  /KERN_PROCARGS/i,
+  /kern\.procargs/i,
+  /\bprocinfo\b/i,
+];
 
 describe('padrões do teste estático', () => {
-  it.each(['ps -eww -p 1', 'ps eww -p 1', 'ps -E -p 1', 'ps -axe', 'ps -ef'])('pega %s', (s) => {
+  it.each([
+    'ps -eww -p 1',
+    'ps eww -p 1',
+    'ps -E -p 1',
+    'ps -axe',
+    'ps -ef',
+    'ps -wwE -p 1',
+    'ps -Eww -p 1',
+    'ps -o command= -E -p 1',
+    '["ps", "-E", "-p", "1"]',
+    "['ps', '-wwE', String(pid)]",
+    "argv: ['ps','-eww']",
+    '"ps", "eww"',
+    'sysctl kern.procargs2.1',
+    'KERN_PROCARGS2',
+    'cat /proc/12/environ',
+  ])('pega %s', (s) => {
     expect(padroes.some((p) => p.test(s))).toBe(true);
   });
-  it.each(['o ps recebe só -o ppid=,comm=', 'ps -o ppid=,comm= -p 1', 'ps -axo pid=,command='])('deixa passar %s', (s) => {
+  it.each([
+    'o ps recebe só -o ppid=,comm=',
+    'ps -o ppid=,comm= -p 1',
+    'ps -axo pid=,command=',
+    "['ps', '-o', 'ppid=,comm=', '-p', String(pid)]",
+    'o ps recebe e devolve texto',
+  ])('deixa passar %s', (s) => {
     expect(padroes.some((p) => p.test(s))).toBe(false);
   });
 });
@@ -66,9 +100,9 @@ describe('padrões do teste estático', () => {
 describe('leitura de ambiente de outro processo', () => {
   it('nenhum outro arquivo do repositório lê ambiente de processo', () => {
     const proprios = ['mod/expediente/hooks/painel.ts', 'server/test/leitor-painel.test.ts', 'mod/expediente/tests/painel.test.ts'];
-    const arquivos = execFileSync('git', ['ls-files', '-z', '--', 'mod', 'server', 'shared', 'scripts', 'client/src'], { encoding: 'utf8' })
+    const arquivos = execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
       .split('\0')
-      .filter((f) => /\.(ts|tsx|mjs|js|json|sh)$/.test(f) && !proprios.includes(f));
+      .filter((f) => f && !proprios.includes(f) && !/\.(png|jpe?g|gif|webp|ico|woff2?|ttf|otf|mp4|pdf|zip|gz)$/i.test(f));
     const achados: string[] = [];
     for (const f of arquivos) {
       const t = readFileSync(f, 'utf8');
