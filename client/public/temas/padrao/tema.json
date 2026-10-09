@@ -1,0 +1,637 @@
+{
+  "$schema": "../../../../shared/tema/tema.schema.json",
+  "versao": 1,
+  "id": "padrao",
+  "nome": "Expediente padrão",
+  "origem": {
+    "tipo": "padrao",
+    "fontes": [
+      {
+        "tipo": "repositorio",
+        "referencia": "origem cb0c0bb client/src/ui/styles.css:7-31",
+        "coletadoEm": "2026-10-09"
+      },
+      {
+        "tipo": "repositorio",
+        "referencia": "origem cb0c0bb client/src/art/theme.ts:5-16",
+        "coletadoEm": "2026-10-09"
+      },
+      {
+        "tipo": "repositorio",
+        "referencia": "origem cb0c0bb client/src/world/layout/core.ts:13-20",
+        "coletadoEm": "2026-10-09"
+      },
+      {
+        "tipo": "repositorio",
+        "referencia": "origem cb0c0bb client/src/art/surfaces/floor.ts",
+        "coletadoEm": "2026-10-09"
+      },
+      {
+        "tipo": "repositorio",
+        "referencia": "origem cb0c0bb client/src/world/render/overlay.ts",
+        "coletadoEm": "2026-10-09"
+      },
+      {
+        "tipo": "repositorio",
+        "referencia": "origem cb0c0bb client/src/world/render/renderer.ts",
+        "coletadoEm": "2026-10-09"
+      },
+      {
+        "tipo": "repositorio",
+        "referencia": "origem cb0c0bb client/src/ui/icons.ts:240-300",
+        "coletadoEm": "2026-10-09"
+      },
+      {
+        "tipo": "repositorio",
+        "referencia": "origem cb0c0bb client/public/assets/manifest.json",
+        "coletadoEm": "2026-10-09"
+      },
+      {
+        "tipo": "repositorio",
+        "referencia": "origem cb0c0bb package.json @fontsource/pixelify-sans (OFL-1.1)",
+        "coletadoEm": "2026-10-09"
+      }
+    ]
+  },
+  "paleta": {
+    "ui": {
+      "fundo": "#12151deb",
+      "fundoSolido": "#141821f7",
+      "fundoSuave": "#ffffff09",
+      "fundoHover": "#ffffff0f",
+      "linha": "#a0b0d221",
+      "linhaForte": "#a0b0d23d",
+      "texto": "#e8ecf5",
+      "textoMudo": "#9aa4b8",
+      "textoFraco": "#8790a6",
+      "destaque": "#7cc8ff",
+      "destaqueSuave": "#7cc8ff21"
+    },
+    "status": {
+      "trabalhando": "#4fd18b",
+      "esperando": "#ffb547",
+      "shell": "#3cd8d2",
+      "ocioso": "#8b98b3",
+      "concluido": "#6aa8ff",
+      "saindo": "#6b7280"
+    },
+    "nivel": {
+      "ok": "#4fd18b",
+      "atencao": "#ffb547",
+      "critico": "#ff6b6b"
+    },
+    "marca": {
+      "letreiro": [
+        "#0608109e",
+        "#f4f1ea",
+        "#fac665"
+      ],
+      "simbolo": [
+        "#2b3550",
+        "#dfe6f2",
+        "#ff8a5b",
+        "#ffd36b",
+        "#7cc8ff",
+        "#3a4566"
+      ],
+      "estrela": "#f7c76b"
+    },
+    "salas": [
+      {
+        "tapete": "#c9d1dc",
+        "tapete2": "#bdc6d3",
+        "parede": {
+          "base": "#eef1f4",
+          "friso": "#9fb0c4",
+          "padrao": "plain"
+        },
+        "destaque": "#3f7fd8",
+        "mesa": "white",
+        "cadeira": "blue"
+      },
+      {
+        "tapete": "#dbcfba",
+        "tapete2": "#d0c2ab",
+        "parede": {
+          "base": "#f6f0e5",
+          "friso": "#b99f7a",
+          "padrao": "stripes"
+        },
+        "destaque": "#ec8a3c",
+        "mesa": "wood",
+        "cadeira": "black"
+      },
+      {
+        "tapete": "#c4cfbb",
+        "tapete2": "#b8c5af",
+        "parede": {
+          "base": "#f1f3ea",
+          "friso": "#93a487",
+          "padrao": "wood_panel"
+        },
+        "destaque": "#4cae6a",
+        "mesa": "wood",
+        "cadeira": "green"
+      },
+      {
+        "tapete": "#cdc8de",
+        "tapete2": "#c2bbd5",
+        "parede": {
+          "base": "#f3f1f8",
+          "friso": "#a59cc4",
+          "padrao": "plain"
+        },
+        "destaque": "#8d66cf",
+        "mesa": "white",
+        "cadeira": "gray"
+      },
+      {
+        "tapete": "#e4cdbe",
+        "tapete2": "#dbc1b0",
+        "parede": {
+          "base": "#f8f1eb",
+          "friso": "#c99a83",
+          "padrao": "plain"
+        },
+        "destaque": "#e2604f",
+        "mesa": "wood",
+        "cadeira": "red"
+      },
+      {
+        "tapete": "#bfd9d2",
+        "tapete2": "#b2cfc7",
+        "parede": {
+          "base": "#eef6f4",
+          "friso": "#7fb3a6",
+          "padrao": "stripes"
+        },
+        "destaque": "#36b0b0",
+        "mesa": "white",
+        "cadeira": "green"
+      },
+      {
+        "tapete": "#aab1bd",
+        "tapete2": "#9fa7b4",
+        "parede": {
+          "base": "#e8eaee",
+          "friso": "#6d7583",
+          "padrao": "brick"
+        },
+        "destaque": "#f2c14e",
+        "mesa": "dark",
+        "cadeira": "black"
+      },
+      {
+        "tapete": "#e0cad2",
+        "tapete2": "#d6bdc6",
+        "parede": {
+          "base": "#f9f2f4",
+          "friso": "#c08ea0",
+          "padrao": "stripes"
+        },
+        "destaque": "#e47aa8",
+        "mesa": "white",
+        "cadeira": "black"
+      },
+      {
+        "tapete": "#c0d2e7",
+        "tapete2": "#b3c7e0",
+        "parede": {
+          "base": "#eef4fa",
+          "friso": "#8aa6c8",
+          "padrao": "wood_panel"
+        },
+        "destaque": "#5b8fe0",
+        "mesa": "wood",
+        "cadeira": "blue"
+      },
+      {
+        "tapete": "#d1c5b8",
+        "tapete2": "#c5b8aa",
+        "parede": {
+          "base": "#f4efe8",
+          "friso": "#8a6a52",
+          "padrao": "wood_panel"
+        },
+        "destaque": "#c9713f",
+        "mesa": "dark",
+        "cadeira": "gray"
+      }
+    ],
+    "nucleo": {
+      "recepcao": {
+        "base": "#e9e5dc",
+        "friso": "#a88e6c",
+        "padrao": "wood_panel"
+      },
+      "banheiros": {
+        "base": "#dce8ee",
+        "friso": "#8fb0c0",
+        "padrao": "tiles"
+      },
+      "copa": {
+        "base": "#eef0ee",
+        "friso": "#9aa6ad",
+        "padrao": "plain"
+      },
+      "copaRevestimento": {
+        "base": "#d9dcdf",
+        "friso": "#8d969e",
+        "padrao": "marble"
+      },
+      "lounge": {
+        "base": "#e6e2ea",
+        "friso": "#8f8aa3",
+        "padrao": "plain"
+      },
+      "vidro": {
+        "base": "#cfe6f0",
+        "friso": "#9fb9c6",
+        "padrao": "glass"
+      }
+    },
+    "piso": {
+      "carpete": [
+        "#c9d1dc"
+      ],
+      "xadrez": [
+        "#f2ede4",
+        "#d2d8de"
+      ],
+      "azulejo": [
+        "#eef2f5",
+        "#d3dae1",
+        "#fbfcfd",
+        "#e4eaef"
+      ],
+      "grama": [
+        "#6cab57"
+      ],
+      "rua": [
+        "#4b4f58",
+        "#565a63",
+        "#5f636c",
+        "#43464e"
+      ],
+      "madeira": [
+        "#c99668",
+        "#c48f61",
+        "#cf9f72",
+        "#c6925f"
+      ]
+    },
+    "canvas": {
+      "rotuloFundo": "#161b28e6",
+      "rotuloTexto": "#f3f5fa",
+      "rotuloSombra": "#10142047",
+      "rotuloContorno": "#141824a6",
+      "compactoFundo": "#161b28b3",
+      "compactoTexto": "#e8ecf5"
+    },
+    "mundo": {
+      "fundoExterno": "#7fae62",
+      "anelSelecao": "#7fe3ff",
+      "anelHover": "#ffffff",
+      "telhado": [
+        "#3f4652",
+        "#596170",
+        "#4b525f"
+      ]
+    }
+  },
+  "contraste": [
+    {
+      "texto": "ui.texto",
+      "fundo": "ui.fundoSolido",
+      "sobre": "piso.azulejo.2",
+      "min": 4.5
+    },
+    {
+      "texto": "ui.texto",
+      "fundo": "ui.fundo",
+      "sobre": "piso.azulejo.2",
+      "min": 4.5
+    },
+    {
+      "texto": "ui.textoMudo",
+      "fundo": "ui.fundoSolido",
+      "sobre": "piso.azulejo.2",
+      "min": 4.5
+    },
+    {
+      "texto": "ui.textoMudo",
+      "fundo": "ui.fundo",
+      "sobre": "piso.azulejo.2",
+      "min": 4.5
+    },
+    {
+      "texto": "ui.textoFraco",
+      "fundo": "ui.fundoSolido",
+      "sobre": "piso.azulejo.2",
+      "min": 4.5
+    },
+    {
+      "texto": "ui.textoFraco",
+      "fundo": "ui.fundo",
+      "sobre": "piso.azulejo.2",
+      "min": 4.5
+    },
+    {
+      "texto": "ui.destaque",
+      "fundo": "ui.fundoSolido",
+      "sobre": "piso.azulejo.2",
+      "min": 4.5
+    },
+    {
+      "texto": "ui.destaque",
+      "fundo": "ui.fundo",
+      "sobre": "piso.azulejo.2",
+      "min": 4.5
+    },
+    {
+      "texto": "status.trabalhando",
+      "fundo": "ui.fundoSolido",
+      "sobre": "piso.azulejo.2",
+      "min": 4.5
+    },
+    {
+      "texto": "status.trabalhando",
+      "fundo": "ui.fundo",
+      "sobre": "piso.azulejo.2",
+      "min": 4.5
+    },
+    {
+      "texto": "status.esperando",
+      "fundo": "ui.fundoSolido",
+      "sobre": "piso.azulejo.2",
+      "min": 4.5
+    },
+    {
+      "texto": "status.esperando",
+      "fundo": "ui.fundo",
+      "sobre": "piso.azulejo.2",
+      "min": 4.5
+    },
+    {
+      "texto": "status.shell",
+      "fundo": "ui.fundoSolido",
+      "sobre": "piso.azulejo.2",
+      "min": 4.5
+    },
+    {
+      "texto": "status.shell",
+      "fundo": "ui.fundo",
+      "sobre": "piso.azulejo.2",
+      "min": 4.5
+    },
+    {
+      "texto": "status.ocioso",
+      "fundo": "ui.fundoSolido",
+      "sobre": "piso.azulejo.2",
+      "min": 3
+    },
+    {
+      "texto": "status.concluido",
+      "fundo": "ui.fundoSolido",
+      "sobre": "piso.azulejo.2",
+      "min": 3
+    },
+    {
+      "texto": "status.saindo",
+      "fundo": "ui.fundoSolido",
+      "sobre": "piso.azulejo.2",
+      "min": 3
+    },
+    {
+      "texto": "nivel.ok",
+      "fundo": "ui.fundoSolido",
+      "sobre": "piso.azulejo.2",
+      "min": 3
+    },
+    {
+      "texto": "nivel.atencao",
+      "fundo": "ui.fundoSolido",
+      "sobre": "piso.azulejo.2",
+      "min": 3
+    },
+    {
+      "texto": "nivel.critico",
+      "fundo": "ui.fundoSolido",
+      "sobre": "piso.azulejo.2",
+      "min": 3
+    },
+    {
+      "texto": "canvas.rotuloTexto",
+      "fundo": "canvas.rotuloFundo",
+      "sobre": "piso.azulejo.2",
+      "min": 4.5
+    },
+    {
+      "texto": "canvas.compactoTexto",
+      "fundo": "canvas.compactoFundo",
+      "sobre": "piso.azulejo.2",
+      "min": 4.5
+    }
+  ],
+  "textos": {
+    "produto": "Expediente",
+    "status": {
+      "trabalhando": "Trabalhando",
+      "esperando": "Precisa de você",
+      "shell": "Esperando o shell",
+      "ocioso": "Ocioso",
+      "concluido": "Concluído",
+      "saindo": "Saindo"
+    },
+    "areasNucleo": {
+      "recepcao": "Recepção",
+      "banheiros": "Banheiros",
+      "copa": "Copa",
+      "lounge": "Lounge"
+    }
+  },
+  "tipografia": {
+    "familia": "Pixelify Sans",
+    "arquivo": "fontes/pixelify-sans-latin-400-normal.woff2",
+    "licenca": "OFL-1.1"
+  },
+  "decoracao": {
+    "marca": {
+      "logo": {
+        "arquivo": "brand/logo-mark.png",
+        "largura": 32,
+        "altura": 32
+      },
+      "placa": {
+        "arquivo": "brand/signage.png",
+        "largura": 64,
+        "altura": 16
+      }
+    },
+    "quadros": [
+      {
+        "id": "painting-mountains",
+        "tipo": "painting",
+        "arquivo": "art/painting-mountains.png",
+        "tiles": 2,
+        "moldura": {
+          "arquivo": "art/framed/painting-mountains.png",
+          "largura": 32,
+          "altura": 22
+        }
+      },
+      {
+        "id": "painting-beach",
+        "tipo": "painting",
+        "arquivo": "art/painting-beach.png",
+        "tiles": 2,
+        "moldura": {
+          "arquivo": "art/framed/painting-beach.png",
+          "largura": 32,
+          "altura": 22
+        }
+      },
+      {
+        "id": "painting-city-night",
+        "tipo": "painting",
+        "arquivo": "art/painting-city-night.png",
+        "tiles": 2,
+        "moldura": {
+          "arquivo": "art/framed/painting-city-night.png",
+          "largura": 32,
+          "altura": 22
+        }
+      },
+      {
+        "id": "painting-abstract",
+        "tipo": "painting",
+        "arquivo": "art/painting-abstract.png",
+        "tiles": 2,
+        "moldura": {
+          "arquivo": "art/framed/painting-abstract.png",
+          "largura": 32,
+          "altura": 22
+        }
+      },
+      {
+        "id": "painting-cat",
+        "tipo": "painting",
+        "arquivo": "art/painting-cat.png",
+        "tiles": 2,
+        "moldura": {
+          "arquivo": "art/framed/painting-cat.png",
+          "largura": 32,
+          "altura": 22
+        }
+      },
+      {
+        "id": "painting-wave",
+        "tipo": "painting",
+        "arquivo": "art/painting-wave.png",
+        "tiles": 2,
+        "moldura": {
+          "arquivo": "art/framed/painting-wave.png",
+          "largura": 32,
+          "altura": 22
+        }
+      },
+      {
+        "id": "painting-sunflowers",
+        "tipo": "painting",
+        "arquivo": "art/painting-sunflowers.png",
+        "tiles": 2,
+        "moldura": {
+          "arquivo": "art/framed/painting-sunflowers.png",
+          "largura": 32,
+          "altura": 22
+        }
+      },
+      {
+        "id": "painting-rio",
+        "tipo": "painting",
+        "arquivo": "art/painting-rio.png",
+        "tiles": 2,
+        "moldura": {
+          "arquivo": "art/framed/painting-rio.png",
+          "largura": 32,
+          "altura": 22
+        }
+      },
+      {
+        "id": "painting-wide-forest-lake",
+        "tipo": "painting",
+        "arquivo": "art/painting-wide-forest-lake.png",
+        "tiles": 4,
+        "moldura": {
+          "arquivo": "art/framed/painting-wide-forest-lake.png",
+          "largura": 64,
+          "altura": 30
+        }
+      },
+      {
+        "id": "painting-wide-color-fields",
+        "tipo": "painting",
+        "arquivo": "art/painting-wide-color-fields.png",
+        "tiles": 4,
+        "moldura": {
+          "arquivo": "art/framed/painting-wide-color-fields.png",
+          "largura": 64,
+          "altura": 30
+        }
+      },
+      {
+        "id": "painting-wide-aurora",
+        "tipo": "painting",
+        "arquivo": "art/painting-wide-aurora.png",
+        "tiles": 4,
+        "moldura": {
+          "arquivo": "art/framed/painting-wide-aurora.png",
+          "largura": 64,
+          "altura": 30
+        }
+      },
+      {
+        "id": "poster-coffee",
+        "tipo": "poster",
+        "arquivo": "art/poster-coffee.png",
+        "tiles": 1,
+        "variante": "coffee"
+      },
+      {
+        "id": "poster-rocket",
+        "tipo": "poster",
+        "arquivo": "art/poster-rocket.png",
+        "tiles": 1,
+        "variante": "rocket"
+      },
+      {
+        "id": "poster-code",
+        "tipo": "poster",
+        "arquivo": "art/poster-code.png",
+        "tiles": 1,
+        "variante": "code"
+      },
+      {
+        "id": "poster-cat",
+        "tipo": "poster",
+        "arquivo": "art/poster-cat.png",
+        "tiles": 1,
+        "variante": "cat"
+      },
+      {
+        "id": "poster-bug",
+        "tipo": "poster",
+        "arquivo": "art/poster-bug.png",
+        "tiles": 1,
+        "variante": "bug"
+      },
+      {
+        "id": "poster-ship-it",
+        "tipo": "poster",
+        "arquivo": "art/poster-ship-it.png",
+        "tiles": 1,
+        "variante": "ship_it"
+      }
+    ]
+  }
+}

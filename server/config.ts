@@ -25,7 +25,9 @@ export interface ServerConfig {
    * EXPEDIENTE_USAGE_DIR ou ~/.expediente/host/uso. No Docker, o docker-up monta ~/.expediente/host em /host e o servidor lê /host/uso.
    */
   usageDir: string;
-  /** `sessoes-app.json` da ponte do mod, ao lado da pasta do uso (no Docker, /host/sessoes-app.json). */
+  /** Pasta da ponte com o host (uso, mapa do app, tema ativo e temas): EXPEDIENTE_PONTE_DIR, /host no container ou ~/.expediente/host. */
+  hostDir: string;
+  /** `sessoes-app.json` da ponte do mod, dentro da pasta da ponte. */
   sessoesAppFile: string;
   /**
    * Terminal somente leitura (GET /api/agents/:id/terminal) ligado; EXPEDIENTE_TERMINAL=0 desliga (ver terminalOffReason).
@@ -112,7 +114,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] 
   const rootDir = findRoot(dirname(fileURLToPath(import.meta.url)));
   const host = inDocker ? '0.0.0.0' : '127.0.0.1';
   const pkg = readPackage(rootDir);
-  const usageDir = resolve(env.EXPEDIENTE_USAGE_DIR?.trim() || join(home, '.expediente', 'host', 'uso'));
+  const hostDir = resolve(env.EXPEDIENTE_PONTE_DIR?.trim() || (inDocker ? '/host' : join(home, '.expediente', 'host')));
+  const usageDir = resolve(env.EXPEDIENTE_USAGE_DIR?.trim() || join(hostDir, 'uso'));
   return {
     port: Number.isFinite(port) && port > 0 && port < 65536 ? port : 4848,
     host,
@@ -123,7 +126,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] 
     claudeDirs: discoverClaudeDirs(env, home),
     dataDir: resolve(env.EXPEDIENTE_DATA_DIR?.trim() || (inDocker ? '/data' : join(home, '.expediente'))),
     usageDir,
-    sessoesAppFile: join(dirname(usageDir), 'sessoes-app.json'),
+    hostDir,
+    sessoesAppFile: join(hostDir, 'sessoes-app.json'),
     terminal: terminalOffReason(env) === undefined,
     timeline: !env.EXPEDIENTE_TIMELINE?.trim() || isTruthy(env.EXPEDIENTE_TIMELINE),
     rootDir,

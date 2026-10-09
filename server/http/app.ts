@@ -33,6 +33,8 @@ export interface ApiDeps {
   permissions?: (req: IncomingMessage, res: ServerResponse, path: string) => void;
   /** Estatísticas do "Meu dia" (GET /api/stats, http/stats.ts). */
   stats?: DayStatsService;
+  /** Tema ativo: GET /api/tema e /temas/<id>/<arquivo> (http/tema.ts); devolve false para o resto. */
+  tema?: (req: IncomingMessage, res: ServerResponse, url: URL) => boolean;
 }
 
 /** GET /api/agents/:id/terminal (ids nunca contêm '/'). */
@@ -159,6 +161,7 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
 
   return (req, res, url) => {
     const path = url.pathname;
+    if (deps.tema?.(req, res, url)) return true;
     if (path !== '/api' && !path.startsWith('/api/')) return false;
     const method = req.method ?? 'GET';
     const isRead = method === 'GET' || method === 'HEAD';

@@ -11,6 +11,7 @@ import { createRequestGuard } from './http/guard';
 import { createTerminalGate, PUBLICACAO_ARQUIVO } from './publicacao';
 import { Hub } from './http/sse';
 import { createStaticHandler } from './http/static';
+import { createTemaHandler } from './http/tema';
 import { TerminalStreams } from './http/terminal';
 import { createTimelineHandler } from './http/timeline';
 import { TIMELINE_DIR, TimelineRecorder } from './history/timeline';
@@ -25,6 +26,7 @@ import { PermissionRegistry } from './permissions/registry';
 import { SessoesAppReader } from './sources/sessoes-app';
 import { ClaudeWatcher } from './sources/watcher';
 import { createBuildReader } from './build';
+import { carregarTema } from './tema/carregar';
 
 const config = loadConfig();
 // Terminal, histórico e permissões: no container só com a publicação da porta confirmada pelo docker-up.
@@ -123,6 +125,10 @@ const mapaTimer = setInterval(() => {
   office.markDirty();
 }, 5_000);
 
+const pastasDoTema = { hostDir: config.hostDir, padraoDir: join(config.rootDir, config.dev ? 'client/public' : 'dist/client', 'temas/padrao') };
+const temaAtivo = carregarTema(pastasDoTema);
+if (temaAtivo.aviso) log.warn(temaAtivo.aviso);
+
 const api = createApiHandler({
   office,
   hub,
@@ -136,6 +142,7 @@ const api = createApiHandler({
   timeline: createTimelineHandler({ dir: timelineDir, recording: !!timeline }),
   permissions: permissions ? createPermissionRoutes(permissions) : undefined,
   stats,
+  tema: createTemaHandler(pastasDoTema, temaAtivo, sendJson),
 });
 
 const server = http.createServer();
@@ -197,6 +204,7 @@ server.listen(config.port, config.host, () => {
     const usage = accounts.usageView(a.id).status;
     log.info(`   Conta ${a.detected.short} (${a.id}): ${src?.sessions ?? 0} sessão(ões) aberta(s) · uso: ${usage} · ${a.dir}`);
   }
+  log.info(`   Tema: ${temaAtivo.id}.`);
   if (office.isDemo()) log.info('   Modo demonstração ligado (agentes simulados misturados aos reais).');
   const off = gate.offReason();
   if (off === undefined) log.info('   Terminal somente leitura: ligado (acesso só local).');
