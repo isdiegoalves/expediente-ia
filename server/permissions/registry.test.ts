@@ -226,6 +226,17 @@ describe('PermissionRegistry: perguntas (AskUserQuestion)', () => {
     expect(commit.notices[0]!.text).not.toContain('abcdef123456');
   });
 
+  it('token em pergunta, título, rótulo e descrição não chega ao snapshot, ao feed nem ao aviso', () => {
+    const ghp = 'ghp_aB3dE6gH9jK2mN5pQ8sT1vW4yZ7cF0hJ3kL6';
+    const { office, registry } = setup();
+    office.commit();
+    const id = registered(registry.register(askInput({ tool_input: { questions: [{ question: `Usar ${ghp}?`, header: ghp, options: [{ label: `com ${ghp}`, description: `valor ${ghp}` }, { label: 'Não' }] }] } })));
+    const commit = office.commit();
+    expect(JSON.stringify(commit)).not.toContain('ghp_aB3');
+    expect(JSON.stringify(registry.detail(id))).not.toContain('ghp_aB3');
+    expect(commit.snapshot.agents.find((x) => x.id === MAIN)!.permission!.questions![0]!.options[0]).toMatchObject({ label: 'com gh*_***', description: 'valor gh*_***' });
+  });
+
   it('responder: a espera recebe as respostas por posição (normalizadas) e a linha do tempo ganha o resumo', async () => {
     const { office, registry } = setup();
     const id = registered(registry.register(askInput()));

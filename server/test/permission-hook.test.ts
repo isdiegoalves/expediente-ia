@@ -4,6 +4,7 @@
 // abertas, e o tempo limite.
 // Os processos são assíncronos (spawn): o servidor roda neste mesmo processo.
 import { spawn } from 'node:child_process';
+import { createServer as createHttpServer } from 'node:http';
 import { createServer } from 'node:net';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -137,6 +138,66 @@ describe('permission-hook.mjs (processo)', () => {
       },
     });
   });
+
+  it('pergunta com token: o escritório vê a versão mascarada e a resposta volta com o texto original do stdin', async () => {
+    const ghp = 'ghp_aB3dE6gH9jK2mN5pQ8sT1vW4yZ7cF0hJ3kL6';
+    const tool_input = { questions: [{ question: `Usar ${ghp}?`, header: 'Chave', multiSelect: false, options: [{ label: 'Sim' }, { label: 'Não' }] }] };
+    srv = await servePermissions();
+    const run = runHook(JSON.stringify(askJson({ tool_input })), ['--port', String(srv.port)]);
+    const id = await pendingId(srv);
+    expect(JSON.stringify(srv.registry!.detail(id)!.questions)).not.toContain('ghp_aB3');
+    srv.registry!.decide(id, { behavior: 'answer', answers: [{ question: 0, options: [1] }] });
+    const out = JSON.parse((await run).stdout);
+    expect(out.hookSpecificOutput.decision.updatedInput.answers).toEqual({ [`Usar ${ghp}?`]: 'Não' });
+  });
+
+  it('opção inexistente: o registro recusa a resposta e o hook devolve ao terminal quando o tempo acaba', async () => {
+    srv = await servePermissions({ registry: { orphanMs: 300 } });
+    const run = runHook(JSON.stringify(askJson()), ['--port', String(srv.port), '--timeout', '5']);
+    const id = await pendingId(srv);
+    expect(srv.registry!.decide(id, { behavior: 'answer', answers: [{ question: 0, options: [7] }, { question: 2, options: [0] }] })).not.toBe('ok');
+    const r = await run;
+    expect(r).toMatchObject({ code: 0, stdout: '' });
+  }, 20_000);
+
+  it('servidor que devolve resposta inválida: sai sem decisão', async () => {
+    const respostas: unknown[] = [
+      [{ question: 0, options: [9] }, { question: 2, options: [0] }],
+      [{ question: 0, options: [0] }],
+      [{ question: 0, options: [0, 1] }, { question: 2, options: [0] }],
+      [],
+      'texto',
+    ];
+    for (const answers of respostas) {
+      const fake = createHttpServer((req, res) => {
+        res.setHeader('Content-Type', 'application/json');
+        if (req.method === 'POST') return void res.writeHead(201).end(JSON.stringify({ id: 'p1' }));
+        res.writeHead(200).end(JSON.stringify({ status: 'decided', behavior: 'answer', answers }));
+      });
+      await new Promise<void>((ok) => fake.listen(0, '127.0.0.1', ok));
+      try {
+        const port = (fake.address() as { port: number }).port;
+        const r = await runHook(JSON.stringify(askJson()), ['--port', String(port)]);
+        expect(r, JSON.stringify(answers)).toMatchObject({ code: 0, stdout: '' });
+      } finally {
+        await new Promise((ok) => fake.close(ok));
+      }
+    }
+  });
+
+  it('pergunta sem ninguém olhando ou com o Expediente fora do ar: sai sem decisão', async () => {
+    srv = await servePermissions({ viewers: 0 });
+    expect(await runHook(JSON.stringify(askJson()), ['--port', String(srv.port)])).toMatchObject({ code: 0, stdout: '' });
+    expect(srv.registry!.size).toBe(0);
+    expect(await runHook(JSON.stringify(askJson()), ['--port', String(await deadPort())])).toMatchObject({ code: 0, stdout: '' });
+  });
+
+  it('pergunta sem resposta até o tempo limite: sai sem decisão', async () => {
+    srv = await servePermissions({ registry: { orphanMs: 300 } });
+    const r = await runHook(JSON.stringify(askJson()), ['--port', String(srv.port), '--timeout', '5']);
+    expect(r).toMatchObject({ code: 0, stdout: '' });
+    expect(r.ms).toBeGreaterThanOrEqual(4_500);
+  }, 20_000);
 
   it('pergunta recusada no Expediente: decisão deny (o agente segue sem a resposta)', async () => {
     srv = await servePermissions();

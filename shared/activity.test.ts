@@ -187,6 +187,15 @@ describe('AskUserQuestion no escritório', () => {
     ]);
   });
 
+  it('mascara token em pergunta, título, rótulo e descrição das opções', () => {
+    const ghp = 'ghp_aB3dE6gH9jK2mN5pQ8sT1vW4yZ7cF0hJ3kL6';
+    const d = describeTool('AskUserQuestion', {
+      questions: [{ question: `Usar ${ghp}?`, header: ghp, options: [{ label: `com ${ghp}`, description: `valor ${ghp}` }] }],
+    });
+    expect(JSON.stringify(d)).not.toContain('ghp_aB3');
+    expect(d.questions![0]!.options[0]).toMatchObject({ label: 'com gh*_***', description: 'valor gh*_***' });
+  });
+
   it('mascara segredos e ignora entradas inválidas', () => {
     const d = describeTool('AskUserQuestion', {
       questions: [null, { question: '' }, { question: 'Usar a chave sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789?', options: [{ label: '' }, { label: 'Sim' }] }],
