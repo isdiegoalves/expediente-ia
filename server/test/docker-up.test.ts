@@ -208,7 +208,7 @@ describe('docker-up: migração do nome antigo (CodeTown)', () => {
   it('.env: só os nomes das variáveis, nunca os valores', () => {
     const text = [
       '# CODETOWN_COMENTADA=1',
-      'CODETOWN_BIND=0.0.0.0',
+      'CODETOWN_DEMO=0.0.0.0',
       '  export CODETOWN_PORT = 4848',
       'EXPEDIENTE_DEMO=1',
       '',
@@ -217,9 +217,9 @@ describe('docker-up: migração do nome antigo (CodeTown)', () => {
       'SEGREDO=CODETOWN_X=y\r',
     ].join('\n');
     const keys = envFileKeys(text);
-    expect(keys).toEqual(['CODETOWN_BIND', 'CODETOWN_PORT', 'EXPEDIENTE_DEMO', 'SEGREDO']);
+    expect(keys).toEqual(['CODETOWN_DEMO', 'CODETOWN_PORT', 'EXPEDIENTE_DEMO', 'SEGREDO']);
     const msg = legacyEnvWarning(keys, 'no .env');
-    expect(msg).toBe('variáveis do nome antigo ignoradas no .env: CODETOWN_BIND → EXPEDIENTE_BIND, CODETOWN_PORT → EXPEDIENTE_PORT. Renomeie para valer de novo.');
+    expect(msg).toBe('variáveis do nome antigo ignoradas no .env: CODETOWN_DEMO → EXPEDIENTE_DEMO, CODETOWN_PORT → EXPEDIENTE_PORT. Renomeie para valer de novo.');
     expect(msg).not.toContain('0.0.0.0');
     expect(envFileKeys('')).toEqual([]);
   });

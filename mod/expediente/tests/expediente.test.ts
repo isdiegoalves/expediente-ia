@@ -89,7 +89,7 @@ describe('uso do plano', () => {
     await $.session.start(START)
     expect(w.commands).toEqual(['escritorio'])
     expect(w.writes.length).toBe(1)
-    expect(w.writes[0]?.path).toBe('/home/fulano/.expediente/usage/.claude-conta2.json')
+    expect(w.writes[0]?.path).toBe('/home/fulano/.expediente/host/uso/.claude-conta2.json')
     expect(w.writes[0]?.text.endsWith('}\n')).toBe(true)
     expect(JSON.parse(w.writes[0]?.text ?? '')).toEqual({
       accountId: '.claude-conta2',
@@ -248,7 +248,7 @@ describe('funções puras', () => {
     expect(configDirOf(' ~/.claude-conta2 , /x', '/home/f')).toBe('/home/f/.claude-conta2')
     expect(configDirOf(undefined, '/home/f/')).toBe('/home/f/.claude')
     expect(configDirOf('', undefined)).toBeUndefined()
-    expect(usageDirOf(undefined, '/home/f')).toBe('/home/f/.expediente/usage')
+    expect(usageDirOf(undefined, '/home/f')).toBe('/home/f/.expediente/host/uso')
     expect(usageDirOf(undefined, undefined)).toBeUndefined()
   })
 

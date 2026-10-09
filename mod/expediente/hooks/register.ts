@@ -5,7 +5,7 @@
 //
 // 1. Uso do plano (substitui o tap de statusline): em `session.start` e a cada `session.measure`
 //    (depois de cada turno e quando um limite anda um ponto inteiro) grava
-//    <EXPEDIENTE_USAGE_DIR ou ~/.expediente/usage>/<conta>.json no MESMO formato do scripts/statusline-tap.mjs
+//    <EXPEDIENTE_USAGE_DIR ou ~/.expediente/host/uso>/<conta>.json no MESMO formato do scripts/statusline-tap.mjs
 //    ({accountId, configDir, fetchedAt, five_hour, seven_day}, `resets_at` em segundos) mais
 //    `source: "mod"`. O servidor lê esses arquivos em server/accounts/statusline.ts.
 // 2. Uma linha embaixo do prompt quando OUTRA sessão precisa de você: a cada 5 s pergunta ao Expediente
@@ -124,7 +124,7 @@ export function accountIdOf(configDir: string): string | undefined {
 export function usageDirOf(expedienteUsageDir: string | undefined, home: string | undefined): string | undefined {
   const d = (expedienteUsageDir ?? '').trim()
   if (d) return normalizePath(expandHome(d, home))
-  return home ? normalizePath(`${home}/.expediente/usage`) : undefined
+  return home ? normalizePath(`${home}/.expediente/host/uso`) : undefined
 }
 
 export function portOf(raw: string | undefined): number {

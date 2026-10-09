@@ -16,7 +16,7 @@ npm run build && npm start   # produção: serve dist/client
 | Atividades, tarefas, título, números | `<config>/projects/<cwd>/<sessionId>.jsonl` (lê o último ~1 MB no boot; o começo em segundo plano) |
 | Subagentes (inclusive de workflows) | `<config>/projects/<cwd>/<sessionId>/subagents/**/agent-*.jsonl` + `.meta.json` |
 | Conta (e-mail, organização) e cache de uso | `~/.claude.json` (conta padrão) ou `<config>/.claude.json` — só esses campos |
-| Uso ao vivo (5h e semanal) | `~/.expediente/usage/<conta>.json`, gravado pelo mod do Expediente (`npm run mod:install`) ou pelo `scripts/statusline-tap.mjs` (`npm run usage:install`) |
+| Uso ao vivo (5h e semanal) | `~/.expediente/host/uso/<conta>.json`, gravado pelo mod do Expediente (`npm run mod:install`) ou pelo `scripts/statusline-tap.mjs` (`npm run usage:install`) |
 | Atalho da conta (`c`, `d`...) | linhas `alias x='... claude ...'` de `~/.zshrc`, `~/.bashrc`, `~/.zprofile`, `~/.bash_profile` |
 
 **Forks** (subagentes que herdam o contexto do pai): o transcript começa com uma linha `fork-context-ref`, a
@@ -235,7 +235,7 @@ sugestão inválidos), 404 (pedido desconhecido, já entregue ou expirado), 405,
 | `EXPEDIENTE_TIMELINE` | ligado | `0` desliga a gravação da linha do tempo do timelapse |
 | `EXPEDIENTE_DEMO` | desligado | `1` liga o modo demonstração ao iniciar |
 | `EXPEDIENTE_ACCOUNTS` | — | JSON com metadados das contas vindos do host (Docker): `[{id, configDir, mountDir, short, name, email, organization, plan, color, cachedUsage}]`, casados por `id`, `mountDir` ou `configDir` |
-| `EXPEDIENTE_USAGE_DIR` | `~/.expediente/usage` (Docker: `/host/uso`) | pasta do uso capturado pelo tap de statusline ou pelo mod do Claude Code, relida a cada 5 s |
+| `EXPEDIENTE_USAGE_DIR` | `~/.expediente/host/uso` (Docker: `/host/uso`) | pasta do uso capturado pelo tap de statusline ou pelo mod do Claude Code, relida a cada 5 s |
 
 No hook de permissão (ambiente do Claude Code; os argumentos `--port`/`--timeout` gravados pelo instalador têm
 preferência): `EXPEDIENTE_PORT` (porta do Expediente, padrão `4848`), `EXPEDIENTE_PERMISSION_TIMEOUT` (segundos de espera
@@ -249,7 +249,7 @@ Duas fontes, ambas arquivos locais (nada de credenciais nem chamadas de rede); v
 - `statusline` (**recomendada**, `accounts/statusline.ts`): o Claude Code envia ao comando de statusline um JSON
   com `rate_limits` (`five_hour`/`seven_day`: `used_percentage` e `resets_at` em segundos). O
   `scripts/statusline-tap.mjs`, instalado na frente do statusline de cada conta por `npm run usage:install`,
-  grava só esses números em `~/.expediente/usage/<conta>.json` (casado com a conta pelo `configDir`; senão pelo
+  grava só esses números em `~/.expediente/host/uso/<conta>.json` (casado com a conta pelo `configDir`; senão pelo
   `accountId`). No Claude Code 2.1.287+ o mod do Expediente grava o mesmo arquivo (ver abaixo);
 - `cache`: o `cachedUsageUtilization` que o próprio Claude Code grava ao rodar `/usage`, relido a cada 60 s.
 

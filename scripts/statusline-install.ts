@@ -6,7 +6,7 @@
 //   (opções: --dry-run mostra o que mudaria sem gravar nada; --node <caminho> escolhe o node)
 //
 // O tap (scripts/statusline-tap.mjs) recebe do Claude Code o mesmo JSON que o statusline já recebe
-// e guarda só os percentuais de uso de 5h/semana em ~/.expediente/usage/<conta>.json, repassando tudo
+// e guarda só os percentuais de uso de 5h/semana em ~/.expediente/host/uso/<conta>.json, repassando tudo
 // ao statusline original. Assim o Expediente mostra o uso ao vivo sem ler credenciais.
 //
 // Em <conta>/settings.json só o campo statusLine.command muda (os demais campos e chaves ficam como
@@ -37,7 +37,7 @@ Opções:
   -h, --help       mostra esta ajuda
 
 Contas: as mesmas do servidor (~/.claude* com projects/ ou sessions/, CLAUDE_CONFIG_DIR ou
-EXPEDIENTE_CLAUDE_DIRS). Uso capturado em EXPEDIENTE_USAGE_DIR (padrão ~/.expediente/usage).`;
+EXPEDIENTE_CLAUDE_DIRS). Uso capturado em EXPEDIENTE_USAGE_DIR (padrão ~/.expediente/host/uso).`;
 
 // ---------------------------------------------------------------------------------------------
 // Funções puras (testadas em server/test/statusline-install.test.ts)
@@ -281,10 +281,10 @@ export function writeSettings(file: string, settings: Settings, raw: string | un
   return backup;
 }
 
-/** Pasta do uso capturado (EXPEDIENTE_USAGE_DIR ou ~/.expediente/usage); também usada pelo mod-install. */
+/** Pasta do uso capturado (EXPEDIENTE_USAGE_DIR ou ~/.expediente/host/uso); também usada pelo mod-install. */
 export function usageDirOf(env: NodeJS.ProcessEnv, home: string): string {
   const d = env.EXPEDIENTE_USAGE_DIR?.trim();
-  return d ? resolve(d.replace(/^~(?=\/|$)/, home)) : join(home, '.expediente', 'usage');
+  return d ? resolve(d.replace(/^~(?=\/|$)/, home)) : join(home, '.expediente', 'host', 'uso');
 }
 
 /**
@@ -329,7 +329,7 @@ export function run(opts: RunOptions, ctx: RunContext): number {
     return 1;
   }
   const nodeCmd = opts.nodeCmd ?? detectNodeCommand(env, home);
-  // Nome antigo: o tap agora grava em ~/.expediente/usage; o que estava em ~/.codetown vai junto.
+  // Nome antigo: o que estava em ~/.codetown vai para ~/.expediente.
   if (opts.command === 'install') {
     const moved = migrateLegacyState(home, opts.dryRun);
     if (moved) out(moved);

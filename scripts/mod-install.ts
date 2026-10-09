@@ -86,7 +86,7 @@ Precisa do Claude Code ${MIN_CLAUDE_VERSION} ou mais novo. Em versões anteriore
 npm run usage:install (uso ao vivo) e npm run hooks:install (responder permissões).
 
 Contas: as mesmas do servidor (~/.claude* com projects/ ou sessions/, CLAUDE_CONFIG_DIR ou
-EXPEDIENTE_CLAUDE_DIRS). Uso capturado em EXPEDIENTE_USAGE_DIR (padrão ~/.expediente/usage).`;
+EXPEDIENTE_CLAUDE_DIRS). Uso capturado em EXPEDIENTE_USAGE_DIR (padrão ~/.expediente/host/uso).`;
 
 // ---------------------------------------------------------------------------------------------
 // O CLI do Claude Code (injetável: os testes nunca chamam o de verdade)
@@ -727,7 +727,7 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
     const moved = migrateLegacyState(home, opts.dryRun);
     if (moved) out(moved);
   }
-  // O mod grava o uso em ~/.expediente/usage, mas não cria a pasta (o docker:up também a monta no container).
+  // O mod grava o uso em ~/.expediente/host/uso, mas não cria a pasta (o docker:up monta ~/.expediente/host no container).
   if (opts.command === 'install' && !opts.dryRun) {
     const usageDir = usageDirOf(env, home);
     try {

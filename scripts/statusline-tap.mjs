@@ -8,7 +8,7 @@
 //   node /caminho/do/expediente/scripts/statusline-tap.mjs -- <comando original do statusline>
 //
 // 1. lê todo o stdin;
-// 2. se houver rate_limits, grava <EXPEDIENTE_USAGE_DIR ou ~/.expediente/usage>/<pasta da conta>.json com
+// 2. se houver rate_limits, grava <EXPEDIENTE_USAGE_DIR ou ~/.expediente/host/uso>/<pasta da conta>.json com
 //    SÓ {accountId, configDir, fetchedAt, five_hour, seven_day} (nada mais do stdin, por privacidade);
 // 3. roda o comando original com o MESMO stdin, herdando stdout/stderr, e sai com o código dele.
 //    Sem comando original, não imprime nada.
@@ -73,7 +73,7 @@ export function usageRecord(input, now, env = process.env, home = env.HOME || ho
 
 export function usageDirOf(env = process.env, home = env.HOME || homedir()) {
   const d = (env.EXPEDIENTE_USAGE_DIR ?? '').trim();
-  return d ? resolve(d.replace(/^~(?=\/|$)/, home)) : join(home, '.expediente', 'usage');
+  return d ? resolve(d.replace(/^~(?=\/|$)/, home)) : join(home, '.expediente', 'host', 'uso');
 }
 
 /** Grava de forma atômica (tmp + rename, modo 600). Devolve false quando nada precisou mudar. */

@@ -6,8 +6,8 @@ import { tempDir } from './test/fixtures';
 
 describe('variáveis do nome antigo', () => {
   it('lista só as CODETOWN_*, com o nome novo, em ordem', () => {
-    expect(legacyEnvVars(['PATH', 'CODETOWN_PORT', 'EXPEDIENTE_BIND', 'CODETOWN_BIND'])).toEqual([
-      { from: 'CODETOWN_BIND', to: 'EXPEDIENTE_BIND' },
+    expect(legacyEnvVars(['PATH', 'CODETOWN_PORT', 'EXPEDIENTE_DEMO', 'CODETOWN_DEMO'])).toEqual([
+      { from: 'CODETOWN_DEMO', to: 'EXPEDIENTE_DEMO' },
       { from: 'CODETOWN_PORT', to: 'EXPEDIENTE_PORT' },
     ]);
   });

@@ -23,7 +23,7 @@
 //
 // Uso de 5h/semanal ao vivo: o mod do Expediente (npm run mod:install; Claude Code 2.1.287+) ou, em
 // versões anteriores, o tap de statusline (npm run usage:install). Os dois gravam os números em
-// ~/.expediente/usage; o container só os vê se estiverem em ~/.expediente/host/uso. Sem eles, vale o cache do /usage
+// ~/.expediente/host/uso, que o container lê em /host/uso. Sem eles, vale o cache do /usage
 // lido das contas ao subir.
 import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs';
@@ -72,7 +72,7 @@ Opções:
   --down       derruba o container (o mesmo que npm run docker:down)
   -h, --help   mostra esta ajuda
 
-Variáveis: EXPEDIENTE_PORT (porta no host, padrão ${DEFAULT_PORT}) e EXPEDIENTE_CLAUDE_DIRS
+Variável: EXPEDIENTE_CLAUDE_DIRS
 (config dirs separados por vírgula, se as contas não estiverem em ~/.claude*).`;
 
 // ---------------------------------------------------------------------------------------------
@@ -119,13 +119,6 @@ export function parseArgs(argv: string[]): Options {
   return opts;
 }
 
-export function hostPort(env: NodeJS.ProcessEnv): number {
-  const raw = env.EXPEDIENTE_PORT?.trim();
-  if (!raw) return DEFAULT_PORT;
-  const port = Number(raw);
-  if (!Number.isInteger(port) || port <= 0 || port >= 65536) fail(`EXPEDIENTE_PORT inválida: "${raw}" (use um número de 1 a 65535).`);
-  return port;
-}
 
 // ---------------------------------------------------------------------------------------------
 // Plano de montagens e override do Compose (funções puras, sem efeitos colaterais)
@@ -442,9 +435,8 @@ function checkDocker(): void {
   if (compose.status !== 0) fail('o Docker Compose v2 ("docker compose") não está disponível. Atualize o Docker Desktop.');
 }
 
-function compose(args: string[], port: number): void {
-  // EXPEDIENTE_PORT explícito: vale sobre um eventual .env na pasta do projeto.
-  const res = spawnSync('docker', ['compose', ...args], { cwd: ROOT, stdio: 'inherit', env: { ...process.env, EXPEDIENTE_PORT: String(port) } });
+function compose(args: string[]): void {
+  const res = spawnSync('docker', ['compose', ...args], { cwd: ROOT, stdio: 'inherit' });
   if (res.error) fail(`não consegui rodar "docker compose ${args.join(' ')}": ${res.error.message}`);
   if (res.status !== 0) fail(`"docker compose ${args.join(' ')}" falhou (código ${res.status ?? res.signal}).`);
 }
@@ -528,7 +520,7 @@ function copyVolume(from: string, to: string): boolean {
 }
 
 /** Executa os passos de planUp. Derrubam o docker:up só o Compose e o container antigo que não sai. */
-function runPlan(plan: UpPlan, port: number, build: boolean): { copyFailed: boolean } {
+function runPlan(plan: UpPlan, build: boolean): { copyFailed: boolean } {
   let copyFailed = false;
   let created = false;
   for (const step of plan.steps) {
@@ -553,7 +545,7 @@ function runPlan(plan: UpPlan, port: number, build: boolean): { copyFailed: bool
           created = true;
         } else if (created) say('Subindo o container…');
         else say(build ? 'Construindo a imagem e subindo o container…' : 'Subindo o container (sem reconstruir a imagem)…');
-        compose(step.args, port);
+        compose(step.args);
         break;
     }
   }
@@ -596,10 +588,10 @@ async function waitHealthy(baseUrl: string): Promise<Health | undefined> {
 // Comandos
 // ---------------------------------------------------------------------------------------------
 
-function down(port: number): void {
+function down(): void {
   checkDocker();
   say('Derrubando o container…');
-  compose(['down'], port);
+  compose(['down']);
   say('Pronto. Os nomes dos personagens continuam guardados no volume expediente-data.');
 }
 
@@ -614,7 +606,7 @@ async function up(opts: Options, port: number): Promise<void> {
   if (existing && !existing.docker) {
     fail(
       `já existe um Expediente rodando fora do Docker em ${publicUrl} (npm run dev ou npm start?).\n` +
-        `Pare-o antes, ou use outra porta: EXPEDIENTE_PORT=4848 npm run docker:up`,
+        `Pare-o antes de subir o container (a porta do Docker é sempre ${DEFAULT_PORT}).`,
     );
   }
 
@@ -643,7 +635,7 @@ async function up(opts: Options, port: number): Promise<void> {
   say('docker-compose.override.yml gerado.');
 
   const plan = planUp(inspectDocker(), opts.build);
-  const { copyFailed } = runPlan(plan, port, opts.build);
+  const { copyFailed } = runPlan(plan, opts.build);
 
   say(`Aguardando o Expediente responder em ${publicUrl}…`);
   const health = await waitHealthy(baseUrl);
@@ -688,8 +680,8 @@ async function main(): Promise<void> {
     console.log(USAGE);
     return;
   }
-  const port = hostPort(process.env);
-  if (opts.down) down(port);
+  const port = DEFAULT_PORT;
+  if (opts.down) down();
   else await up(opts, port);
 }
 

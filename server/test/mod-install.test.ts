@@ -684,7 +684,7 @@ describe('mod-install.ts (CLI falso, HOME falso)', () => {
       expect(out.join('\n')).not.toContain('nome antigo');
     });
 
-    it('sem EXPEDIENTE_USAGE_DIR: o uso antigo já vira a pasta do uso; com ~/.expediente existente, só o que falta vai', async () => {
+    it('sem EXPEDIENTE_USAGE_DIR: o uso antigo vai para ~/.expediente/usage, a pasta do uso novo é criada e, com ~/.expediente existente, só o que falta vai', async () => {
       mkdirSync(join(home, '.expediente'), { recursive: true });
       writeFileSync(join(home, '.expediente', 'names.json'), '{}');
       expect(await exec('install', { accounts: [join(home, '.claude')] }, undefined, { EXPEDIENTE_USAGE_DIR: undefined })).toBe(0);
@@ -693,7 +693,7 @@ describe('mod-install.ts (CLI falso, HOME falso)', () => {
       expect(existsSync(join(home, '.codetown'))).toBe(false);
       const text = out.join('\n');
       expect(text).toContain('✓ de ~/.codetown (nome antigo) para ~/.expediente: usage.');
-      expect(text).not.toContain('pasta do uso criada');
+      expect(text).toContain('pasta do uso criada: ~/.expediente/host/uso');
     });
 
     it('plugin antigo que não sai não segura a instalação: o marketplace codetown o leva junto (mas a falha conta)', async () => {

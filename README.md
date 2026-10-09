@@ -445,7 +445,7 @@ vira **Conta C** e **Conta D**. Só valem atalhos de até 3 letras; contas sem a
 
 **De onde vêm os números.** O jeito recomendado é o mod do Expediente (`npm run mod:install`, Claude Code 2.1.287+):
 dentro de cada sessão, ele recebe do próprio Claude Code os limites do plano e guarda só os percentuais de 5 horas e
-da semana (e quando reiniciam) em `~/.expediente/usage/<conta>.json`. Os números chegam depois da próxima resposta de
+da semana (e quando reiniciam) em `~/.expediente/host/uso/<conta>.json`. Os números chegam depois da próxima resposta de
 cada conta. Confira com `npm run mod:status`. Em versões anteriores do Claude Code, o tap de statusline
 (`npm run usage:install`) faz o mesmo pelo comando de statusline, no mesmo arquivo.
 
@@ -482,7 +482,7 @@ Tudo funciona sem configurar nada. Se precisar ajustar, use variáveis de ambien
 | `EXPEDIENTE_CLAUDE_DIRS` | detecção automática | Pastas das contas, separadas por vírgula (ex.: `/caminho/conta1,/caminho/conta2`). |
 | `EXPEDIENTE_DATA_DIR` | `~/.expediente` | Onde o Expediente guarda os próprios dados (nomes dos personagens, linha do tempo do timelapse e estatísticas do Meu dia). |
 | `EXPEDIENTE_TIMELINE` | ligado | `0` desliga a gravação da linha do tempo (os dias já gravados continuam no timelapse). No Docker fica sempre ligado. |
-| `EXPEDIENTE_USAGE_DIR` | `~/.expediente/usage` | Onde o mod (ou o tap de statusline) grava o uso. |
+| `EXPEDIENTE_USAGE_DIR` | `~/.expediente/host/uso` | Onde o mod (ou o tap de statusline) grava o uso. |
 | `EXPEDIENTE_DEMO` | desligado | `1` liga o modo demonstração ao iniciar. |
 | `EXPEDIENTE_TERMINAL` | ligado | `0` desliga o terminal somente leitura. |
 | `EXPEDIENTE_UPDATE_CHECK` | ligado | `0` desliga a verificação de versão nova (uma consulta às releases do repositório no GitHub a cada 6 h). |
@@ -577,7 +577,7 @@ das contas (letra, e-mail, organização) são lidos no host pelo `docker:up` e 
 - **O mod:** roda dentro de cada sessão do Claude Code, com as suas permissões (como todo mod), e faz só o que está
   listado em [`mod/README.md`](mod/README.md) — `claude plugin validate mod/expediente` mostra os eventos e as chamadas,
   sem rodar nada. Grava só os percentuais de uso de 5 horas e da semana (e quando reiniciam) em
-  `~/.expediente/usage/<conta>.json`; para a linha de "precisa de você" e o `/escritorio`, só fala com o Expediente em
+  `~/.expediente/host/uso/<conta>.json`; para a linha de "precisa de você" e o `/escritorio`, só fala com o Expediente em
   `127.0.0.1`. Não lê a conversa, não chama o modelo e não envia nada para fora do computador. Ele é lido desta
   pasta: o que estiver nela (inclusive depois de um `git pull`) é o que roda.
 - **Só local, por padrão:** o servidor só aceita conexões do próprio computador e não há opção para liberar a rede.

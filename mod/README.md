@@ -13,7 +13,7 @@ instaladores de sempre (`npm run usage:install` e `npm run hooks:install`). A in
 `expediente/hooks/register.ts`, um módulo só, sem build. Liga cada sessão ao escritório sem ler a conversa:
 
 - **Uso do plano (5h e semanal):** no início da sessão e a cada `session.measure` (depois de cada turno e quando
-  um limite anda um ponto) lê `$.session.usage().rateLimits` e grava `~/.expediente/usage/<conta>.json` (ou em
+  um limite anda um ponto) lê `$.session.usage().rateLimits` e grava `~/.expediente/host/uso/<conta>.json` (ou em
   `EXPEDIENTE_USAGE_DIR`) no mesmo formato do tap de statusline, mais `"source": "mod"`. Substitui o
   `npm run usage:install`: o seu statusline fica intocado. A conta é a pasta de `CLAUDE_CONFIG_DIR` (o primeiro
   item) ou `~/.claude`. Valores iguais gravados há menos de 10 s não são regravados; falha ao gravar = silêncio.

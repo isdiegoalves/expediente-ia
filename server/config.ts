@@ -22,7 +22,7 @@ export interface ServerConfig {
   dataDir: string;
   /**
    * Pasta com o uso capturado pelo statusline do Claude Code (scripts/statusline-tap.mjs):
-   * EXPEDIENTE_USAGE_DIR ou ~/.expediente/usage. No Docker, o docker-up monta essa pasta em /usage.
+   * EXPEDIENTE_USAGE_DIR ou ~/.expediente/host/uso. No Docker, o docker-up monta ~/.expediente/host em /host e o servidor lê /host/uso.
    */
   usageDir: string;
   /**
@@ -119,7 +119,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] 
     home,
     claudeDirs: discoverClaudeDirs(env, home),
     dataDir: resolve(env.EXPEDIENTE_DATA_DIR?.trim() || (inDocker ? '/data' : join(home, '.expediente'))),
-    usageDir: resolve(env.EXPEDIENTE_USAGE_DIR?.trim() || join(home, '.expediente', 'usage')),
+    usageDir: resolve(env.EXPEDIENTE_USAGE_DIR?.trim() || join(home, '.expediente', 'host', 'uso')),
     terminal: terminalOffReason(env) === undefined,
     timeline: !env.EXPEDIENTE_TIMELINE?.trim() || isTruthy(env.EXPEDIENTE_TIMELINE),
     rootDir,
