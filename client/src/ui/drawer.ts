@@ -230,7 +230,7 @@ class AgentView {
   private timelineSec: ReturnType<typeof section>;
   private stats: KvList<StatKey>;
   private social: SocialSection;
-  private character: CharacterEditor;
+  readonly character: CharacterEditor;
   private sessionValue: HTMLElement;
   private linesPlus: HTMLElement;
   private linesMinus: HTMLElement;
@@ -883,6 +883,8 @@ export class Drawer implements UiComponent {
     const sel = this.ctx.selection();
     const mode = sel?.type ?? null;
     if (mode !== this.mode) {
+      // Gaveta fechada ou fora do agente: o editor fecha, e ao reabrir começa do estado atual do agente.
+      if (this.mode === 'agent') this.agentView.character.close();
       this.mode = mode;
       this.body.replaceChildren(...(mode === 'agent' ? [this.agentView.el] : mode === 'room' ? [this.roomView.el] : []));
       this.body.scrollTop = 0;

@@ -338,7 +338,7 @@ export class Office {
     }
     const roomId = normalizeCwd(p.cwd);
     this.ensureRoom(roomId, now);
-    const chosen = this.roomCharacter(roomId, p.id);
+    const chosen = this.roomCharacter(roomId, p.id, p.sessionId);
     const person = chosen ?? this.deps.names.assign(p.sessionId, this.takenNames());
     const info: AgentInfo = {
       id: p.id,
@@ -376,8 +376,14 @@ export class Office {
     const rec = this.agents.get(id);
     if (!rec || rec.info.sessionId === sessionId) return;
     const info = rec.info;
-    // Personagem do projeto: o nome escolhido não vira o nome sorteado da sessão nova.
-    if (!info.custom) this.deps.names.remember(sessionId, { name: info.name, look: info.look });
+    // Personagem do projeto: o nome escolhido não vira o nome sorteado da sessão nova, e a sessão nova vira a dona dele
+    // (se outro agente da sala salvou por último, o dono é ele e fica como está).
+    if (info.custom) {
+      const owner = this.deps.names.character(info.roomId)?.owner;
+      if (owner === undefined || owner === info.sessionId) this.deps.names.claimCharacter(info.roomId, sessionId);
+    } else {
+      this.deps.names.remember(sessionId, { name: info.name, look: info.look });
+    }
     info.sessionId = sessionId;
     info.tasks = [];
     info.stats = zeroStats();
@@ -879,7 +885,7 @@ export class Office {
     if (conflict) return { result: 'conflict', message: conflict };
     const before = info.name;
     const parts = Object.keys(input.parts).length ? { ...input.parts } : undefined;
-    this.deps.names.setCharacter(info.roomId, { name: input.name, look: info.look, seed: input.seed, ...(parts ? { parts } : {}) });
+    this.deps.names.setCharacter(info.roomId, { name: input.name, look: info.look, seed: input.seed, ...(parts ? { parts } : {}), owner: info.sessionId });
     info.name = input.name;
     info.seed = input.seed;
     if (parts) info.parts = parts;
@@ -917,13 +923,17 @@ export class Office {
   }
 
   /**
-   * Personagem escolhido para a sala, se o nome dele estiver livre. Quem está saindo não conta: costuma ser a mesma
-   * sessão reaberta (pid novo) dentro do período de graça.
+   * Personagem escolhido para a sala, se o nome dele estiver livre; quem o recebe vira a dona. Quem está saindo não
+   * conta: costuma ser a mesma sessão reaberta (pid novo) dentro do período de graça. Uma sessão que não é a dona e já
+   * tem nome guardado mantém o dela: depois de um reinício, a ordem de chegada não troca identidades nem muda o
+   * personagem de uma sessão no meio dela.
    */
-  private roomCharacter(roomId: string, id: string): StoredCharacter | undefined {
+  private roomCharacter(roomId: string, id: string, sessionId: string): StoredCharacter | undefined {
     const c = this.deps.names.character(roomId);
-    if (!c || this.nameConflict(c.name, id, roomId)) return undefined;
-    this.deps.names.touchCharacter(roomId);
+    if (!c) return undefined;
+    if (c.owner !== undefined && c.owner !== sessionId && this.deps.names.get(sessionId)) return undefined;
+    if (this.nameConflict(c.name, id, roomId)) return undefined;
+    this.deps.names.claimCharacter(roomId, sessionId);
     return c;
   }
 

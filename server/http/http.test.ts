@@ -147,7 +147,7 @@ describe('API HTTP', () => {
     expect((await snapshotOf(env.base)).meta.terminal).toBe(false);
   });
 
-  it('personagem: desligado sem o terminal (403)', async () => {
+  it('personagem: PUT e DELETE desligados sem o terminal (403)', async () => {
     const res = await fetch(`${env.base}/api/agents/${encodeURIComponent('.claude:1')}/character`, {
       method: 'PUT',
       headers: JSON_HEADERS,
@@ -155,6 +155,9 @@ describe('API HTTP', () => {
     });
     expect(res.status).toBe(403);
     expect(((await res.json()) as { error: string }).error).toMatch(/desligado/);
+    const del = await fetch(`${env.base}/api/agents/${encodeURIComponent('.claude:1')}/character`, { method: 'DELETE', headers: JSON_HEADERS, body: '{}' });
+    expect(del.status).toBe(403);
+    expect(((await del.json()) as { error: string }).error).toMatch(/desligado/);
   });
 
   it('POST /api/demo liga e desliga', async () => {
@@ -276,6 +279,8 @@ describe('personagem do projeto (PUT/DELETE /api/agents/:id/character)', () => {
       { name: 'Ana', seed: -1, parts: {} },
       { name: 'Ana', seed: 1, parts: { skin: 'red' } },
       { name: 'Ana', seed: 1, parts: { lanyard: '#ffffff' } },
+      { name: 'Ana', seed: 1 },
+      { name: 'Ana', seed: 1, parts: null },
     ]) {
       const res = await put(body);
       expect(res.status, JSON.stringify(body)).toBe(400);
@@ -286,6 +291,7 @@ describe('personagem do projeto (PUT/DELETE /api/agents/:id/character)', () => {
     env.office.addSub({ id: 's1:x', parentId: '.claude:1', sessionId: 's1', role: 'Explore', background: false, startedAt: Date.now() });
     expect((await put({ name: 'Ana', seed: 1, parts: {} }, 's1:x')).status).toBe(404);
     expect((await put({ name: 'Ana', seed: 1, parts: {} }, 'nao-existe')).status).toBe(404);
+    for (const id of ['s1:x', 'nao-existe']) expect((await fetch(url(id), { method: 'DELETE', headers: JSON_HEADERS, body: '{}' })).status).toBe(404);
     env.office.addMain({ id: '.claude:2', account: '.claude', sessionId: 's2', cwd: '/p/web', role: 'Agente principal', startedAt: Date.now(), status: 'working' });
     const other = env.office.get('.claude:2')!.name;
     const res = await put({ name: other, seed: 1, parts: {} });

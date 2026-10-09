@@ -355,8 +355,8 @@ agente principal e clique no lápis ao lado do nome (**Editar personagem**). No 
 - **Voltar ao sorteio:** desfaz a escolha.
 
 A escolha fica em `~/.expediente/names.json` e some depois de 60 dias sem uso do projeto. O editor tem a mesma trava do
-terminal somente leitura: só funciona com o Expediente acessível apenas pelo próprio computador e aberto por
-`http://localhost`.
+terminal somente leitura: o lápis só aparece com o terminal ligado (sem `EXPEDIENTE_TERMINAL=0`) e o acesso local, isto
+é, com o Expediente acessível apenas pelo próprio computador e aberto por `http://localhost`.
 
 ### GitHub no escritório
 
@@ -508,6 +508,8 @@ mod/      o mod do Expediente e o plugin de permissões (plugins do Claude Code;
 | `GET /api/snapshot` | Estado atual do escritório. |
 | `GET /api/agents/:id` | Detalhes de um agente, com até 200 atividades. |
 | `GET /api/agents/:id/terminal` | SSE do terminal somente leitura (eventos `init` e `append`); só com acesso local. |
+| `PUT /api/agents/:id/character` | Editar o personagem: `{name, seed, parts}` grava o nome e a aparência do agente principal como o personagem do projeto (a sala); só com acesso local. |
+| `DELETE /api/agents/:id/character` | "Voltar ao sorteio": apaga o personagem do projeto e o agente volta ao nome sorteado; só com acesso local. |
 | `GET /api/sessions/recent` | Histórico: sessões dos últimos 7 dias de todas as contas (até 150); só com acesso local. |
 | `GET /api/sessions/:conta/:sessionId/terminal` | SSE da conversa de uma sessão do histórico (mesmo protocolo do terminal); só com acesso local. |
 | `GET /api/stats?day=AAAA-MM-DD` | Estatísticas do Meu dia (tempo por status, projetos, contas, horas, esperas, tokens e custo). |
@@ -579,6 +581,9 @@ das contas (letra, e-mail, organização) são lidos no host pelo `docker:up` e 
   para aquele pedido. Atenção: qualquer programa ou pessoa que consiga abrir `http://localhost:4848` nesta máquina
   também consegue responder; em computadores compartilhados com outros usuários, não instale o plugin de
   permissões (ele só entra com `npm run instalar -- --com-permissoes`).
+- **Editor de personagem, só local:** salvar ou voltar ao sorteio muda o escritório e grava em `names.json`, então
+  segue a mesma trava do terminal (bind local, `Host` local, nada de proxies ou túneis): sem ela, o lápis não aparece
+  e o servidor responde `403`. As mudanças exigem JSON e origem local. `EXPEDIENTE_TERMINAL=0` desliga junto.
 - **Estatísticas do Meu dia:** só números agregados (tempo por status, contagens, tokens, custo) com nomes de projeto,
   conta e agente, guardados em `EXPEDIENTE_DATA_DIR/stats/` por 30 dias — nada da conversa.
 - **O que aparece na tela:** resumos das atividades (ferramenta, arquivo, comando ou consulta), títulos das sessões,

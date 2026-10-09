@@ -87,7 +87,7 @@ export class CharacterEditor {
     setHidden(this.button, !allowed);
     if (this.editing && !allowed) {
       this.close();
-      if (!live) this.ctx.announce('O agente saiu do escritório.');
+      if (!live || a.status === 'offline') this.ctx.announce('O agente saiu do escritório.');
     }
     if (this.editing && !this.confirmingReset) setHidden(this.resetBtn, !a.custom);
   }
@@ -112,7 +112,8 @@ export class CharacterEditor {
     this.nameInput.select();
   }
 
-  private close(): void {
+  /** Fecha o editor e descarta o rascunho (também quando a gaveta fecha ou sai do agente). */
+  close(): void {
     if (!this.editing) return;
     this.editing = false;
     this.busy = false;

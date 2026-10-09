@@ -196,7 +196,7 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
     const body = (await readJson(req)) as { name?: unknown; seed?: unknown; parts?: unknown } | null;
     const name = parseCharacterName(body?.name);
     const seed = parseSeed(body?.seed);
-    const parts = parseAppearanceParts(body?.parts ?? {});
+    const parts = parseAppearanceParts(body?.parts);
     if (!name || seed === null || !parts) {
       throw new HttpError(400, `esperado {name: texto de 1 a ${NAME_MAX} caracteres, seed: inteiro de 0 a 4294967295, parts: peças da aparência}`);
     }

@@ -229,7 +229,7 @@ sugestão inválidos), 404 (pedido desconhecido, já entregue ou expirado), 405,
 
 `PUT /api/agents/:id/character` (`http/app.ts`, regras em `Office.setCharacter`) escolhe o nome e a aparência do agente
 principal `:id` e grava como o personagem da sala dele (o cwd normalizado), em `names.json` › `rooms`:
-`{name, look, seed, parts?, at}`.
+`{name, look, seed, parts?, owner?, at}`.
 
 O corpo tem três campos:
 
@@ -243,6 +243,9 @@ Regras:
 - Quando um principal chega a uma sala que tem personagem, e o nome está livre, ele nasce com `name`, `look`, `seed`,
   `parts` e `custom: true`. Quem está saindo não conta, porque costuma ser a mesma sessão reaberta. Se o nome não
   estiver livre, vale o sorteio de sempre.
+- O personagem tem dono (`owner`, o `sessionId` de quem o recebeu ou salvou por último; o `/clear` passa o dono para a
+  sessão nova): uma sessão que não é a dona e já tem nome guardado mantém o dela, para que um reinício do Expediente
+  não troque identidades nem mude o personagem de uma sessão no meio dela.
 - Os nomes escolhidos ficam reservados: o sorteio não os entrega, sem diferenciar maiúsculas. O `PUT` responde `409`
   para o nome de alguém presente (inclusive do demo) ou o de outra sala.
 - O `/clear` mantém o personagem e não grava o nome escolhido como o nome sorteado da sessão nova.

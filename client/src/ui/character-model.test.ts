@@ -4,15 +4,20 @@ import { appearanceFromSeed } from '../art/character/appearance';
 import { canEditCharacter, changedParts, EDITOR_GROUPS, rowVisible, styleLabel } from './character-model';
 
 const OPEN = { live: true, terminal: true, local: true, replaying: false, mock: false };
-const MAIN = { id: '.claude:1', kind: 'main' } as const;
+const MAIN = { id: '.claude:1', kind: 'main', status: 'working' } as const;
 
 describe('canEditCharacter', () => {
   it('só o principal real, ao vivo, com acesso local (fora do timelapse e do mock)', () => {
     expect(canEditCharacter(MAIN, OPEN)).toBe(true);
-    expect(canEditCharacter({ id: 's:sub', kind: 'sub' }, OPEN)).toBe(false);
-    expect(canEditCharacter({ id: 'demo:x-1', kind: 'main' }, OPEN)).toBe(false);
+    expect(canEditCharacter({ ...MAIN, id: 's:sub', kind: 'sub' }, OPEN)).toBe(false);
+    expect(canEditCharacter({ ...MAIN, id: 'demo:x-1' }, OPEN)).toBe(false);
     for (const k of ['live', 'terminal', 'local'] as const) expect(canEditCharacter(MAIN, { ...OPEN, [k]: false })).toBe(false);
     for (const k of ['replaying', 'mock'] as const) expect(canEditCharacter(MAIN, { ...OPEN, [k]: true })).toBe(false);
+  });
+
+  it('quem está saindo (offline, nos 20 s de graça) não ganha o lápis; os outros status, sim', () => {
+    expect(canEditCharacter({ ...MAIN, status: 'offline' }, OPEN)).toBe(false);
+    for (const status of ['idle', 'waiting', 'shell'] as const) expect(canEditCharacter({ ...MAIN, status }, OPEN), status).toBe(true);
   });
 });
 

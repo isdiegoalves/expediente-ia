@@ -143,6 +143,40 @@ describe('NameStore: personagem de cada sala', () => {
     }
   });
 
+  it('owner: claimCharacter troca o dono e ele é gravado; owner fora do formato é descartado sem perder a entrada', () => {
+    const tmp = tempDir();
+    try {
+      const file = join(tmp.dir, 'names.json');
+      const base = { look: 'f', seed: 1, at: NOW } as const;
+      writeFileSync(
+        file,
+        JSON.stringify({
+          version: 1,
+          names: {},
+          rooms: {
+            '/ok': { ...base, name: 'Ana', owner: 'sess-1' },
+            '/limite': { ...base, name: 'Bia', owner: 'x'.repeat(200) },
+            '/numero': { ...base, name: 'Caio', owner: 5 },
+            '/vazio': { ...base, name: 'Davi', owner: '' },
+            '/longo': { ...base, name: 'Eva', owner: 'x'.repeat(201) },
+          },
+        }),
+      );
+      const s = new NameStore(file, { now: () => NOW });
+      s.load();
+      expect(s.character('/ok')).toEqual({ ...base, name: 'Ana', owner: 'sess-1' });
+      expect(s.character('/limite')?.owner).toBe('x'.repeat(200));
+      for (const [r, name] of [['/numero', 'Caio'], ['/vazio', 'Davi'], ['/longo', 'Eva']]) {
+        expect(s.character(r), r).toEqual({ ...base, name });
+      }
+      s.claimCharacter('/numero', 'sess-2');
+      s.flush();
+      expect(JSON.parse(readFileSync(file, 'utf8')).rooms['/numero']).toEqual({ ...base, name: 'Caio', owner: 'sess-2' });
+    } finally {
+      tmp.cleanup();
+    }
+  });
+
   it('personagem sem uso há 60 dias some no flush; usar renova o prazo', () => {
     const tmp = tempDir();
     try {
@@ -152,7 +186,7 @@ describe('NameStore: personagem de cada sala', () => {
       s.setCharacter('/velho', { name: 'Otto', look: 'm', seed: 1 });
       s.setCharacter('/usado', { name: 'Nina', look: 'f', seed: 2 });
       clock += 59 * DAY;
-      s.touchCharacter('/usado');
+      s.claimCharacter('/usado', 's1');
       clock += 2 * DAY;
       s.flush();
       expect(s.character('/velho')).toBeUndefined();
@@ -166,9 +200,8 @@ describe('NameStore: personagem de cada sala', () => {
   });
 });
 
-function makeOffice() {
+function makeOffice(names = new NameStore(null)) {
   let clock = 1_000_000;
-  const names = new NameStore(null);
   const office = new Office({
     names,
     version: 't',
@@ -572,5 +605,135 @@ describe('Office: personagem do projeto', () => {
     office.switchSession('acc:1', 's2');
     expect(office.get('acc:1')).toMatchObject({ name: 'Zé', seed: 9, parts, custom: true, sessionId: 's2' });
     expect(names.get('s2')).toBeUndefined();
+  });
+
+  describe('reinício do Expediente (names.json em arquivo)', () => {
+    /** Grava o names.json e sobe um NameStore e um Office novos lendo o mesmo arquivo. */
+    const restart = (before: NameStore, file: string) => {
+      before.flush();
+      const names = new NameStore(file);
+      names.load();
+      return makeOffice(names);
+    };
+
+    /** A (s1) edita o personagem da sala; B (s2), aberta ao mesmo tempo, fica com o nome sorteado. */
+    const ownerAndOther = (file: string) => {
+      const env = makeOffice(new NameStore(file));
+      env.office.addMain(main('acc:1', 's1', '/p/api', env.now()));
+      env.office.setCharacter('acc:1', { name: 'Zé Backend', seed: 42, parts });
+      env.office.addMain(main('acc:2', 's2', '/p/api', env.now()));
+      return { ...env, drawn: env.office.get('acc:2')!.name };
+    };
+
+    it('a dona e outra sessão abertas, e a outra chega primeiro: cada uma volta com o seu', () => {
+      const tmp = tempDir();
+      try {
+        const file = join(tmp.dir, 'names.json');
+        const { names, drawn } = ownerAndOther(file);
+        const after = restart(names, file);
+        after.office.addMain(main('acc:2', 's2', '/p/api', after.now()));
+        after.office.addMain(main('acc:1', 's1', '/p/api', after.now()));
+        expect(after.office.get('acc:2')).toMatchObject({ name: drawn, seed: hash32('acc:2') });
+        expect(after.office.get('acc:2')!.custom).toBeUndefined();
+        expect(after.office.get('acc:1')).toMatchObject({ name: 'Zé Backend', seed: 42, parts, custom: true });
+        expect(after.names.character('/p/api')?.owner).toBe('s1');
+        after.names.flush();
+      } finally {
+        tmp.cleanup();
+      }
+    });
+
+    it('a dona saiu e só a outra continua: ela não troca de personagem no meio da sessão', () => {
+      const tmp = tempDir();
+      try {
+        const file = join(tmp.dir, 'names.json');
+        const { office, names, advance, drawn } = ownerAndOther(file);
+        office.closeMain('acc:1');
+        advance(OFFLINE_GRACE_MS + 1);
+        office.tick();
+        const after = restart(names, file);
+        after.office.addMain(main('acc:2', 's2', '/p/api', after.now()));
+        expect(after.office.get('acc:2')).toMatchObject({ name: drawn, seed: hash32('acc:2') });
+        expect(after.office.get('acc:2')!.custom).toBeUndefined();
+        expect(after.names.character('/p/api')?.owner).toBe('s1');
+        after.names.flush();
+      } finally {
+        tmp.cleanup();
+      }
+    });
+
+    it('sessão nova (sem nome guardado) numa sala vazia: recebe o personagem e vira a dona', () => {
+      const tmp = tempDir();
+      try {
+        const file = join(tmp.dir, 'names.json');
+        const { office, names, advance } = ownerAndOther(file);
+        for (const id of ['acc:1', 'acc:2']) office.closeMain(id);
+        advance(OFFLINE_GRACE_MS + 1);
+        office.tick();
+        const after = restart(names, file);
+        after.office.addMain(main('acc:3', 's3', '/p/api', after.now()));
+        expect(after.office.get('acc:3')).toMatchObject({ name: 'Zé Backend', seed: 42, parts, custom: true });
+        expect(after.names.character('/p/api')?.owner).toBe('s3');
+        after.names.flush();
+      } finally {
+        tmp.cleanup();
+      }
+    });
+
+    it('entrada antiga, sem owner: vale para quem chegar primeiro, que vira o dono', () => {
+      const tmp = tempDir();
+      try {
+        const file = join(tmp.dir, 'names.json');
+        const at = Date.now();
+        writeFileSync(
+          file,
+          JSON.stringify({
+            version: 1,
+            names: { s2: { name: 'Marina', look: 'f', at } },
+            rooms: { '/p/api': { name: 'Zé Backend', look: 'm', seed: 42, at } },
+          }),
+        );
+        const names = new NameStore(file);
+        names.load();
+        const { office, now } = makeOffice(names);
+        office.addMain(main('acc:2', 's2', '/p/api', now()));
+        expect(office.get('acc:2')).toMatchObject({ name: 'Zé Backend', seed: 42, custom: true });
+        expect(names.character('/p/api')?.owner).toBe('s2');
+        names.flush();
+      } finally {
+        tmp.cleanup();
+      }
+    });
+
+    it('/clear da dona: o personagem passa para a sessão nova, que o recebe depois do reinício', () => {
+      const tmp = tempDir();
+      try {
+        const file = join(tmp.dir, 'names.json');
+        const { office, names, drawn } = ownerAndOther(file);
+        office.switchSession('acc:1', 's1b');
+        expect(names.character('/p/api')?.owner).toBe('s1b');
+        const after = restart(names, file);
+        after.office.addMain(main('acc:2', 's2', '/p/api', after.now()));
+        after.office.addMain(main('acc:1', 's1b', '/p/api', after.now()));
+        expect(after.office.get('acc:2')!.name).toBe(drawn);
+        expect(after.office.get('acc:1')).toMatchObject({ name: 'Zé Backend', custom: true });
+        after.names.flush();
+      } finally {
+        tmp.cleanup();
+      }
+    });
+  });
+
+  it('/clear de quem não é o dono (outro agente da sala salvou depois) não mexe no dono', () => {
+    const { office, names, now } = makeOffice();
+    office.addMain(main('acc:1', 's1', '/p/api', now()));
+    office.setCharacter('acc:1', { name: 'Zé', seed: 9, parts });
+    office.addMain(main('acc:2', 's2', '/p/api', now()));
+    office.setCharacter('acc:2', { name: 'Bia', seed: 3, parts: {} });
+    expect(names.character('/p/api')?.owner).toBe('s2');
+    office.switchSession('acc:1', 's1b');
+    expect(names.character('/p/api')?.owner).toBe('s2');
+    office.switchSession('acc:2', 's2b');
+    expect(names.character('/p/api')?.owner).toBe('s2b');
   });
 });

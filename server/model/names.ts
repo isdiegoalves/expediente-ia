@@ -1,5 +1,6 @@
 // Nomes dos personagens, persistidos por sessão/subagente em <dataDir>/names.json para que cada um mantenha o nome
-// entre reinícios do servidor, e o personagem escolhido para cada projeto (sala) no editor (ver Office.setCharacter).
+// entre reinícios do servidor, e o personagem escolhido para cada projeto (sala) no editor (ver Office.setCharacter),
+// com a sessão dona dele, para que um reinício não o entregue a outra sessão aberta.
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { parseAppearanceParts, parseCharacterName, parseSeed, type AppearanceParts } from '../../shared/appearance';
@@ -12,14 +13,20 @@ interface StoredName {
   at: number;
 }
 
-/** Personagem escolhido para uma sala (chave: cwd normalizado). `at` = último uso, para a expiração. */
+/**
+ * Personagem escolhido para uma sala (chave: cwd normalizado). `owner` = sessionId da sessão que o está usando;
+ * `at` = último uso, para a expiração.
+ */
 export interface StoredCharacter {
   name: string;
   look: 'f' | 'm';
   seed: number;
   parts?: AppearanceParts;
+  owner?: string;
   at: number;
 }
+
+const MAX_OWNER_LENGTH = 200;
 
 interface NamesFile {
   version: 1;
@@ -37,6 +44,8 @@ function parseStoredCharacter(raw: unknown): StoredCharacter | null {
   if (!name || seed === null || (v.look !== 'f' && v.look !== 'm') || !parts) return null;
   const c: StoredCharacter = { name, look: v.look, seed, at: typeof v.at === 'number' ? v.at : 0 };
   if (Object.keys(parts).length) c.parts = parts;
+  // Dono fora do formato não invalida a entrada: ela volta a valer para quem chegar primeiro.
+  if (typeof v.owner === 'string' && v.owner && v.owner.length <= MAX_OWNER_LENGTH) c.owner = v.owner;
   return c;
 }
 
@@ -111,11 +120,12 @@ export class NameStore {
     return c ? copyCharacter(c) : undefined;
   }
 
-  /** Marca o personagem da sala como usado agora (renova a expiração). */
-  touchCharacter(roomId: string): void {
+  /** A sessão `sessionId` passa a usar o personagem da sala: vira a dona e renova a expiração. */
+  claimCharacter(roomId: string, sessionId: string): void {
     const c = this.rooms.get(roomId);
     if (!c) return;
     c.at = this.now();
+    c.owner = sessionId;
     this.scheduleFlush();
   }
 
