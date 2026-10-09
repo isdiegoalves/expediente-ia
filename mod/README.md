@@ -38,7 +38,7 @@ partir da 2.1.287; a API ainda é "early access" e pode mudar entre versões. A 
   cujo tamanho ou data mudou; se o arquivo final tem menos de 4 s, a sessão pula a rodada. Só em sessões que desenham.
 - **Amostra horária:** ao ligar e a cada 10 min confere se já há `~/.expediente/host/amostras/<hora>-<conta>.json`; se não há, lê
   `pid`, `entrypoint` e `kind` do registro de sessões da conta e, por pid vivo, o nome do programa de cada processo da cadeia de
-  pais (`ps -o ppid=,comm=`, só o último trecho do caminho). Grava só contagens: `{hora, registro, programas}`. Só em sessões que desenham.
+  pais (`ps -o ppid=,comm=`, só o último trecho do caminho). Grava só contagens: `{hora, registro, programas}`. Para na 24ª amostra da conta e grava `amostras/concluido-<conta>`; apague esse arquivo para religar. Só em sessões que desenham.
 
 ### O que ele acessa
 

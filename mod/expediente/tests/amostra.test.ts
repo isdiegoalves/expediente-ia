@@ -1,7 +1,7 @@
 // Testes do amostrador horário do registro de sessões. O sistema de arquivos e o `ps` são mapas em memória.
 import type { On } from 'claude-code'
 import { describe, expect, mock, test } from 'claude-code/testing'
-import { arquivoAmostraOf, contarMix, horaDe, nomePrograma, paiDe } from '../hooks/amostra'
+import { arquivoAmostraOf, contarMix, marcadorAmostraOf, horaDe, nomePrograma, paiDe } from '../hooks/amostra'
 
 const NOW = Date.parse('2026-10-09T12:10:00Z')
 const HOME = '/home/fulano'
@@ -129,6 +129,23 @@ describe('amostrador horário', () => {
     expect(w.escritas.length).toBe(1)
     await w.clock.advance(60 * 60_000)
     expect(w.escritas.length).toBe(2)
+  })
+
+  test('depois de 24 amostras da conta grava o marcador e para; sem o marcador volta a amostrar', async ($, on) => {
+    const antigas = Object.fromEntries(
+      Array.from({ length: 23 }, (_, i) => [arquivoAmostraOf(HOME, `2026-10-08T${String(i).padStart(2, '0')}`, '.claude'), '{}']),
+    )
+    const w = mundo(on, { ...REGISTROS, ...antigas })
+    await $.session.start(START)
+    await w.clock.advance(1_000)
+    expect(w.escritas).toEqual([arquivoAmostraOf(HOME, '2026-10-09T12', '.claude'), marcadorAmostraOf(HOME, '.claude')])
+    const comandos = w.comandos.length
+    await w.clock.advance(60 * 60_000)
+    expect(w.escritas.length).toBe(2)
+    expect(w.comandos.length).toBe(comandos)
+    w.fs.delete(marcadorAmostraOf(HOME, '.claude'))
+    await w.clock.advance(60 * 60_000)
+    expect(w.escritas.length).toBe(4)
   })
 
   test('o ps recebe só -o ppid=,comm= e -p <pid>, sem pedir argumentos nem ambiente', async ($, on) => {

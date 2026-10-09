@@ -25,7 +25,7 @@
 // Análise estática do Claude Code: cada chamada é escrita por extenso ($.noun.método), o nome do evento é
 // sempre uma string literal e `$` só é passado para funções declaradas no topo deste arquivo.
 import type { EngineInterface, Register, SessionRateLimit } from 'claude-code'
-import { AMOSTRA_MS, argvPaiDe, arquivoAmostraOf, contarMix, contarProgramas, horaDe, lerEntradaRegistro, MAX_NIVEIS, MAX_PIDS, paiDe, type EntradaRegistro } from './amostra'
+import { AMOSTRA_MS, argvPaiDe, arquivoAmostraOf, contarMix, contarProgramas, ehAmostraDaConta, horaDe, lerEntradaRegistro, marcadorAmostraOf, MAX_AMOSTRAS, MAX_NIVEIS, MAX_PIDS, paiDe, pastaAmostrasOf, type EntradaRegistro } from './amostra'
 import { appDirOf, filtrarSessaoApp, FRESCO_MS, PONTE_MS, sessoesAppFileOf, type SessaoApp } from './ponte'
 
 /** Porta padrão do Expediente (a mesma do servidor, do hook de permissão e do docker-compose). */
@@ -391,7 +391,7 @@ async function ligarPonte($: EngineInterface): Promise<void> {
 
 let amostrando = false
 
-/** Uma rodada do amostrador: no máximo uma amostra por hora e por conta. Pode lançar: quem chama engole. */
+/** Uma rodada do amostrador: no máximo uma amostra por hora e por conta, até 24. Pode lançar: quem chama engole. */
 async function amostrarRegistro($: EngineInterface): Promise<void> {
   if (amostrando) return
   amostrando = true
@@ -400,8 +400,10 @@ async function amostrarRegistro($: EngineInterface): Promise<void> {
     const home = (await $.env.get('HOME'))?.trim()
     if (!home || !e.configDir) return
     const hora = horaDe(await $.clock.now())
-    const arquivo = arquivoAmostraOf(home, hora, e.accountId ?? 'conta')
-    if (await $.fs.stat(arquivo).catch(() => undefined)) return
+    const conta = e.accountId ?? 'conta'
+    const arquivo = arquivoAmostraOf(home, hora, conta)
+    const marcador = marcadorAmostraOf(home, conta)
+    if ((await $.fs.stat(marcador).catch(() => undefined)) || (await $.fs.stat(arquivo).catch(() => undefined))) return
     const pasta = `${e.configDir}/sessions`
     const entradas: EntradaRegistro[] = []
     for (const f of (await $.fs.list(pasta)).slice(0, MAX_PIDS)) {
@@ -428,6 +430,8 @@ async function amostrarRegistro($: EngineInterface): Promise<void> {
     }
     if (!vivas.length) return
     await $.fs.write(arquivo, `${JSON.stringify({ hora, registro: contarMix(vivas), programas: contarProgramas(nomes) })}\n`)
+    const feitas = (await $.fs.list(pastaAmostrasOf(home)).catch(() => [])).filter((f) => ehAmostraDaConta(f.name, conta))
+    if (feitas.length >= MAX_AMOSTRAS) await $.fs.write(marcador, 'concluido\n')
   } finally {
     amostrando = false
   }

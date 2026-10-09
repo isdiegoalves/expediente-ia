@@ -74,5 +74,20 @@ export function horaDe(ms: number): string {
 }
 
 export function arquivoAmostraOf(home: string, hora: string, conta: string): string {
-  return `${home}/.expediente/host/amostras/${hora}-${conta}.json`
+  return `${pastaAmostrasOf(home)}/${hora}-${conta}.json`
+}
+
+export const MAX_AMOSTRAS = 24
+
+export function pastaAmostrasOf(home: string): string {
+  return `${home}/.expediente/host/amostras`
+}
+
+/** Existe depois da 24ª amostra da conta; apagar este arquivo religa o amostrador. */
+export function marcadorAmostraOf(home: string, conta: string): string {
+  return `${pastaAmostrasOf(home)}/concluido-${conta}`
+}
+
+export function ehAmostraDaConta(nome: string, conta: string): boolean {
+  return nome.endsWith(`-${conta}.json`)
 }
