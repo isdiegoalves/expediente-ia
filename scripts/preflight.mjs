@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -91,13 +91,30 @@ async function http(metodo, caminho, corpo) {
   }
 }
 
+function tiposDaInstalacao(versao) {
+  const base = resolve('/tmp', `claude-${process.getuid()}`, 'bundled-skills', versao);
+  if (!existsSync(base)) return null;
+  for (const hash of readdirSync(base)) {
+    const fonte = resolve(base, hash, 'plugin-authoring/types/claude-code.d.ts');
+    if (existsSync(fonte)) return fonte;
+  }
+  return null;
+}
+
 function checarTiposDoMod() {
   const arquivo = resolve(RAIZ, TIPOS_DO_MOD);
-  if (!existsSync(arquivo)) return pular(`${TIPOS_DO_MOD} não existe`);
-  const dosTipos = versaoDosTipos(readFileSync(arquivo, 'utf8'));
   const instalada = versaoDoClaude(rodar('claude', ['--version']).stdout);
+  if (!instalada) return falha('claude --version não respondeu uma versão');
+  const fonte = tiposDaInstalacao(instalada);
+  if (fonte) {
+    mkdirSync(dirname(arquivo), { recursive: true });
+    copyFileSync(fonte, arquivo);
+  } else if (!existsSync(arquivo)) {
+    return falha(`tipos da ${instalada} não achados em /tmp/claude-<uid>/bundled-skills/${instalada}/*/plugin-authoring/types/ nem em ${TIPOS_DO_MOD}: abra uma sessão do Claude Code ${instalada} uma vez (ela extrai as skills empacotadas) e rode o pré-voo de novo`);
+  }
+  const dosTipos = versaoDosTipos(readFileSync(arquivo, 'utf8'));
   if (!dosTipos || dosTipos !== instalada) {
-    return falha(`tipos escritos pela versão ${dosTipos ?? '?'} do Claude Code, instalada ${instalada ?? '?'}: regenere os tipos e confira o mod`);
+    return falha(`tipos escritos pela versão ${dosTipos ?? '?'} do Claude Code, instalada ${instalada}: apague ${TIPOS_DO_MOD} e abra uma sessão do ${instalada} para extrair os da instalação`);
   }
   const mod = resolve(RAIZ, 'mod/expediente');
   const tsconfig = resolve(mkdtempSync(resolve(tmpdir(), 'preflight-tsc-')), 'tsconfig.json');
@@ -141,7 +158,6 @@ const etapas = [
       const t = comandoSimples('claude', ['plugin', 'test', 'mod/expediente']);
       if (!t.ok) return t;
       const tipos = checarTiposDoMod();
-      if (tipos.pulado) return ok(`validate --strict e plugin test verdes; tsc do mod pulado (aviso: ${tipos.detalhe})`);
       return tipos.ok ? ok(`validate --strict, plugin test e ${tipos.detalhe} verdes`) : tipos;
     },
   },
