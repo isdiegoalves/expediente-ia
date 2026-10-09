@@ -117,6 +117,18 @@ export interface IrInfo {
   nonce?: string;
 }
 
+/** Subagente sem escrever há tempo demais e sem fechamento: não se sabe se travou ou só demora. */
+export interface ParadoInfo {
+  /** Última escrita do subagente (epoch ms). */
+  desde: number;
+  /** Ferramenta chamada que ainda não respondeu. */
+  pendente?: string;
+  /** Último erro da API visto no transcript, sem sucesso depois dele. */
+  erro?: string;
+  tentativa?: number;
+  maxTentativas?: number;
+}
+
 export interface AgentInfo {
   /** Estável enquanto o agente existir. Principal: "<conta>:<pid>". Sub: "<sessionId>:<agentId>". */
   id: string;
@@ -166,6 +178,8 @@ export interface AgentInfo {
    * houver vários). Enquanto existe, o agente aparece como 'waiting'. Ver PermissionRequestInfo.
    */
   permission?: PermissionRequestInfo;
+  /** Subagente parado (ver ParadoInfo); o status continua 'working'. */
+  parado?: ParadoInfo;
 }
 
 export interface RoomInfo {
@@ -214,6 +228,8 @@ export interface SourceInfo {
   sessions: number;
   ok: boolean;
   error?: string;
+  /** false = no Docker, onde o PID do registro é do host: o encerramento do processo não é conferido. */
+  processoConfirmado?: boolean;
 }
 
 /** Uma janela de limite de uso do plano (ex.: sessão de 5h, semana). */

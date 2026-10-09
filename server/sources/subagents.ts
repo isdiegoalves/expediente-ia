@@ -23,8 +23,10 @@ export interface SubagentMeta {
 
 /** Sem escrita há 5 s depois de um end_turn: concluiu. */
 export const END_TURN_QUIET_MS = 5_000;
-/** Sem escrita há 120 s: concluiu (ou travou). */
+/** Sem escrita há 120 s e sem fechamento: parado (pode ter travado ou só estar demorando). */
 export const IDLE_TIMEOUT_MS = 120_000;
+/** Parado há tanto tempo que deixa de valer a pena esperar o fechamento. */
+export const STALLED_GIVE_UP_MS = 1_800_000;
 /** Com uma ferramenta em andamento (ex.: comando longo), espera mais antes de desistir. */
 export const PENDING_TOOL_TIMEOUT_MS = 600_000;
 /** No boot, só entram subagentes escritos nos últimos 90 s. */
@@ -143,9 +145,16 @@ export interface IdleCheck {
   pendingTool: boolean;
 }
 
-/** Conclusão por inatividade: end_turn + 5 s de silêncio, ou silêncio prolongado. */
-export function concludedByIdle(c: IdleCheck): boolean {
+export type IdleVerdict = 'running' | 'stalled' | 'concluded';
+
+/** end_turn + 5 s de silêncio conclui; silêncio de 120 s sem fechamento é "parado"; só muito depois desiste. */
+export function idleVerdict(c: IdleCheck): IdleVerdict {
   const quiet = c.now - c.lastWriteAt;
-  if (c.ended && !c.pendingTool && quiet >= END_TURN_QUIET_MS) return true;
-  return quiet >= (c.pendingTool ? PENDING_TOOL_TIMEOUT_MS : IDLE_TIMEOUT_MS);
+  if (c.ended && !c.pendingTool && quiet >= END_TURN_QUIET_MS) return 'concluded';
+  if (quiet >= STALLED_GIVE_UP_MS) return 'concluded';
+  return quiet >= IDLE_TIMEOUT_MS ? 'stalled' : 'running';
+}
+
+export function concludedByIdle(c: IdleCheck): boolean {
+  return idleVerdict(c) === 'concluded';
 }

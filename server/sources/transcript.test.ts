@@ -127,6 +127,32 @@ describe('parseLine — atividades', () => {
   });
 });
 
+describe('parseLine — erro da API', () => {
+  const erro = (attempt: number) => L.system('api_error', { error: { message: '529 overloaded', formatted: 'Servidor sobrecarregado (529)' }, retryAttempt: attempt, maxRetries: 10 }, { at: T0 });
+
+  it('guarda o último erro com tentativa e limite', () => {
+    const s = createTranscriptState();
+    feed(s, [erro(1), erro(2)]);
+    expect(s.apiError).toEqual({ at: T0, message: 'Servidor sobrecarregado (529)', attempt: 2, max: 10 });
+  });
+
+  it('cai para a mensagem crua e para o status quando não há texto formatado', () => {
+    const s = createTranscriptState();
+    feed(s, [L.system('api_error', { error: { message: 'timeout' }, retryAttempt: 1 }, { at: T0 })]);
+    expect(s.apiError).toMatchObject({ message: 'timeout', attempt: 1 });
+    feed(s, [L.system('api_error', { error: { status: 529 } }, { at: T0 })]);
+    expect(s.apiError?.message).toBe('erro 529');
+  });
+
+  it('uma resposta bem-sucedida depois do erro o apaga; a mensagem sintética de erro não', () => {
+    const s = createTranscriptState();
+    feed(s, [erro(1), L.assistant([L.text('API Error: 529')], { model: '<synthetic>' })]);
+    expect(s.apiError).toBeDefined();
+    feed(s, [L.assistant([L.text('segui')])]);
+    expect(s.apiError).toBeUndefined();
+  });
+});
+
 describe('parseLine — títulos, tarefas e números', () => {
   it('título: custom-title > agent-name > ai-title > último prompt', () => {
     const s = createTranscriptState();

@@ -13,6 +13,7 @@ import type {
   Notice,
   NoticeLevel,
   OfficeSnapshot,
+  ParadoInfo,
   PermissionDecision,
   PermissionRequestInfo,
   RoomInfo,
@@ -90,6 +91,8 @@ export interface MainInput {
   startedAt: number;
   status: AgentStatus;
   waitingFor?: string;
+  /** Desde quando o registro diz que o agente está nesse status (epoch ms). */
+  statusSince?: number;
   /** `entrypoint` e `kind` do registro de sessões, de onde sai o selo de origem. */
   entrypoint?: string;
   kind?: string;
@@ -148,9 +151,15 @@ function zeroStats(): AgentStats {
   return { toolCalls: 0, tokensIn: 0, tokensOut: 0, subagents: 0 };
 }
 
+/** Início de um status vindo do registro: nunca no futuro; ausente ou inválido vale agora. */
+function sinceOf(since: number | undefined, now: number): number {
+  return since !== undefined && since > 0 ? Math.min(since, now) : now;
+}
+
 function cloneAgent(a: AgentInfo): AgentInfo {
   const c: AgentInfo = { ...a, recent: a.recent.slice(), tasks: a.tasks.map((t) => ({ ...t })), stats: { ...a.stats } };
   if (a.shells) c.shells = a.shells.map((j) => ({ ...j }));
+  if (a.parado) c.parado = { ...a.parado };
   return c;
 }
 
@@ -280,7 +289,7 @@ export class Office {
     if (existing) {
       // Sessão que voltou durante o período de graça.
       delete existing.removeAt;
-      this.setStatus(p.id, p.status, p.waitingFor);
+      this.setStatus(p.id, p.status, p.waitingFor, p.statusSince);
       return;
     }
     const roomId = normalizeCwd(p.cwd);
@@ -300,7 +309,7 @@ export class Office {
       tasks: [],
       startedAt: p.startedAt,
       lastEventAt: p.startedAt,
-      statusSince: now,
+      statusSince: sinceOf(p.statusSince, now),
       stats: zeroStats(),
       seed: hash32(p.id),
     };
@@ -327,7 +336,7 @@ export class Office {
     this.markDirty();
   }
 
-  setStatus(id: string, status: AgentStatus, waitingFor?: string): void {
+  setStatus(id: string, status: AgentStatus, waitingFor?: string, since?: number): void {
     const rec = this.agents.get(id);
     if (!rec) return;
     const info = rec.info;
@@ -337,7 +346,7 @@ export class Office {
     const now = this.now();
     if (prev !== status) {
       info.status = status;
-      info.statusSince = now;
+      info.statusSince = sinceOf(since, now);
     }
     if (reason) info.waitingFor = reason;
     else delete info.waitingFor;
@@ -514,6 +523,7 @@ export class Office {
     // Subagentes ainda presentes saem junto.
     for (const sub of this.descendants(id)) {
       delete sub.info.shells;
+      delete sub.info.parado;
       if (sub.info.status !== 'done') {
         sub.info.status = 'done';
         sub.info.statusSince = now;
@@ -570,6 +580,7 @@ export class Office {
     info.status = 'done';
     info.statusSince = now;
     delete info.shells;
+    delete info.parado;
     rec.removeAt = now + DONE_GRACE_MS;
     if (!this.booting && info.activity?.kind !== 'done') {
       const act: Activity = { id: `${id}#done:${++this.seq}`, at: now, ...SPECIAL.turnDone(now - info.startedAt), durationMs: now - info.startedAt };
@@ -592,6 +603,21 @@ export class Office {
     rec.info.status = 'working';
     rec.info.statusSince = this.now();
     delete rec.removeAt;
+    this.markDirty();
+  }
+
+  markStalled(id: string, parado: ParadoInfo): void {
+    const info = this.agents.get(id)?.info;
+    if (!info || info.kind !== 'sub' || info.status === 'done' || info.status === 'offline') return;
+    if (JSON.stringify(info.parado) === JSON.stringify(parado)) return;
+    info.parado = parado;
+    this.markDirty();
+  }
+
+  clearStalled(id: string): void {
+    const info = this.agents.get(id)?.info;
+    if (!info?.parado) return;
+    delete info.parado;
     this.markDirty();
   }
 

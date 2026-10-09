@@ -128,6 +128,8 @@ export interface TranscriptState {
   lastAt?: number;
   /** stop_reason da última linha de assistant. */
   lastStopReason?: string | null;
+  /** Último erro da API (linha system api_error) sem resposta bem-sucedida depois. */
+  apiError?: { at: number; message?: string; attempt?: number; max?: number };
   /** O turno terminou (fim de turno, end_turn ou interrupção) e nada novo começou. */
   ended: boolean;
   /** Ferramentas chamadas que ainda não tiveram resultado. */
@@ -432,6 +434,7 @@ class LineParser {
     this.usage(msgId, m.usage);
     s.lastStopReason = typeof m.stop_reason === 'string' ? m.stop_reason : null;
     s.ended = m.stop_reason === 'end_turn' && s.pendingTools.size === 0;
+    if (model !== '<synthetic>') delete s.apiError;
 
     const blocks = Array.isArray(m.content) ? (m.content as Array<Record<string, unknown>>) : [];
     blocks.forEach((b, i) => {
@@ -692,6 +695,7 @@ class LineParser {
         this.push(SPECIAL.compact());
         return;
       case 'api_error':
+        this.s.apiError = apiErrorOf(j, this.at);
         if (this.s.current?.kind === 'wait' && this.at - this.s.current.at < 60_000) return;
         this.push(SPECIAL.apiRetry());
         return;
@@ -699,6 +703,17 @@ class LineParser {
         return;
     }
   }
+}
+
+function apiErrorOf(j: Record<string, unknown>, at: number): NonNullable<TranscriptState['apiError']> {
+  const err = j.error && typeof j.error === 'object' ? (j.error as Record<string, unknown>) : undefined;
+  const status = typeof err?.status === 'number' ? `erro ${err.status}` : undefined;
+  const raw = str(err?.formatted) ?? str(err?.message) ?? str(j.error) ?? status;
+  const out: NonNullable<TranscriptState['apiError']> = { at };
+  if (raw) out.message = truncate(raw.replace(/\s+/g, ' '), 140);
+  if (typeof j.retryAttempt === 'number') out.attempt = j.retryAttempt;
+  if (typeof j.maxRetries === 'number') out.max = j.maxRetries;
+  return out;
 }
 
 /** Instrução de um fork: o texto depois do bloco <fork-boilerplate>, sem o rótulo "Your directive:". */

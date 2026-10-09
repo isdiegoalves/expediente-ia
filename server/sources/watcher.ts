@@ -8,7 +8,7 @@
 import { existsSync, readdirSync, readFileSync, statSync, watch, type FSWatcher } from 'node:fs';
 import { join } from 'node:path';
 import { SPECIAL } from '../../shared/activity';
-import type { Activity, AgentStatus, SourceInfo } from '../../shared/types';
+import type { Activity, AgentStatus, ParadoInfo, SourceInfo } from '../../shared/types';
 import type { AccountsService } from '../accounts/service';
 import { errMsg, log } from '../log';
 import type { Office, TranscriptSummary } from '../model/office';
@@ -17,6 +17,7 @@ import { SHELL_FALLBACK_MAX_AGE_MS, ShellTracker, toShellJob, type ShellFinish }
 import {
   BOOT_RECENT_MS,
   concludedByIdle,
+  idleVerdict,
   PENDING_TOOL_TIMEOUT_MS,
   listSubagentFiles,
   parseJournal,
@@ -258,7 +259,7 @@ export class ClaudeWatcher {
         this.watchDir(join(acc.dir, 'sessions'));
       }
       const res = reader.poll();
-      const info: SourceInfo = { label: acc.id, path: acc.detected.configDir, sessions: res.entries.length, ok: res.ok };
+      const info: SourceInfo = { label: acc.id, path: acc.detected.configDir, sessions: res.entries.length, ok: res.ok, processoConfirmado: !this.opts.inDocker };
       if (res.error) info.error = res.error;
       this.sourceInfo.set(acc.dir, info);
       for (const entry of res.entries) {
@@ -302,6 +303,7 @@ export class ClaudeWatcher {
         startedAt: entry.startedAt ?? this.now(),
         status: st.status ?? 'idle',
         waitingFor: st.waitingFor,
+        statusSince: st.status ? entry.statusUpdatedAt : undefined,
         entrypoint: entry.entrypoint,
         kind: entry.kind,
       });
@@ -335,7 +337,7 @@ export class ClaudeWatcher {
       // CLIs antigas não gravam "shell": ocioso com Bash em segundo plano sem notificação = esperando o shell.
       if (status === 'idle' && t.shells.hasBackgroundShell(now, SHELL_FALLBACK_MAX_AGE_MS)) status = 'shell';
     }
-    office.setStatus(key, status, st.waitingFor);
+    office.setStatus(key, status, st.waitingFor, status === st.status ? entry.statusUpdatedAt : undefined);
     office.fillWorkingActivity(key);
     office.fillShellActivity(key);
   }
@@ -760,11 +762,31 @@ export class ClaudeWatcher {
     t.subs.set(file.agentId, sub);
     for (const r of results) this.applyResult(t, id, r, mode === 'new');
     this.applySubSummary(sub);
+    this.syncStalled(sub, idleVerdict(this.idleCheck(sub, now)) === 'stalled');
     if (start > 0) this.queuePrefix(file.path, start, state, (_signals, _older, shellEvents) => {
       if (t.subs.get(file.agentId) !== sub) return;
       this.applySubSummary(sub);
       this.mergeOlderShells(t, id, shellEvents);
     });
+  }
+
+  private idleCheck(sub: SubTracker, now: number) {
+    return { now, lastWriteAt: sub.tail.mtimeMs, ended: sub.state.ended, pendingTool: sub.state.pendingTools.size > 0 };
+  }
+
+  private syncStalled(sub: SubTracker, stalled: boolean): void {
+    if (!stalled) {
+      this.opts.office.clearStalled(sub.id);
+      return;
+    }
+    const { pendingTools, apiError } = sub.state;
+    const parado: ParadoInfo = { desde: sub.tail.mtimeMs };
+    const pendente = pendingTools.values().next().value;
+    if (pendente) parado.pendente = pendente;
+    if (apiError?.message) parado.erro = apiError.message;
+    if (apiError?.attempt !== undefined) parado.tentativa = apiError.attempt;
+    if (apiError?.max !== undefined) parado.maxTentativas = apiError.max;
+    this.opts.office.markStalled(sub.id, parado);
   }
 
   private applySubSummary(sub: SubTracker): void {
@@ -813,9 +835,9 @@ export class ClaudeWatcher {
         }
         continue;
       }
-      const done =
-        this.isFinished(t, sub.file, sub.meta) ||
-        concludedByIdle({ now, lastWriteAt: sub.tail.mtimeMs, ended: sub.state.ended, pendingTool: sub.state.pendingTools.size > 0 });
+      const verdict = idleVerdict(this.idleCheck(sub, now));
+      const done = this.isFinished(t, sub.file, sub.meta) || verdict === 'concluded';
+      if (!done) this.syncStalled(sub, verdict === 'stalled');
       if (done) {
         office.completeSub(sub.id);
         // Concluiu: nada dele roda em primeiro plano (o que estiver em segundo plano passa para o principal).

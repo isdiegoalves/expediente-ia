@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -55,6 +56,21 @@ describe('registro de sessões', () => {
     expect(reader.poll().entries.map((e) => e.pid)).toEqual([10]);
     const docker = new RegistryReader(tmp.dir, { checkPid: false });
     expect(docker.poll().entries.map((e) => e.pid).sort()).toEqual([10, 11]);
+  });
+
+  it('o kill -0 de verdade: processo vivo fica, processo encerrado sai na leitura seguinte', async () => {
+    const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: 'ignore' });
+    try {
+      writeFileSync(join(sessions, `${child.pid}.json`), entry(child.pid!));
+      const reader = new RegistryReader(tmp.dir, { checkPid: true });
+      expect(reader.poll().entries.map((e) => e.pid)).toEqual([child.pid]);
+      const saiu = new Promise((resolve) => child.once('exit', resolve));
+      child.kill('SIGKILL');
+      await saiu;
+      expect(reader.poll().entries).toEqual([]);
+    } finally {
+      child.kill('SIGKILL');
+    }
   });
 
   it('JSON inválido (gravação em andamento) mantém a última versão boa', () => {

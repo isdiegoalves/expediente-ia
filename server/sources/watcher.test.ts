@@ -14,7 +14,7 @@ setQuiet(true);
 
 const CWD = '/projetos/loja';
 
-function setup(opts: { tailBytes?: number } = {}) {
+function setup(opts: { tailBytes?: number; inDocker?: boolean } = {}) {
   const tmp = tempDir();
   const home = tmp.dir;
   const dir = join(home, '.claude');
@@ -41,7 +41,7 @@ function setup(opts: { tailBytes?: number } = {}) {
   });
   late.office = office;
   const alive = new Set<number>();
-  const watcher = new ClaudeWatcher({ accounts, office, inDocker: false, now, isAlive: (pid) => alive.has(pid), watch: false, tailBytes: opts.tailBytes });
+  const watcher = new ClaudeWatcher({ accounts, office, inDocker: opts.inDocker ?? false, now, isAlive: (pid) => alive.has(pid), watch: false, tailBytes: opts.tailBytes });
   const notices: Notice[] = [];
 
   const ctx = {
@@ -59,6 +59,10 @@ function setup(opts: { tailBytes?: number } = {}) {
         join(dir, 'sessions', `${pid}.json`),
         JSON.stringify({ pid, sessionId, cwd: CWD, startedAt: clock - 60_000, kind: 'interactive', status: 'busy', ...extra }),
       );
+    },
+    /** O processo morre, mas o arquivo do registro fica. */
+    matar(pid: number) {
+      alive.delete(pid);
     },
     closeSession(pid: number) {
       alive.delete(pid);
@@ -674,6 +678,192 @@ describe('ClaudeWatcher — shell lançado no começo de um transcript maior que
       const a = c.agent('.claude:800')!;
       expect(a.shells?.map((j) => [j.id, j.label, j.startedAt])).toEqual([['bcedo', 'Testes de ponta a ponta', t0 + 100]]);
       expect(a.activity?.text).toBe('Esperando o shell: Testes de ponta a ponta');
+    } finally {
+      c.watcher.stop();
+      c.tmp.cleanup();
+    }
+  });
+});
+
+describe('espera, subagente parado e processo morto', () => {
+  let c: Ctx;
+  beforeEach(() => {
+    c = setup();
+  });
+  afterEach(() => {
+    c.watcher.stop();
+    c.tmp.cleanup();
+  });
+
+  const MIN = 60_000;
+
+  it('esperando permissão há 10 min e servidor recém-reiniciado: mostra 10 min, não zero, com o motivo traduzido', () => {
+    writeLines(c.transcript('sess-w'), [L.prompt('rode a migração', { at: c.now() - 11 * MIN })]);
+    c.openSession(300, 'sess-w', { status: 'waiting', waitingFor: 'Allow Bash(rm -rf build)?', statusUpdatedAt: c.now() - 10 * MIN });
+    c.watcher.boot();
+    const a = c.agent('.claude:300')!;
+    expect(a.status).toBe('waiting');
+    expect(a.waitingFor).toBe('aprovar uma permissão');
+    expect(c.now() - a.statusSince).toBe(10 * MIN);
+    expect(a.activity?.at).toBe(a.statusSince);
+  });
+
+  it('sem statusUpdatedAt no registro o tempo começa agora', () => {
+    writeLines(c.transcript('sess-w2'), [L.prompt('oi')]);
+    c.openSession(301, 'sess-w2', { status: 'waiting', waitingFor: 'input needed' });
+    c.watcher.boot();
+    expect(c.agent('.claude:301')!.statusSince).toBe(c.now());
+  });
+
+  it('statusUpdatedAt no futuro não vira espera negativa', () => {
+    writeLines(c.transcript('sess-w3'), [L.prompt('oi')]);
+    c.openSession(302, 'sess-w3', { status: 'waiting', waitingFor: 'input needed', statusUpdatedAt: c.now() + 5 * MIN });
+    c.watcher.boot();
+    expect(c.agent('.claude:302')!.statusSince).toBe(c.now());
+  });
+
+  it('mudança de status ao vivo usa o statusUpdatedAt do registro', () => {
+    writeLines(c.transcript('sess-w4'), [L.prompt('oi')]);
+    c.openSession(303, 'sess-w4', { status: 'busy' });
+    c.watcher.boot();
+    c.advance(5_000);
+    c.openSession(303, 'sess-w4', { status: 'waiting', waitingFor: 'dialog open', statusUpdatedAt: c.now() - 3_000 });
+    c.poll();
+    const a = c.agent('.claude:303')!;
+    expect(a.waitingFor).toBe('fechar um diálogo aberto');
+    expect(a.statusSince).toBe(c.now() - 3_000);
+  });
+
+  const apiErro = (tentativa: number, at: number) =>
+    L.system('api_error', { level: 'error', error: { message: '529 overloaded', formatted: 'Servidor sobrecarregado (529)' }, retryAttempt: tentativa, maxRetries: 10, retryInMs: 500 }, { agentId: 'p1', at });
+
+  function subParado() {
+    writeLines(c.transcript('sess-p'), [L.prompt('oi')]);
+    c.openSession(400, 'sess-p');
+    c.watcher.boot();
+    const t0 = c.now();
+    c.subFile('sess-p', 'p1', { agentType: 'Explore', description: 'Mapear dependências', toolUseId: 'toolu_p' }, [
+      L.prompt('Mapeie', { agentId: 'p1', at: t0 }),
+      L.assistant([L.tool('pb1', 'Bash', { command: 'npm ls' })], { agentId: 'p1', at: t0, stop: 'tool_use' }),
+      apiErro(1, t0),
+      apiErro(2, t0),
+      apiErro(3, t0),
+    ]);
+    c.poll();
+    return c.transcript('sess-p').replace(/\.jsonl$/, '/subagents/agent-p1.jsonl');
+  }
+
+  it('subagente sem escrita por 120 s e sem fechamento fica parado, com o último erro da API e as tentativas', () => {
+    subParado();
+    expect(c.agent('sess-p:p1')!.parado).toBeUndefined();
+    c.advance(121_000);
+    c.poll();
+    const sub = c.agent('sess-p:p1')!;
+    expect(sub.status).toBe('working');
+    expect(sub.parado).toMatchObject({ pendente: 'Bash', erro: 'Servidor sobrecarregado (529)', tentativa: 3, maxTentativas: 10 });
+    expect(c.now() - sub.parado!.desde).toBeGreaterThanOrEqual(120_000);
+  });
+
+  it('subagente parado não some em 25 s', () => {
+    subParado();
+    c.advance(121_000);
+    c.poll();
+    c.advance(26_000);
+    c.poll();
+    c.advance(26_000);
+    c.poll();
+    expect(c.agent('sess-p:p1')).toMatchObject({ status: 'working', parado: { pendente: 'Bash' } });
+    expect(c.notices.some((n) => n.text.includes('entregou'))).toBe(false);
+  });
+
+  it('subagente parado volta a trabalhar quando escreve e conclui quando o pai fecha', () => {
+    const path = subParado();
+    c.advance(121_000);
+    c.poll();
+    appendLines(path, [L.result('pb1', 'ok', { agentId: 'p1' }), L.assistant([L.tool('pb2', 'Read', { file_path: '/a.ts' })], { agentId: 'p1', stop: 'tool_use' })]);
+    utimesSync(path, c.now() / 1000, c.now() / 1000);
+    c.poll();
+    expect(c.agent('sess-p:p1')!.parado).toBeUndefined();
+    c.advance(121_000);
+    c.poll();
+    expect(c.agent('sess-p:p1')!.parado).toMatchObject({ pendente: 'Read' });
+    appendLines(c.transcript('sess-p'), [L.result('toolu_p', 'achei', { toolUseResult: { status: 'completed', agentId: 'p1' } })]);
+    c.poll();
+    const sub = c.agent('sess-p:p1')!;
+    expect(sub.status).toBe('done');
+    expect(sub.parado).toBeUndefined();
+  });
+
+  it('o erro da API some da caixa quando o subagente voltou a responder', () => {
+    const path = subParado();
+    appendLines(path, [L.assistant([L.text('segui')], { agentId: 'p1' })]);
+    c.poll();
+    c.advance(121_000);
+    c.poll();
+    const parado = c.agent('sess-p:p1')!.parado!;
+    expect(parado.erro).toBeUndefined();
+    expect(parado.tentativa).toBeUndefined();
+  });
+
+  it('parado há 30 min sem fechamento: desiste e conclui', () => {
+    subParado();
+    c.advance(31 * MIN);
+    c.poll();
+    expect(c.agent('sess-p:p1')!.status).toBe('done');
+  });
+
+  it('subagente que terminou o turno continua concluindo em 5 s', () => {
+    writeLines(c.transcript('sess-e'), [L.prompt('oi')]);
+    c.openSession(401, 'sess-e');
+    c.watcher.boot();
+    c.subFile('sess-e', 'e1', { agentType: 'Plan', toolUseId: 'toolu_e' }, [L.assistant([L.text('pronto')], { agentId: 'e1', stop: 'end_turn' })]);
+    c.poll();
+    c.advance(6_000);
+    c.poll();
+    expect(c.agent('sess-e:e1')).toMatchObject({ status: 'done' });
+    expect(c.agent('sess-e:e1')!.parado).toBeUndefined();
+  });
+
+  it('fora do Docker, registro cujo pid não responde some em até 5 s', () => {
+    writeLines(c.transcript('sess-k'), [L.prompt('oi')]);
+    c.openSession(500, 'sess-k', { status: 'idle' });
+    c.watcher.boot();
+    c.matar(500);
+    let passou = 0;
+    while (c.agent('.claude:500')!.status !== 'offline' && passou < 10_000) {
+      c.advance(1_000);
+      c.poll();
+      passou += 1_000;
+    }
+    expect(passou).toBeLessThanOrEqual(5_000);
+    expect(c.agent('.claude:500')!.status).toBe('offline');
+    expect(c.watcher.sources()[0].processoConfirmado).toBe(true);
+  });
+
+  it('registro antigo com pid vivo e sem atualização há dias continua de pé', () => {
+    writeLines(c.transcript('sess-o'), [L.prompt('oi')]);
+    c.openSession(501, 'sess-o', { status: 'idle', statusUpdatedAt: c.now() - 3 * 86_400_000 });
+    c.watcher.boot();
+    c.advance(60_000);
+    c.poll();
+    expect(c.agent('.claude:501')!.status).toBe('idle');
+  });
+});
+
+describe('no Docker', () => {
+  it('não confere o pid: o registro de processo morto continua e a fonte declara que não confirma', () => {
+    const c = setup({ inDocker: true });
+    try {
+      writeLines(c.transcript('sess-d'), [L.prompt('oi')]);
+      c.openSession(600, 'sess-d', { status: 'idle' });
+      c.watcher.boot();
+      c.matar(600);
+      c.advance(10 * 60_000);
+      c.poll();
+      c.advance(2_000);
+      c.poll();
+      expect(c.agent('.claude:600')!.status).toBe('idle');
+      expect(c.watcher.sources()[0].processoConfirmado).toBe(false);
     } finally {
       c.watcher.stop();
       c.tmp.cleanup();
