@@ -4,8 +4,9 @@
 // Tipos de linha desconhecidos são ignorados; uma linha inválida nunca derruba a leitura.
 import { createReadStream } from 'node:fs';
 import type { Activity, AgentStats, TaskItem, TaskStatus } from '../../shared/types';
-import { describePrompt, describeShellJob, describeTool, maskSecrets, SPECIAL, truncate, type ActivityDescription } from '../../shared/activity';
+import { basename, describePrompt, describeShellJob, describeTool, maskSecrets, SPECIAL, truncate, type ActivityDescription } from '../../shared/activity';
 import type { GitHubEvent } from '../../shared/github';
+import { trocadorDeCaminhos } from '../model/saida';
 import { detectGitHubNotification, detectGitHubResult, githubCallOf, type GitHubCall } from './github';
 import type { ShellStart } from './shells';
 
@@ -707,8 +708,20 @@ export function forkDirective(text: string): string {
   return rest.trim().replace(/^your directive:\s*/i, '').trim();
 }
 
+const CWD_DA_LINHA = /"cwd":"([^"\\]+)"/;
+let ultimoCwd: { cwd: string; trocar: ((s: string) => string) | undefined } | undefined;
+
+/** O caminho do projeto vira o nome da pasta antes de a máscara e o corte mexerem no texto. */
+function semCaminhoDoProjeto(raw: string): string {
+  const cwd = CWD_DA_LINHA.exec(raw)?.[1];
+  if (!cwd || cwd.length < 2) return raw;
+  if (ultimoCwd?.cwd !== cwd) ultimoCwd = { cwd, trocar: trocadorDeCaminhos(new Map([[cwd, basename(cwd)]])) };
+  return ultimoCwd.trocar ? ultimoCwd.trocar(raw) : raw;
+}
+
 /** Interpreta uma linha JSONL. Linhas inválidas ou desconhecidas não geram nada. */
-export function parseLine(state: TranscriptState, raw: string, ctx: ParseContext): LineResult {
+export function parseLine(state: TranscriptState, rawLine: string, ctx: ParseContext): LineResult {
+  const raw = semCaminhoDoProjeto(rawLine);
   let j: unknown;
   try {
     j = JSON.parse(raw);

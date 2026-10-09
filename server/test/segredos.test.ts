@@ -4,6 +4,8 @@ import { setQuiet } from '../log';
 import { NameStore } from '../model/names';
 import { Office } from '../model/office';
 import { sanitizeOutput } from '../model/saida';
+import { createTranscriptState, parseLine } from '../sources/transcript';
+import { L } from './fixtures';
 
 setQuiet(true);
 
@@ -67,5 +69,31 @@ describe('segredos mascarados na saída', () => {
   it('a função única mascara e encurta caminho em qualquer estrutura', () => {
     const out = sanitizeOutput({ a: [`x ${GHP}`, { b: `${HOME}/p/src/a.ts` }], n: 1 }, new Map([[`${HOME}/p`, 'p']]));
     expect(out).toEqual({ a: ['x gh*_***', { b: 'p/src/a.ts' }], n: 1 });
+  });
+
+  it('linha crua de transcript: cwd com segredo e corte no meio do caminho não deixam /Users/ no snapshot', () => {
+    const cru = (blocks: Array<Record<string, unknown>>) => JSON.stringify({ ...JSON.parse(L.assistant(blocks, { at: 5 })), cwd: CWD });
+    const comando = `${'a'.repeat(250)} && cat ${CWD}/src/a.ts ${HOME}/outra/b.ts`;
+    const state = createTranscriptState();
+    const o = office();
+    let n = 0;
+    for (const raw of [cru([L.tool('t1', 'Bash', { command: comando })]), cru([L.tool('t2', 'Read', { file_path: `${CWD}/src/a.ts` })])]) {
+      for (const a of parseLine(state, raw, { idPrefix: 'acc:1', now: 6 }).activities) o.addActivity('acc:1', { ...a.activity, id: `crua-${++n}` }, true);
+    }
+    const all = strings(tudoQueASaidaMostra(o));
+    expect(all.some((x) => x.includes('cat loja-gh*_***'))).toBe(true);
+    for (const x of all) {
+      expect(x, x).not.toMatch(/\/Users\//);
+      expect(x, x).not.toContain(HOME);
+    }
+  });
+
+  it('pasta do usuário vira ~ e prefixo cortado de caminho conhecido some', () => {
+    const projetos = new Map([[`${HOME}/loja`, 'loja']]);
+    expect(sanitizeOutput('cat /Users/ficticio/outro/x.ts', projetos)).toBe('cat ~/outro/x.ts');
+    expect(sanitizeOutput('cat /home/ficticio/outro/x.ts', projetos)).toBe('cat ~/outro/x.ts');
+    expect(sanitizeOutput(`cat ${HOME}/lo…`, projetos)).toBe('cat …');
+    expect(sanitizeOutput('cat /home/fict…', projetos)).toBe('cat ~…');
+    expect(sanitizeOutput('cat /Users/ficticio/outro/x.ts', projetos, { trocarCaminhos: false })).toBe('cat /Users/ficticio/outro/x.ts');
   });
 });
