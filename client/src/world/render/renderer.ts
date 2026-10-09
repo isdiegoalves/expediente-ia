@@ -5,7 +5,7 @@ import { shade, toHex, withAlpha } from '../../art/core/color';
 import { tema } from '../../tema';
 import { coresDerivadas } from '../../tema/cores';
 import { TILE, type ArtModule, type CharacterFrameRequest, type IconName, type ScreenMode, type Sprite } from '../../art/api';
-import type { WorldOptions } from '../api';
+import type { OfficeTheme, WorldOptions } from '../api';
 import type { WorldAssets } from '../assets';
 import type { Camera } from '../camera';
 import { BUILDING_H, COL_W, CORE_COLS, CORRIDOR_Y } from '../constants';
@@ -24,6 +24,7 @@ import { Lighting } from './lighting';
 import { Particles } from './particles';
 import { carSprite, propSprite, shadowSprite } from './props';
 import { countBadge, fallbackIcon } from './shell-sprites';
+import { decorateElevator, drawSeasonalLights, drawSeasonalWindow, seasonalCostume, seasonalFurniture } from './seasonal';
 import { buildAreaVis, furnitureSprites, opaqueBounds, paintShell, toWallVis, WALL_MARGIN, wallItemOrigin, wallSprites, type AreaVis, type FurnVis, type WallVis } from './scene';
 
 const enum K {
@@ -119,6 +120,7 @@ export class Renderer {
   night = 0;
   private clearColor = tema().paleta.mundo.fundoExterno;
   private grass: CanvasPattern | null = null;
+  private theme: OfficeTheme = 'auto';
 
   constructor(
     readonly canvas: HTMLCanvasElement,
@@ -139,9 +141,11 @@ export class Renderer {
   // =================================================================== sincronização com a simulação
 
   /** Mantém caches e visuais coerentes com o prédio atual. */
-  sync(): void {
+  sync(theme: OfficeTheme = 'auto'): void {
     const sim = this.sim;
-    const assetsChanged = this.builtAssetsVersion !== this.assetsVersion;
+    const themeChanged = theme !== this.theme;
+    this.theme = theme;
+    const assetsChanged = this.builtAssetsVersion !== this.assetsVersion || themeChanged;
     if (this.baseCols !== sim.building.cols || assetsChanged) this.buildBase();
     if (this.layoutVersion !== sim.layoutVersion || assetsChanged) {
       this.layoutVersion = sim.layoutVersion;
@@ -149,7 +153,7 @@ export class Renderer {
       for (const a of [...sim.building.core, sim.building.corridor]) {
         want.add(a.id);
         const cur = this.areas.get(a.id);
-        if (!cur || cur.layout !== a || assetsChanged) this.areas.set(a.id, buildAreaVis(this.art, a, undefined, this.assets));
+        if (!cur || cur.layout !== a || assetsChanged) this.areas.set(a.id, buildAreaVis(this.art, a, undefined, this.assets, theme));
       }
       for (const room of sim.rooms.values()) {
         if (!room.present) continue;
@@ -165,7 +169,7 @@ export class Renderer {
       this.occupiedSlots.add(room.slot);
       const cur = this.areas.get(room.id);
       if (!cur || cur.layout !== room.layout || cur.version !== room.version || assetsChanged) {
-        this.areas.set(room.id, buildAreaVis(this.art, room.layout, room, this.assets));
+        this.areas.set(room.id, buildAreaVis(this.art, room.layout, room, this.assets, theme));
       } else cur.room = room;
     }
     for (const [id, vis] of this.areas) if (vis.room && !vis.room.present) this.areas.delete(id);
@@ -497,6 +501,13 @@ export class Renderer {
     // ---- luz: noite, salas apagadas, brilhos
     this.night = this.lighting.night;
     this.drawLighting(now, vx0, vy0, vx1, vy1);
+    if (this.theme !== 'auto') {
+      for (const vis of this.areas.values()) {
+        if (vis.room && vis.room.phase !== 'ready') continue;
+        if (!visible(vis.px.x, vis.px.y, vis.px.w, vis.px.h)) continue;
+        drawSeasonalLights(ctx, this.theme, vis.layout, vis.room ? vis.room.light(now) : 1);
+      }
+    }
     // giroflex e balão "!" do alarme de CI (brilham também no escuro)
     this.roomFx.drawLights(ctx, this.sim, this.heads, now, view);
 
@@ -588,6 +599,7 @@ export class Renderer {
         if (!s) return;
         const o = wallItemOrigin(w, s.base);
         ctx.drawImage(s.base.canvas, o.x, o.y + rise);
+        decorateElevator(ctx, this.theme, w.cx, w.baseY + rise);
         return;
       }
       case 'light_switch': {
@@ -659,6 +671,7 @@ export class Renderer {
     }
     ctx.globalAlpha *= alpha;
     this.safe(() => this.art.drawWindowView(ctx, { x: o.x + r.x, y: o.y + rise + r.y, w: r.w, h: r.h }, hour, now, w.seed));
+    drawSeasonalWindow(ctx, this.theme, { x: o.x + r.x, y: o.y + rise + r.y, w: r.w, h: r.h }, now, w.seed);
     ctx.drawImage(s.base.canvas, o.x, o.y + rise);
   }
 
@@ -738,7 +751,7 @@ export class Renderer {
     const state = this.furnState(f, now);
     const fs = furnitureSprites(this.art, f, state);
     if (!fs) return;
-    const s = front ? fs.front : fs.base;
+    const s = front ? fs.front : seasonalFurniture(this.theme, f.kind, area.layout, f.seed) ?? fs.base;
     if (!s) return;
     const dx = Math.round(f.ax - s.ax);
     const dy = Math.round(f.ay - s.ay);
@@ -818,6 +831,7 @@ export class Renderer {
     req.pose = ch.pose;
     req.held = ch.held;
     req.seated = ch.seated;
+    req.costume = seasonalCostume(this.theme, ch.info.seed);
     try {
       sprite = this.charSprite(req, ch.animT);
     } catch {
@@ -1018,6 +1032,7 @@ export class Renderer {
       req.pose = ch.pose === 'groom' ? 'groom' : 'stand';
       req.held = ch.pose === 'groom' ? ch.held : 'none';
       req.seated = false;
+      req.costume = seasonalCostume(this.theme, ch.info.seed);
       let s: Sprite;
       try {
         s = this.charSprite(req, ch.animT);
