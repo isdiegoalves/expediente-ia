@@ -119,9 +119,9 @@ describe('ClaudeWatcher', () => {
     const id = bootWithSession();
     const snap = c.office.commit().snapshot;
     expect(snap.rooms).toHaveLength(1);
-    expect(snap.rooms[0]).toMatchObject({ id: CWD, name: 'loja', slot: 0 });
+    expect(snap.rooms[0]).toMatchObject({ id: 'loja', name: 'loja', slot: 0 });
     const a = c.agent(id)!;
-    expect(a).toMatchObject({ kind: 'main', status: 'working', title: 'Carrinho de compras', role: 'Agente principal', account: '.claude', roomId: CWD });
+    expect(a).toMatchObject({ kind: 'main', status: 'working', title: 'Carrinho de compras', role: 'Agente principal', account: '.claude', roomId: 'loja' });
     expect(a.activity?.text).toBe('Lendo Cart.tsx');
     expect(snap.accounts[0]).toMatchObject({ id: '.claude', short: 'A', sessions: 1 });
     expect(c.notices).toEqual([]);
@@ -157,7 +157,7 @@ describe('ClaudeWatcher', () => {
     c.poll();
     const sub = c.agent('sess-a:f1')!;
     const main = c.agent(mainId)!;
-    expect(sub).toMatchObject({ kind: 'sub', parentId: mainId, role: 'Explore', title: 'Mapear arquivos', status: 'working', account: '.claude', roomId: CWD });
+    expect(sub).toMatchObject({ kind: 'sub', parentId: mainId, role: 'Explore', title: 'Mapear arquivos', status: 'working', account: '.claude', roomId: 'loja' });
     expect(sub.background).toBeUndefined();
     expect(sub.name).not.toBe(main.name);
     expect(sub.activity?.text).toBe('Buscando “useCart”');

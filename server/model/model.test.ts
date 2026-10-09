@@ -280,7 +280,7 @@ describe('Office', () => {
     expect(snap.meta.demo).toBe(true);
     const slots = snap.rooms.map((r) => r.slot);
     expect(new Set(slots).size).toBe(slots.length);
-    expect(snap.rooms.find((r) => r.id === '/p/real')!.slot).toBe(0);
+    expect(snap.rooms.find((r) => r.id === 'real')!.slot).toBe(0);
     expect(snap.agents.some((a) => a.id.startsWith('demo:'))).toBe(true);
     expect(snap.accounts.map((a) => a.short)).toEqual(['C', 'X', 'Y']);
     const demoAgent = snap.agents.find((a) => a.id.startsWith('demo:'))!;

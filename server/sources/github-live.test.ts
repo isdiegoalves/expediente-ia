@@ -61,7 +61,7 @@ function setup() {
       notices.push(...office.commit().notices);
     },
     room(): RoomInfo | undefined {
-      return office.commit().snapshot.rooms.find((r) => r.id === CWD);
+      return office.commit().snapshot.rooms.find((r) => r.id === 'loja');
     },
   };
 }

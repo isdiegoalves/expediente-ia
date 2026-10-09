@@ -184,6 +184,22 @@ describe('histórico de sessões: listagem', () => {
     }
   });
 
+  it('GET /api/sessions/recent: project chega só com o nome da pasta e o título mascarado', async () => {
+    const env = await serve();
+    try {
+      writeLines(join(env.dir, 'projects', encodeCwd(CWD), `${SID}.jsonl`), [
+        L.prompt('x', { at: Date.now() - 60_000 }),
+        L.raw('custom-title', { customTitle: 'Deploy com ghp_aB3dE6gH9jK2mN5pQ8sT1vW4yZ7cF0hJ3kL6' }),
+      ]);
+      const body = JSON.parse((await request(env.base, '/api/sessions/recent')).body) as RecentSessionsResponse;
+      const s = body.sessions.find((x) => x.sessionId === SID)!;
+      expect(s.project).toBe('demo');
+      expect(s.title).not.toContain('ghp_aB3');
+    } finally {
+      await env.close();
+    }
+  });
+
   it('métodos: POST/PUT -> 405; HEAD vale só na listagem; subrota desconhecida -> 404', async () => {
     const env = await serve();
     try {

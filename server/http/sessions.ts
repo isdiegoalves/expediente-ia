@@ -7,6 +7,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { RecentSessionsResponse } from '../../shared/types';
 import { errMsg, log } from '../log';
+import { sanitizeOutput } from '../model/saida';
 import { HISTORY_DAYS, HISTORY_LIMIT, type SessionHistory } from '../sources/history';
 import { sendJson } from './app';
 import { isLoopbackHost } from './guard';
@@ -56,8 +57,12 @@ export function handleSessionsRoute(req: IncomingMessage, res: ServerResponse, p
     history
       .list()
       .then((sessions) => {
-        const body: RecentSessionsResponse = { sessions, days: HISTORY_DAYS, limit: HISTORY_LIMIT };
-        sendJson(res, 200, body);
+        const body: RecentSessionsResponse = {
+          sessions: sessions.map((s) => (s.project ? { ...s, project: s.project.split('/').filter(Boolean).pop() ?? s.project } : s)),
+          days: HISTORY_DAYS,
+          limit: HISTORY_LIMIT,
+        };
+        sendJson(res, 200, sanitizeOutput(body));
       })
       .catch((err) => {
         log.warnOnce(`history-list:${errMsg(err)}`, `Histórico de sessões: falha ao listar (${errMsg(err)}).`);

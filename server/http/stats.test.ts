@@ -94,7 +94,7 @@ describe('GET /api/stats', () => {
     expect(body.demoAvailable).toBe(false);
     expect(body.stats.day).toBe(body.today);
     expect(body.stats.totals.ms.working).toBeGreaterThan(0);
-    expect(body.stats.rooms[0]).toMatchObject({ id: '/p/loja', name: 'loja', sessions: 1 });
+    expect(body.stats.rooms[0]).toMatchObject({ id: 'loja', name: 'loja', sessions: 1 });
     const days = (await (await fetch(`${base}/api/stats/days?tz=America/Sao_Paulo`)).json()) as StatsDaysResponse;
     expect(days.tz).toBe('America/Sao_Paulo');
     expect(days.days[0]).toBe(days.today);

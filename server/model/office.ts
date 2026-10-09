@@ -26,6 +26,7 @@ import { hash32 } from '../../shared/hash';
 import { applyPermission } from '../permissions/registry';
 import type { NameStore } from './names';
 import { normalizeCwd, roomDisplayNames, SlotAllocator } from './rooms';
+import { sanitizeOutput } from './saida';
 
 export const OFFLINE_GRACE_MS = 20_000;
 export const DONE_GRACE_MS = 25_000;
@@ -230,13 +231,13 @@ export class Office {
 
   detail(id: string): AgentDetail | undefined {
     const rec = this.agents.get(id);
-    if (rec) return { agent: cloneAgent(rec.info), history: rec.history.slice() };
-    const demo = this.demoSnap?.agents.find((a) => a.id === id);
-    return demo ? { agent: cloneAgent(demo), history: demo.recent.slice() } : undefined;
+    const demo = rec ? undefined : this.demoSnap?.agents.find((a) => a.id === id);
+    if (rec) return this.out({ agent: cloneAgent(rec.info), history: rec.history.slice() });
+    return demo ? this.out({ agent: cloneAgent(demo), history: demo.recent.slice() }) : undefined;
   }
 
   recentFeed(n: number): FeedItem[] {
-    return this.feed.slice(-n);
+    return this.out(this.feed.slice(-n));
   }
 
   isDemo(): boolean {
@@ -741,11 +742,19 @@ export class Office {
     const notices = this.pendingNotices;
     this.pendingFeed = [];
     this.pendingNotices = [];
-    if (!this.dirty && this.last) return { snapshot: this.last, changed: false, feed, notices };
+    if (!this.dirty && this.last) return { snapshot: this.last, changed: false, feed: this.out(feed), notices: this.out(notices) };
     this.rev++;
     this.dirty = false;
-    this.last = this.build();
-    return { snapshot: this.last, changed: true, feed, notices };
+    this.last = this.out(this.build());
+    return { snapshot: this.last, changed: true, feed: this.out(feed), notices: this.out(notices) };
+  }
+
+  /** Tudo o que sai do Office passa por aqui (ver sanitizeOutput). */
+  private out<T>(value: T): T {
+    const projects = new Map<string, string>();
+    for (const [id, r] of this.rooms) projects.set(r.path, this.roomName(id));
+    for (const r of this.demoSnap?.rooms ?? []) projects.set(r.path, this.roomName(r.id));
+    return sanitizeOutput(value, projects);
   }
 
   // ---------------------------------------------------------------- internos
