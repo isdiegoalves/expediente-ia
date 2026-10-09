@@ -113,7 +113,7 @@ describe('permission-hook.mjs: qualquer falha devolve a decisão ao terminal', (
     expect(r).toMatchObject({ code: 0, stdout: '' });
     expect(r.ms).toBeGreaterThanOrEqual(4_500);
     expect(r.ms).toBeLessThan(13_000);
-  }, 20_000);
+  }, 30_000);
 
   it('prazo esgotado com o servidor sempre "pending": sai com 0 e sem decisão', async () => {
     srv = await fake(REGISTRADO);

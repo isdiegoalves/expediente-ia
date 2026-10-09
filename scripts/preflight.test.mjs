@@ -6,6 +6,8 @@ import {
   mensagensComIdDeSessao,
   mensagensComTrailer,
   portasForaDoLoopback,
+  testesAcimaDaMetade,
+  veredictoDeTempo,
   versaoDoClaude,
   versaoDosTipos,
 } from './preflight.mjs';
@@ -53,4 +55,24 @@ test('tipos: lê a versão do cabeçalho e a do claude --version', () => {
   assert.equal(versaoDosTipos('// Written by Claude Code 2.1.295.\n// Claude Code function hooks'), '2.1.295');
   assert.equal(versaoDosTipos('export {}'), null);
   assert.equal(versaoDoClaude('2.1.295 (Claude Code)\n'), '2.1.295');
+});
+
+const reg = (nome, duracao, limite = 5000) => ({ arquivo: '/r/a.test.ts', nome, duracao, limite });
+
+test('tempo: só passa da metade do limite quem levou mais que ela', () => {
+  const lentos = testesAcimaDaMetade([reg('rapido', 100), reg('na metade', 2500), reg('lento', 2501), reg('espera real', 9000, 20000), reg('espera longa', 10001, 20000)]);
+  assert.deepEqual(lentos.map((t) => t.nome), ['lento', 'espera longa']);
+});
+
+test('tempo: lento também isolado reprova; lento só sob carga é aviso', () => {
+  const lentos = [reg('cpu', 4000), reg('carga', 3000)];
+  const { falhas, avisos } = veredictoDeTempo(lentos, new Map([['cpu', 3000], ['carga', 600]]));
+  assert.equal(falhas.length, 1);
+  assert.match(falhas[0], /^cpu /);
+  assert.equal(avisos.length, 1);
+  assert.match(avisos[0], /^carga /);
+});
+
+test('tempo: sem medida isolada reprova', () => {
+  assert.equal(veredictoDeTempo([reg('cpu', 4000)], new Map()).falhas.length, 1);
 });

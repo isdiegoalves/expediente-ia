@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, resolve } from 'node:path';
+import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const RAIZ = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -53,8 +53,24 @@ export function caminhosDeRegistro(arquivos) {
   return arquivos.filter((a) => /(^|\/)(\.docs-arquivo|\.playwright-mcp)(\/|$)/.test(a));
 }
 
-function rodar(cmd, args) {
-  const r = spawnSync(cmd, args, { cwd: RAIZ, encoding: 'utf8' });
+export function testesAcimaDaMetade(registros) {
+  return registros.filter((r) => r.duracao > r.limite / 2);
+}
+
+export function veredictoDeTempo(lentos, isolados) {
+  const falhas = [];
+  const avisos = [];
+  for (const t of lentos) {
+    const sozinho = isolados.get(t.nome);
+    const linha = `${t.nome} (${t.arquivo}): ${Math.round(t.duracao)} ms na suíte, ${sozinho === undefined ? 'sem medida isolada' : `${Math.round(sozinho)} ms isolado`}, limite ${t.limite} ms`;
+    if (sozinho === undefined || sozinho > t.limite / 2) falhas.push(linha);
+    else avisos.push(linha);
+  }
+  return { falhas, avisos };
+}
+
+function rodar(cmd, args, env) {
+  const r = spawnSync(cmd, args, { cwd: RAIZ, encoding: 'utf8', env: env ? { ...process.env, ...env } : process.env });
   return {
     status: r.error ? -1 : r.status,
     stdout: r.stdout ?? '',
@@ -66,8 +82,8 @@ const ok = (detalhe = '') => ({ ok: true, detalhe });
 const falha = (detalhe) => ({ ok: false, detalhe });
 const pular = (aviso) => ({ pulado: true, detalhe: aviso });
 
-function comandoSimples(cmd, args) {
-  const r = rodar(cmd, args);
+function comandoSimples(cmd, args, env) {
+  const r = rodar(cmd, args, env);
   return r.status === 0 ? ok() : falha(`${cmd} ${args.join(' ')} saiu com ${r.status}\n${r.saida.slice(-2000)}`);
 }
 
@@ -130,19 +146,50 @@ function checarTiposDoMod() {
   return r.ok ? ok(`tsc do mod contra os tipos da ${dosTipos}`) : r;
 }
 
+const REPORTER_DE_TEMPOS = './scripts/reporter-tempos.mjs';
+let registrosDeTempo = [];
+
+function medirTestes(extra, saida) {
+  rmSync(saida, { force: true });
+  const r = comandoSimples('npx', ['vitest', 'run', ...extra, '--reporter=default', `--reporter=${REPORTER_DE_TEMPOS}`], { EXPEDIENTE_TEMPOS_SAIDA: saida });
+  if (!r.ok) return { r, registros: [] };
+  return { r, registros: JSON.parse(readFileSync(saida, 'utf8')) };
+}
+
+function medirIsolados(lentos, saida) {
+  const isolados = new Map();
+  const porArquivo = Map.groupBy(lentos, (t) => t.arquivo);
+  for (const [arquivo, testes] of porArquivo) {
+    const padrao = `^(?:${testes.map((t) => t.nome.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})$`;
+    const { registros } = medirTestes([relative(RAIZ, arquivo), '-t', padrao], saida);
+    for (const g of registros) isolados.set(g.nome, g.duracao);
+  }
+  return isolados;
+}
+
 const etapas = [
   {
     nome: 'typecheck, testes e teste do pré-voo',
     async rodar() {
-      for (const [cmd, args] of [
-        ['npm', ['run', 'typecheck']],
-        ['npm', ['test']],
-        ['node', ['--test', 'scripts/preflight.test.mjs']],
-      ]) {
-        const r = comandoSimples(cmd, args);
-        if (!r.ok) return r;
-      }
+      const tipos = comandoSimples('npm', ['run', 'typecheck']);
+      if (!tipos.ok) return tipos;
+      const { r, registros } = medirTestes([], resolve(mkdtempSync(resolve(tmpdir(), 'preflight-tempos-')), 'tempos.json'));
+      if (!r.ok) return r;
+      registrosDeTempo = registros;
+      const t = comandoSimples('node', ['--test', 'scripts/preflight.test.mjs']);
+      if (!t.ok) return t;
       return ok('typecheck, vitest e node:test verdes');
+    },
+  },
+  {
+    nome: 'tempo dos testes',
+    async rodar() {
+      const lentos = testesAcimaDaMetade(registrosDeTempo);
+      if (lentos.length === 0) return ok(`${registrosDeTempo.length} testes, nenhum acima da metade do limite`);
+      const saida = resolve(mkdtempSync(resolve(tmpdir(), 'preflight-isolados-')), 'tempos.json');
+      const { falhas, avisos } = veredictoDeTempo(lentos, medirIsolados(lentos, saida));
+      if (falhas.length) return falha(`teste acima da metade do limite também isolado:\n${falhas.join('\n')}`);
+      return ok(`${registrosDeTempo.length} testes; AVISO, só passaram da metade do limite sob a carga do momento:\n${avisos.join('\n')}`);
     },
   },
   {
