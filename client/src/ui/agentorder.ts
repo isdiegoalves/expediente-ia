@@ -31,7 +31,13 @@ export function moveAgent<T>(roomId: string, items: readonly T[], idOf: (item: T
 function loadOrder(): OrderMap {
   try {
     const v = JSON.parse(localStorage.getItem(ORDER_KEY) ?? '{}') as unknown;
-    return v && typeof v === 'object' ? (v as OrderMap) : {};
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
+    // Só listas de sessões: um valor de outro formato (editado à mão, outra versão) não pode quebrar a lista lateral.
+    const map: OrderMap = {};
+    for (const [room, ids] of Object.entries(v)) {
+      if (Array.isArray(ids)) map[room] = ids.filter((x): x is string => typeof x === 'string');
+    }
+    return map;
   } catch {
     return {};
   }
