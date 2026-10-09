@@ -1,6 +1,6 @@
 {
   "name": "expediente",
-  "owner": { "name": "Márcio Junior", "url": "https://github.com/marmottajr" },
+  "owner": { "name": "Diego Silva" },
   "description": "Plugins do Expediente, o escritório virtual em pixel art das suas sessões do Claude Code.",
   "version": "0.4.0",
   "plugins": [

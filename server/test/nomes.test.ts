@@ -7,6 +7,7 @@ const ROOT = resolve(__dirname, '../..');
 const PODEM_CITAR_HABBLAUD = new Set(['LICENSE', 'NOTICE', 'README.md', 'scripts/renomear-fork.mjs', 'scripts/instalar.ts', 'server/test/instalar.test.ts', 'server/test/nomes.test.ts', 'server/http/guard.test.ts']);
 const PODEM_CITAR_4747 = new Set(['scripts/renomear-fork.mjs', 'server/test/nomes.test.ts']);
 const REPOSITORIO_ORIGINAL = /marmottajr\/habblaud/gi;
+const PODEM_CITAR_REPOSITORIO = new Set(['LICENSE', 'NOTICE', 'README.md', 'CHANGELOG.md']);
 
 function achados(padrao: string, ignoraCase: boolean): Array<{ arquivo: string; linha: string }> {
   const args = ['grep', '-n', '-I', '--untracked', '--exclude-standard', ...(ignoraCase ? ['-i'] : []), '-e', padrao];
@@ -25,7 +26,7 @@ describe('nomes do fork', () => {
   it('"habblaud" só aparece nos arquivos de origem e licença, fora o endereço do repositório original', () => {
     const fora = achados('habblaud', true)
       .filter((a) => !PODEM_CITAR_HABBLAUD.has(a.arquivo))
-      .filter((a) => /habblaud/i.test(a.linha.replace(REPOSITORIO_ORIGINAL, '')))
+      .filter((a) => /habblaud/i.test(PODEM_CITAR_REPOSITORIO.has(a.arquivo) ? a.linha.replace(REPOSITORIO_ORIGINAL, '') : a.linha))
       .map((a) => a.arquivo);
     expect([...new Set(fora)]).toEqual([]);
   });
