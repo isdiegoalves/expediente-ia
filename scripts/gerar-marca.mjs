@@ -140,6 +140,62 @@ export function linhasDoLetreiro() {
   return linhas.map((l) => l.join(''));
 }
 
+// ------------------------------------------------------------------ imagem de prévia
+
+// Fonte 3x5 para o texto corrido da imagem de prévia; "Ó" é o O com um pingo acima.
+const MINI = {
+  A: ['.#.', '#.#', '###', '#.#', '#.#'], C: ['.##', '#..', '#..', '#..', '.##'], D: ['##.', '#.#', '#.#', '#.#', '##.'],
+  E: ['###', '#..', '##.', '#..', '###'], G: ['.##', '#..', '#.#', '#.#', '.##'], I: ['###', '.#.', '.#.', '.#.', '###'],
+  L: ['#..', '#..', '#..', '#..', '###'], M: ['#.#', '###', '###', '#.#', '#.#'], N: ['##.', '#.#', '#.#', '#.#', '#.#'],
+  O: ['.#.', '#.#', '#.#', '#.#', '.#.'], P: ['##.', '#.#', '##.', '#..', '#..'], R: ['##.', '#.#', '##.', '#.#', '#.#'],
+  S: ['.##', '#..', '.#.', '..#', '##.'], T: ['###', '.#.', '.#.', '.#.', '.#.'], U: ['#.#', '#.#', '#.#', '#.#', '###'],
+  V: ['#.#', '#.#', '#.#', '#.#', '.#.'], X: ['#.#', '#.#', '.#.', '#.#', '#.#'],
+  ',': ['...', '...', '...', '.#.', '#..'], '.': ['...', '...', '...', '...', '.#.'], ' ': ['..', '..', '..', '..', '..'],
+};
+
+function escrever(tela, frase, x, y, cor) {
+  let cx = x;
+  for (const ch of frase) {
+    const g = MINI[ch === 'Ó' ? 'O' : ch];
+    g.forEach((linha, j) => [...linha].forEach((c, i) => c === '#' && tela.ponto(cx + i, y + j, cor)));
+    if (ch === 'Ó') tela.ponto(cx + 2, y - 2, cor);
+    cx += g[0].length + 1;
+  }
+}
+
+/** Imagem de prévia 1200x630 (240x126 ampliada 5x): céu com estrelas, linha de prédios, logo, letreiro e legenda. */
+function gerarPrevia(tema, logo) {
+  const { simbolo, letreiro } = tema.paleta.marca;
+  const [contorno, parede, acento, aceso, azul, escuro] = simbolo.map(rgba);
+  const fundo = rgba(tema.paleta.ui.fundoSolido.slice(0, 7));
+  const ceu = misturar(fundo, escuro, 0.5);
+  const t = new Tela(240, 126);
+  t.ret(0, 0, 240, 126, ceu);
+  let semente = 7;
+  const alea = () => ((semente = (semente * 1103515245 + 12345) % 2147483648) / 2147483648);
+  for (let i = 0; i < 70; i++) t.ponto(Math.floor(alea() * 240), Math.floor(alea() * 60), misturar(ceu, parede, 0.25 + alea() * 0.5));
+  // linha de prédios ao fundo
+  for (let x = 0, n = 0; x < 240; n++) {
+    const w = 10 + Math.floor(alea() * 12);
+    const h = 14 + Math.floor(alea() * 30);
+    const cor = misturar(escuro, contorno, 0.4 + alea() * 0.4);
+    t.ret(x, 76 - h, w - 1, h, cor);
+    for (let wy = 76 - h + 3; wy < 74; wy += 5) for (let wx = x + 2; wx < x + w - 3; wx += 4) if (alea() < 0.45) t.ponto(wx, wy, alea() < 0.7 ? aceso : azul);
+    x += w;
+  }
+  t.ret(0, 76, 240, 50, misturar(fundo, contorno, 0.3));
+  t.ret(0, 76, 240, 1, misturar(contorno, parede, 0.3));
+  // logo, letreiro (2x) e legenda
+  for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) if (logo.ler(x, y)[3]) t.ponto(22 + x, 84 + y - 8, logo.ler(x, y));
+  const [sombraL, textoL, destaqueL] = letreiro.map(rgba);
+  const cores = { c: textoL, t: destaqueL, s: sombraL.slice(0, 3).concat(200) };
+  linhasDoLetreiro().forEach((linha, y) => [...linha].forEach((c, x) => cores[c] && t.ret(66 + x * 2, 80 + y * 2, 2, 2, cores[c])));
+  escrever(t, 'AGENTES DO CLAUDE CODE, AO VIVO,', 66, 100, misturar(parede, ceu, 0.15));
+  escrever(t, 'NUM ESCRITÓRIO EM PIXEL ART.', 66, 108, misturar(parede, ceu, 0.15));
+  t.ret(0, 0, 240, 1, acento);
+  return t.ampliar(5);
+}
+
 // ------------------------------------------------------------------ marca
 
 export function gerarMarca(tema) {
@@ -208,6 +264,7 @@ export function gerarMarca(tema) {
   colocar('client/public/assets/brand/apple-touch-icon.png', l.centrar(180, 180, 5, fundoApple));
   colocar('client/public/assets/brand/icon-192.png', l.ampliar(6));
   colocar('client/public/assets/brand/icon-512.png', l.ampliar(16));
+  colocar('client/public/assets/og-image.png', gerarPrevia(tema, l));
   return arquivos;
 }
 
