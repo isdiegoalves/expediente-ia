@@ -1,15 +1,18 @@
 // Modelo de apresentação da UI: agrupamento salas -> agentes -> subagentes, filtros, contadores e rótulos.
 // Funções puras (sem DOM), testadas em ui/model.test.ts.
 import type { AccountInfo, Activity, AgentInfo, AgentStatus, OfficeSnapshot, RoomInfo, ShellJob, TaskItem } from '../../../shared/types';
+import { tema } from '../tema';
 import { formatElapsed, normalizeSearch } from './format';
 
+const rotulos = tema().textos.status;
+
 export const STATUS_LABEL: Record<AgentStatus, string> = {
-  working: 'Trabalhando',
-  waiting: 'Precisa de você',
-  shell: 'Esperando o shell',
-  idle: 'Ocioso',
-  done: 'Concluído',
-  offline: 'Saindo',
+  working: rotulos.trabalhando,
+  waiting: rotulos.esperando,
+  shell: rotulos.shell,
+  idle: rotulos.ocioso,
+  done: rotulos.concluido,
+  offline: rotulos.saindo,
 };
 
 /** Ordem de urgência (menor = mais urgente), usada para destacar quem precisa de atenção. */

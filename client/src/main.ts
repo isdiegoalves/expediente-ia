@@ -10,6 +10,7 @@ migrateLegacyKeys(safeLocalStorage());
 void (async () => {
   const { aviso } = await carregarTema();
   aplicarPaleta(tema());
+  document.title = tema().textos.produto;
   // O mundo e a UI leem o tema ao serem importados, por isso só entram depois de ele estar definido.
   const [{ createWorld }, { createUI }] = await Promise.all([import('./world'), import('./ui')]);
   const params = new URLSearchParams(location.search);

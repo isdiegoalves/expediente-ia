@@ -4,9 +4,10 @@
 import type { Notice } from '../../../shared/types';
 import type { SoundBoard } from '../audio/board';
 import type { UiComponent, UiContext } from './context';
-import { computeCounters } from './model';
+import { computeCounters, STATUS_LABEL } from './model';
+import { tema } from '../tema';
 
-const BASE_TITLE = 'Expediente';
+const BASE_TITLE = tema().textos.produto;
 
 export type NotificationState = 'unsupported' | 'default' | 'granted' | 'denied';
 
@@ -53,7 +54,7 @@ export class Notifier implements UiComponent {
     else if (n.level === 'success') this.sounds.play('pop');
     if (n.level === 'alert' && prefs.browserNotifications && document.hidden && notificationState() === 'granted') {
       try {
-        const notification = new Notification('Expediente — precisa de você', {
+        const notification = new Notification(`${BASE_TITLE} — ${STATUS_LABEL.waiting.toLowerCase()}`, {
           body: n.text,
           tag: n.agentId ?? n.id,
           icon: '/assets/brand/favicon-32.png',

@@ -48,11 +48,11 @@ export const TINY_ZOOM = 0.6;
 const OVERVIEW_PER_ROOM = 1;
 const OVERVIEW_TOTAL = 4;
 
-const CORE_NAMES: Record<string, string> = {
-  'core:recepcao': 'Recepção',
-  'core:banheiros': 'Banheiros',
-  'core:copa': 'Copa',
-  'core:lounge': 'Lounge',
+export const CORE_NAMES: Record<string, string> = {
+  'core:recepcao': tema().textos.areasNucleo.recepcao,
+  'core:banheiros': tema().textos.areasNucleo.banheiros,
+  'core:copa': tema().textos.areasNucleo.copa,
+  'core:lounge': tema().textos.areasNucleo.lounge,
 };
 
 /** 'shell' = espera de shell: balão escuro de terminal com texto verde. 'say' = fala das rodas (papo, torcida, apostas). */
@@ -379,7 +379,7 @@ export class Overlay {
       const anim = room ? buildAnim(room.phase, room.progress(now)) : null;
       // texto da placa quando ela fica grande o bastante para ler; senão, o nome flutuante
       const rect = this.renderer.signRect(vis);
-      const text = room ? room.info.name : vis.id === 'core:recepcao' ? 'Expediente' : null;
+      const text = room ? room.info.name : vis.id === 'core:recepcao' ? tema().textos.produto : null;
       const readable = !!rect && rect.h * zoom >= SIGN_MIN_PX;
       if (readable && rect && text && (!anim || anim.sign >= 1)) {
         const ax = this.sx(rect.x);

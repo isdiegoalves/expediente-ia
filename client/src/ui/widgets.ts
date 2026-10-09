@@ -1,5 +1,6 @@
 // Peças visuais reutilizadas pelos painéis: chip de conta, ponto de status, selo de papel, barra de progresso.
 import type { AccountInfo, Activity, AgentInfo, AgentStatus } from '../../../shared/types';
+import { tema } from '../tema';
 import { h, setAttr, setHidden, setStyleVar, setText, setTitle, setVariant } from './dom';
 import { WORDMARK } from './icons';
 import { shellDoneKind, shellLine, shellStage, statusLabel, type ShellWait } from './model';
@@ -115,6 +116,6 @@ export function updateShellActivityLine(el: HTMLElement, wait: ShellWait, now: n
 export function wordmark(cls = 'ui-brand__name'): HTMLElement {
   const el = h('span', { class: cls });
   el.innerHTML = WORDMARK;
-  el.append(h('span', { class: 'ui-sr', text: 'Expediente' }));
+  el.append(h('span', { class: 'ui-sr', text: tema().textos.produto }));
   return el;
 }

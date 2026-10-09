@@ -1,5 +1,6 @@
 // Versão do Expediente: o número na barra superior e a seção "Sobre" das configurações.
 import type { OfficeSnapshot } from '../../../shared/types';
+import { tema } from '../tema';
 import type { UiComponent, UiContext } from './context';
 import { h, setHidden, setText, setTitle } from './dom';
 
@@ -25,7 +26,7 @@ export class VersionChip implements UiComponent {
     setHidden(this.el, !info);
     if (!info) return;
     setText(this.text, `v${info.version}`);
-    setTitle(this.el, `Expediente v${info.version}. Clique para ver detalhes.`);
+    setTitle(this.el, `${tema().textos.produto} v${info.version}. Clique para ver detalhes.`);
   }
 }
 
@@ -40,7 +41,7 @@ export class AboutGroup {
       'div',
       { class: 'ui-set-group ui-about', attrs: { id: 'ui-about' } },
       h('h3', { text: 'Sobre', tabIndex: -1 }),
-      h('div', { class: 'ui-about__head' }, h('span', { class: 'ui-about__name' }, 'Expediente ', this.name)),
+      h('div', { class: 'ui-about__head' }, h('span', { class: 'ui-about__name' }, `${tema().textos.produto} `, this.name)),
     );
   }
 
