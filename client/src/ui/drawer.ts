@@ -300,7 +300,7 @@ class AgentView {
 
     this.alertText = h('p', { class: 'ui-alert__text' });
     this.alertQuestions = h('div', { class: 'ui-ask', hidden: true });
-    this.alertAnswerHint = h('p', { class: 'ui-ask__answer-hint', hidden: true, text: 'Com o plugin expediente-permissoes (npm run mod:install), dá para responder as perguntas por aqui.' });
+    this.alertAnswerHint = h('p', { class: 'ui-ask__answer-hint', hidden: true, text: 'Com o plugin expediente-permissoes (npm run instalar -- --com-permissoes), dá para responder as perguntas por aqui.' });
     const alertIcon = h('span', { class: 'ui-alert__icon', attrs: { 'aria-hidden': 'true' } });
     alertIcon.innerHTML = ICONS.hand;
     this.alert = h(
