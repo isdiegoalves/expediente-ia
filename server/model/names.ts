@@ -1,7 +1,8 @@
-// Nomes dos personagens, persistidos por sessão/subagente em <dataDir>/names.json
-// para que cada um mantenha o nome entre reinícios do servidor.
+// Nomes dos personagens, persistidos por sessão/subagente em <dataDir>/names.json para que cada um mantenha o nome
+// entre reinícios do servidor, e o personagem escolhido para cada projeto (sala) no editor (ver Office.setCharacter).
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { parseAppearanceParts, parseCharacterName, parseSeed, type AppearanceParts } from '../../shared/appearance';
 import { pickName, type PersonName } from '../../shared/names';
 import { errMsg, log } from '../log';
 
@@ -11,9 +12,36 @@ interface StoredName {
   at: number;
 }
 
+/** Personagem escolhido para uma sala (chave: cwd normalizado). `at` = último uso, para a expiração. */
+export interface StoredCharacter {
+  name: string;
+  look: 'f' | 'm';
+  seed: number;
+  parts?: AppearanceParts;
+  at: number;
+}
+
 interface NamesFile {
   version: 1;
   names: Record<string, StoredName>;
+  rooms?: Record<string, StoredCharacter>;
+}
+
+/** Entrada de `rooms` lida do arquivo, ou null se algo estiver fora do formato. */
+function parseStoredCharacter(raw: unknown): StoredCharacter | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const v = raw as Record<string, unknown>;
+  const name = parseCharacterName(v.name);
+  const seed = parseSeed(v.seed);
+  const parts = v.parts === undefined ? {} : parseAppearanceParts(v.parts);
+  if (!name || seed === null || (v.look !== 'f' && v.look !== 'm') || !parts) return null;
+  const c: StoredCharacter = { name, look: v.look, seed, at: typeof v.at === 'number' ? v.at : 0 };
+  if (Object.keys(parts).length) c.parts = parts;
+  return c;
+}
+
+function copyCharacter(c: StoredCharacter): StoredCharacter {
+  return c.parts ? { ...c, parts: { ...c.parts } } : { ...c };
 }
 
 const MAX_ENTRIES = 4000;
@@ -21,6 +49,7 @@ const MAX_AGE_MS = 60 * 24 * 3_600_000;
 
 export class NameStore {
   private names = new Map<string, StoredName>();
+  private rooms = new Map<string, StoredCharacter>();
   private timer: ReturnType<typeof setTimeout> | null = null;
   private readonly now: () => number;
 
@@ -40,6 +69,11 @@ export class NameStore {
         if (v && typeof v.name === 'string' && (v.look === 'f' || v.look === 'm')) {
           this.names.set(key, { name: v.name, look: v.look, at: typeof v.at === 'number' ? v.at : 0 });
         }
+      }
+      const rooms = j.rooms && typeof j.rooms === 'object' && !Array.isArray(j.rooms) ? j.rooms : {};
+      for (const [roomId, v] of Object.entries(rooms)) {
+        const c = parseStoredCharacter(v);
+        if (c) this.rooms.set(roomId, c);
       }
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') log.warn(`names.json ilegível (${errMsg(err)}); começando do zero.`);
@@ -70,6 +104,37 @@ export class NameStore {
     return s ? { name: s.name, look: s.look } : undefined;
   }
 
+  // ---------------------------------------------------------------- personagem de cada sala (projeto)
+
+  character(roomId: string): StoredCharacter | undefined {
+    const c = this.rooms.get(roomId);
+    return c ? copyCharacter(c) : undefined;
+  }
+
+  /** Marca o personagem da sala como usado agora (renova a expiração). */
+  touchCharacter(roomId: string): void {
+    const c = this.rooms.get(roomId);
+    if (!c) return;
+    c.at = this.now();
+    this.scheduleFlush();
+  }
+
+  setCharacter(roomId: string, c: Omit<StoredCharacter, 'at'>): void {
+    this.rooms.set(roomId, copyCharacter({ ...c, at: this.now() }));
+    this.scheduleFlush();
+  }
+
+  clearCharacter(roomId: string): void {
+    if (this.rooms.delete(roomId)) this.scheduleFlush();
+  }
+
+  /** Nomes escolhidos para as salas (nome -> sala), sem a `exceptRoom`. */
+  reservedNames(exceptRoom?: string): Map<string, string> {
+    const out = new Map<string, string>();
+    for (const [roomId, c] of this.rooms) if (roomId !== exceptRoom) out.set(c.name, roomId);
+    return out;
+  }
+
   private scheduleFlush(): void {
     if (!this.file || this.timer) return;
     this.timer = setTimeout(() => {
@@ -84,12 +149,17 @@ export class NameStore {
     this.timer = null;
     if (!this.file) return;
     const now = this.now();
-    const kept = [...this.names]
-      .filter(([, v]) => now - v.at < MAX_AGE_MS)
-      .sort((a, b) => b[1].at - a[1].at)
-      .slice(0, MAX_ENTRIES);
+    const fresh = <T extends { at: number }>(m: Map<string, T>): [string, T][] =>
+      [...m]
+        .filter(([, v]) => now - v.at < MAX_AGE_MS)
+        .sort((a, b) => b[1].at - a[1].at)
+        .slice(0, MAX_ENTRIES);
+    const kept = fresh(this.names);
+    const rooms = fresh(this.rooms);
     this.names = new Map(kept);
+    this.rooms = new Map(rooms);
     const data: NamesFile = { version: 1, names: Object.fromEntries(kept) };
+    if (rooms.length) data.rooms = Object.fromEntries(rooms);
     try {
       mkdirSync(dirname(this.file), { recursive: true });
       const tmp = `${this.file}.${process.pid}.tmp`;

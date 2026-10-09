@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { Activity } from '../../shared/types';
@@ -69,6 +69,95 @@ describe('NameStore', () => {
       expect(b.assign('sess-1', new Set()).name).toBe(first.name);
       // Se o nome persistido colidir com alguém presente, escolhe outro.
       expect(b.assign('sess-1', new Set([first.name])).name).not.toBe(first.name);
+    } finally {
+      tmp.cleanup();
+    }
+  });
+});
+
+describe('NameStore: personagem de cada sala', () => {
+  const NOW = 1_700_000_000_000;
+  const DAY = 86_400_000;
+
+  it('grava, recarrega, devolve cópias e reservedNames deixa a própria sala de fora', () => {
+    const tmp = tempDir();
+    try {
+      const file = join(tmp.dir, 'names.json');
+      const a = new NameStore(file, { now: () => NOW });
+      a.setCharacter('/p/api', { name: 'Ana', look: 'f', seed: 7, parts: { hairStyle: 'bob' } });
+      a.setCharacter('/p/web', { name: 'Bia', look: 'f', seed: 8 });
+      a.flush();
+      expect(JSON.parse(readFileSync(file, 'utf8')).rooms['/p/api']).toEqual({ name: 'Ana', look: 'f', seed: 7, parts: { hairStyle: 'bob' }, at: NOW });
+
+      const b = new NameStore(file, { now: () => NOW });
+      b.load();
+      expect(b.character('/p/api')).toEqual({ name: 'Ana', look: 'f', seed: 7, parts: { hairStyle: 'bob' }, at: NOW });
+      expect([...b.reservedNames('/p/api')]).toEqual([['Bia', '/p/web']]);
+      expect(b.reservedNames().size).toBe(2);
+      b.character('/p/api')!.parts!.hairStyle = 'long';
+      expect(b.character('/p/api')!.parts).toEqual({ hairStyle: 'bob' });
+      b.clearCharacter('/p/api');
+      expect(b.character('/p/api')).toBeUndefined();
+    } finally {
+      tmp.cleanup();
+    }
+  });
+
+  it('names.json antigo ou com rooms inválido: os nomes continuam e só o que não presta é descartado', () => {
+    const tmp = tempDir();
+    try {
+      const file = join(tmp.dir, 'names.json');
+      const names = { s1: { name: 'Marina', look: 'f', at: NOW } };
+      writeFileSync(
+        file,
+        JSON.stringify({
+          version: 1,
+          names,
+          rooms: {
+            '/ok': { name: ' Ana   Paula ', look: 'f', seed: 1, at: NOW },
+            '/cor': { name: 'Bia', look: 'f', seed: 1, parts: { skin: 'red' }, at: NOW },
+            '/seed': { name: 'Caio', look: 'm', seed: -1, at: NOW },
+            '/look': { name: 'Davi', look: 'x', seed: 1, at: NOW },
+            '/nome': { name: '', look: 'm', seed: 1, at: NOW },
+            '/lixo': 'x',
+          },
+        }),
+      );
+      const s = new NameStore(file, { now: () => NOW });
+      s.load();
+      expect(s.assign('s1', new Set()).name).toBe('Marina');
+      expect(s.character('/ok')?.name).toBe('Ana Paula');
+      for (const r of ['/cor', '/seed', '/look', '/nome', '/lixo']) expect(s.character(r)).toBeUndefined();
+
+      for (const rooms of ['x', [1], null]) {
+        writeFileSync(file, JSON.stringify({ version: 1, names, rooms }));
+        const t = new NameStore(file, { now: () => NOW });
+        t.load();
+        expect(t.assign('s1', new Set()).name).toBe('Marina');
+        expect(t.reservedNames().size).toBe(0);
+      }
+    } finally {
+      tmp.cleanup();
+    }
+  });
+
+  it('personagem sem uso há 60 dias some no flush; usar renova o prazo', () => {
+    const tmp = tempDir();
+    try {
+      const file = join(tmp.dir, 'names.json');
+      let clock = NOW;
+      const s = new NameStore(file, { now: () => clock });
+      s.setCharacter('/velho', { name: 'Otto', look: 'm', seed: 1 });
+      s.setCharacter('/usado', { name: 'Nina', look: 'f', seed: 2 });
+      clock += 59 * DAY;
+      s.touchCharacter('/usado');
+      clock += 2 * DAY;
+      s.flush();
+      expect(s.character('/velho')).toBeUndefined();
+      const r = new NameStore(file, { now: () => clock });
+      r.load();
+      expect(r.character('/velho')).toBeUndefined();
+      expect(r.character('/usado')?.name).toBe('Nina');
     } finally {
       tmp.cleanup();
     }
