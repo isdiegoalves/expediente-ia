@@ -12,7 +12,8 @@
 //    local (GET /api/mod/summary, que já tira da lista esta sessão e os subagentes dela). Fora do ar, a
 //    linha some e as perguntas passam a ser a cada 30 s até ele voltar. Só onde a sessão desenha
 //    (`$.session.surfaces()` vazia = `claude -p`/SDK: nada a mostrar, nada a perguntar).
-// 3. /escritorio: resumo do escritório, respondido pelo próprio mod (não chama o modelo, não gasta uso).
+// 3. /escritorio: sessões por estado com contexto e custo, respondidas pelo próprio mod (não chama o modelo, não
+//    gasta uso), e um painel com o caminho de cada sessão (link do app, foco do painel do terminal ou o comando seguro).
 // 4. Ponte do app desktop (ponte.ts): a cada 5 s copia 3 campos por sessão do app para
 //    ~/.expediente/host/sessoes-app.json, que o servidor no container lê.
 // 5. Amostra horária (amostra.ts): contagem por entrypoint × kind e nomes de programa da cadeia de pais das sessões vivas.
@@ -24,9 +25,15 @@
 //
 // Análise estática do Claude Code: cada chamada é escrita por extenso ($.noun.método), o nome do evento é
 // sempre uma string literal e `$` só é passado para funções declaradas no topo deste arquivo.
-import type { EngineInterface, Register, SessionRateLimit } from 'claude-code'
+import type { EngineInterface, HttpResponse, Register, RenderSurface, SessionRateLimit } from 'claude-code'
+import { argvAbrir } from './abrir'
+import { acoesDaSessao, detalheTexto, lerIr, listaTexto, nomeDaLinha, pidDoId, porEstado, type IrView } from './escritorio'
+import { offlineText, outdatedText, parseSummary, statusText, summaryText, type Summary } from './resumo'
+import { argvAppRodando, argvFocoTerminalApp, argvFocoZellij, argvLeitorPainel, argvTrazerWezTerm, argvTtyDe, lerPainel, lerTty, type PainelZellij } from './painel'
 import { AMOSTRA_MS, argvPaiDe, arquivoAmostraOf, contarMix, contarProgramas, ehAmostraDaConta, horaDe, lerEntradaRegistro, marcadorAmostraOf, MAX_AMOSTRAS, MAX_NIVEIS, MAX_PIDS, paiDe, pastaAmostrasOf, type EntradaRegistro } from './amostra'
 import { appDirOf, filtrarSessaoApp, FRESCO_MS, PONTE_MS, sessoesAppFileOf, type SessaoApp } from './ponte'
+
+export { offlineText, outdatedText, parseSummary, statusText, summaryText, type Summary, type WaitingAgent } from './resumo'
 
 /** Porta padrão do Expediente (a mesma do servidor, do hook de permissão e do docker-compose). */
 export const DEFAULT_PORT = 4848
@@ -37,9 +44,6 @@ export const OFFLINE_POLL_MS = 30_000
 export const FETCH_TIMEOUT_MS = 2_000
 /** Valores idênticos gravados há menos que isto não são regravados (a mesma regra do tap). */
 export const MIN_REWRITE_MS = 10_000
-/** Nomes na linha embaixo do prompt antes do "e mais N". */
-const MAX_NAMES = 3
-
 /** Uma janela no formato do tap: percentual 0–100 e reinício em SEGUNDOS desde a época. */
 export interface UsageWindow {
   utilization: number
@@ -54,25 +58,6 @@ export interface UsageRecord {
   five_hour?: UsageWindow
   seven_day?: UsageWindow
   source: 'mod'
-}
-
-/** Quem precisa de você, como GET /api/mod/summary devolve (sem demo e sem esta sessão). */
-export interface WaitingAgent {
-  id: string
-  name: string
-  room: string
-  account: string
-  waitingFor: string
-  since?: number
-  /** Há pedido de permissão para responder pelo escritório. */
-  answerable: boolean
-}
-
-export interface Summary {
-  version: string
-  agents: number
-  working: number
-  waiting: WaitingAgent[]
 }
 
 /** Resultado de uma pergunta ao Expediente: resposta, fora do ar ou uma versão antiga, sem a rota do mod. */
@@ -166,77 +151,6 @@ export function usageRecord(rateLimits: readonly SessionRateLimit[], configDir: 
   return rec
 }
 
-/** Texto numa linha só (nomes e salas vêm do servidor; uma quebra de linha estragaria a linha de status). */
-function oneLine(s: string): string {
-  return s.replace(/[\u0000-\u001f\u007f]+/g, ' ').trim()
-}
-
-function str(v: unknown): string | undefined {
-  return typeof v === 'string' && v.trim() ? oneLine(v) : undefined
-}
-
-function count(v: unknown): number {
-  return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.floor(v) : 0
-}
-
-/** Lê a resposta de GET /api/mod/summary; qualquer coisa fora do formato = undefined (vale "fora do ar"). */
-export function parseSummary(text: string): Summary | undefined {
-  let j: unknown
-  try {
-    j = JSON.parse(text)
-  } catch {
-    return undefined
-  }
-  if (!j || typeof j !== 'object' || Array.isArray(j)) return undefined
-  const r = j as Record<string, unknown>
-  if (!Array.isArray(r.waiting)) return undefined
-  const waiting: WaitingAgent[] = []
-  for (const item of r.waiting) {
-    if (!item || typeof item !== 'object') continue
-    const w = item as Record<string, unknown>
-    const name = str(w.name)
-    if (!name) continue
-    const agent: WaitingAgent = {
-      id: str(w.id) ?? name,
-      name,
-      room: str(w.room) ?? '?',
-      account: str(w.account) ?? '',
-      waitingFor: str(w.waitingFor) ?? 'responder no terminal',
-      answerable: w.answerable === true,
-    }
-    if (typeof w.since === 'number' && Number.isFinite(w.since)) agent.since = w.since
-    waiting.push(agent)
-  }
-  return { version: str(r.version) ?? '?', agents: count(r.agents), working: count(r.working), waiting }
-}
-
-/** A linha embaixo do prompt: undefined quando ninguém (além desta sessão) precisa de você. */
-export function statusText(waiting: readonly WaitingAgent[]): string | undefined {
-  const first = waiting[0]
-  if (!first) return undefined
-  if (waiting.length === 1) return `🏢 ${first.name} precisa de você em ${first.room}`
-  const shown = waiting.slice(0, MAX_NAMES).map((w) => `${w.name} (${w.room})`)
-  const rest = waiting.length - shown.length
-  return `🏢 ${waiting.length} precisam de você: ${shown.join(', ')}${rest > 0 ? ` e mais ${rest}` : ''}`
-}
-
-/** A resposta do /escritorio com o Expediente no ar. */
-export function summaryText(s: Summary, url: string): string {
-  const agents = s.agents === 1 ? '1 agente' : `${s.agents} agentes`
-  const waiting = s.waiting.length === 0 ? 'ninguém precisa de você' : s.waiting.length === 1 ? '1 precisa de você' : `${s.waiting.length} precisam de você`
-  const lines = [`Expediente ${s.version} em ${url}`, `${agents} · ${s.working} trabalhando · ${waiting}`]
-  for (const w of s.waiting) lines.push(`✋ ${w.name} (${w.room}): ${w.waitingFor}${w.answerable ? ' · dá para responder pelo escritório' : ''}`)
-  return lines.join('\n')
-}
-
-export function offlineText(url: string): string {
-  return `O Expediente não respondeu em ${url}. Para subir: npm run docker:up na pasta do Expediente.`
-}
-
-export function outdatedText(url: string): string {
-  return `O Expediente em ${url} está numa versão sem a rota do mod. Para atualizar: git pull e npm run docker:up na pasta do Expediente.`
-}
-
 // ---------------------------------------------------------------------------------------------
 // Estado do módulo (some num hot reload) e o que fala com o Claude Code
 // ---------------------------------------------------------------------------------------------
@@ -288,14 +202,25 @@ async function writeUsage($: EngineInterface, rateLimits: readonly SessionRateLi
   lastWrite = { key, at: now }
 }
 
-/** GET /api/mod/summary com prazo de 2 s; nunca lança. */
-async function askExpediente($: EngineInterface, port: number, query: string): Promise<Asked> {
+/** GET no Expediente local com prazo de 2 s; undefined = fora do ar ou lento demais. Nunca lança. */
+async function getExpediente($: EngineInterface, port: number, path: string): Promise<HttpResponse | undefined> {
   let wait: { cancel: () => void } | undefined
   const timeout = new Promise<undefined>((resolve) => {
     wait = $.clock.after(FETCH_TIMEOUT_MS, () => resolve(undefined))
   })
   try {
-    const res = await Promise.race([$.http.fetch(`http://127.0.0.1:${port}/api/mod/summary${query}`, { headers: { accept: 'application/json' } }), timeout])
+    return await Promise.race([$.http.fetch(`http://127.0.0.1:${port}${path}`, { headers: { accept: 'application/json' } }), timeout])
+  } catch {
+    return undefined
+  } finally {
+    wait?.cancel()
+  }
+}
+
+/** GET /api/mod/summary; nunca lança. */
+async function askExpediente($: EngineInterface, port: number, query: string): Promise<Asked> {
+  try {
+    const res = await getExpediente($, port, `/api/mod/summary${query}`)
     if (!res) return { kind: 'offline' }
     // 404 JSON = um Expediente de antes do mod (rota desconhecida); outro 404 qualquer = não é o Expediente.
     if (res.status === 404 && res.text.includes('rota desconhecida')) return { kind: 'outdated' }
@@ -303,8 +228,6 @@ async function askExpediente($: EngineInterface, port: number, query: string): P
     return summary ? { kind: 'ok', summary } : { kind: 'offline' }
   } catch {
     return { kind: 'offline' }
-  } finally {
-    wait?.cancel()
   }
 }
 
@@ -446,6 +369,14 @@ async function ligarAmostrador($: EngineInterface): Promise<void> {
   void amostrarRegistro($).catch(() => undefined)
 }
 
+/** Esta sessão fora das contas: conta e id da sessão, para o servidor tirá-la da lista junto com os subagentes. */
+async function consulta($: EngineInterface, e: ModEnv): Promise<string> {
+  const params = new URLSearchParams()
+  if (e.accountId) params.set('account', e.accountId)
+  params.set('session', await $.session.id())
+  return `?${params.toString()}`
+}
+
 /** Uma rodada do aviso embaixo do prompt. Nunca lança. */
 async function poll($: EngineInterface): Promise<void> {
   if (polling) return
@@ -457,10 +388,7 @@ async function poll($: EngineInterface): Promise<void> {
       return
     }
     const e = await readEnv($)
-    const params = new URLSearchParams()
-    if (e.accountId) params.set('account', e.accountId)
-    params.set('session', await $.session.id())
-    const asked = await askExpediente($, e.port, `?${params.toString()}`)
+    const asked = await askExpediente($, e.port, await consulta($, e))
     if (asked.kind !== 'ok') {
       setStatus($, undefined)
       schedule($, OFFLINE_POLL_MS)
@@ -475,13 +403,151 @@ async function poll($: EngineInterface): Promise<void> {
   }
 }
 
-/** O texto do /escritorio: o escritório inteiro (sem filtrar esta sessão, para os números baterem com a tela). */
+// ---------------------------------------------------------------------------------------------
+// Painel do /escritorio
+// ---------------------------------------------------------------------------------------------
+
+const PAINEL = 'escritorio'
+/** O nonce do /ir vale 60 s: com o painel aberto, renova a cada 30 s. */
+export const RENOVA_MS = 30_000
+const FOCO_VALIDO_MS = 5 * 60_000
+const MAX_SESSOES_PAINEL = 20
+
+interface EstadoPainel {
+  resumo: Summary
+  ir: Map<string, IrView>
+  porta: number
+}
+
+let painel: EstadoPainel | undefined
+let desenhadoEm = 0
+let renovador: { cancel: () => void } | undefined
+/** Painel do zellij (ou tty) de cada sessão viva de terminal, lido uma vez e guardado por 5 min. */
+const focos = new Map<string, { em: number; zellij?: PainelZellij; tty?: string }>()
+
+/** Lê só as duas variáveis do zellij do processo (argvLeitorPainel); sem elas, o tty para o ramo genérico. */
+async function acharFoco($: EngineInterface, id: string): Promise<{ zellij?: PainelZellij; tty?: string } | undefined> {
+  const pid = pidDoId(id)
+  if (!pid) return undefined
+  const agora = await $.clock.now()
+  const guardado = focos.get(id)
+  if (guardado && agora - guardado.em < FOCO_VALIDO_MS) return guardado
+  const achado: { em: number; zellij?: PainelZellij; tty?: string } = { em: agora }
+  try {
+    const lido = await $.process.run(argvLeitorPainel(pid), { timeoutMs: 5_000 })
+    const zellij = lerPainel(lido.stdout)
+    if (zellij) achado.zellij = zellij
+    else {
+      const tty = lerTty((await $.process.run(argvTtyDe(pid), { timeoutMs: 5_000 })).stdout)
+      if (tty) achado.tty = tty
+    }
+  } catch {
+    // sem $.process (sessão do app) ou processo que sumiu: sem foco, fica a cópia do comando
+  }
+  focos.set(id, achado)
+  return achado
+}
+
+/** Busca o resumo (sem esta sessão) e, onde a sessão desenha, o caminho de cada sessão principal. */
+async function atualizarPainel($: EngineInterface): Promise<Asked> {
+  const e = await readEnv($)
+  const asked = await askExpediente($, e.port, await consulta($, e))
+  if (asked.kind !== 'ok') return asked
+  const ir = new Map<string, IrView>()
+  const surfaces = await $.session.surfaces()
+  if (surfaces.length) {
+    const principais = asked.summary.usage.filter((u) => u.kind === 'main').slice(0, MAX_SESSOES_PAINEL)
+    await Promise.all(
+      principais.map(async (u) => {
+        const res = await getExpediente($, e.port, `/api/agentes/${encodeURIComponent(u.id)}/ir`)
+        const v = res?.ok ? lerIr(res.text) : undefined
+        if (!v) return
+        ir.set(u.id, v)
+        if (surfaces.includes('terminal') && v.estado === 'vivo' && v.origin === 'terminal' && v.comando.endsWith(' --fork-session')) await acharFoco($, u.id)
+      }),
+    )
+  }
+  painel = { resumo: asked.summary, ir, porta: e.port }
+  $.ui.invalidate('ui.render')
+  return asked
+}
+
+/** Com o painel desenhado há pouco, renova nonce e números. Nunca lança. */
+async function renovar($: EngineInterface): Promise<void> {
+  try {
+    if ((await $.clock.now()) - desenhadoEm > 2 * RENOVA_MS) return
+    await atualizarPainel($)
+  } catch {
+    // a próxima rodada tenta de novo
+  }
+}
+
+async function abrirNoApp($: EngineInterface, url: string): Promise<void> {
+  const argv = argvAbrir(url)
+  if (!argv) {
+    $.ui.toast('Expediente: link recusado, fora da lista permitida')
+    return
+  }
+  try {
+    await $.process.run(argv, { timeoutMs: 10_000 })
+  } catch {
+    $.ui.toast('Expediente: não deu para abrir o app')
+  }
+}
+
+async function copiarComando($: EngineInterface, comando: string, surface: RenderSurface): Promise<void> {
+  const copiado = await $.ui.copy({ text: comando, surface })
+  $.ui.toast(copiado.isCopied ? 'Expediente: comando copiado' : 'Expediente: não deu para copiar o comando')
+}
+
+/** Painel do zellij e WezTerm à frente (provado ao vivo); sem painel achado ou com falha, copia o comando seguro. */
+async function focar($: EngineInterface, id: string, comando: string, surface: RenderSurface): Promise<void> {
+  const foco = focos.get(id)
+  let ok = false
+  try {
+    if (foco?.zellij) {
+      ok = true
+      for (const argv of [argvFocoZellij(foco.zellij), argvTrazerWezTerm()]) {
+        if ((await $.process.run(argv, { timeoutMs: 10_000 })).exitCode !== 0) {
+          ok = false
+          break
+        }
+      }
+    } else if (foco?.tty) {
+      for (const app of ['Terminal', 'iTerm2'] as const) {
+        if ((await $.process.run(argvAppRodando(app), { timeoutMs: 5_000 })).exitCode !== 0) continue
+        const r = await $.process.run(argvFocoTerminalApp(app, foco.tty), { timeoutMs: 10_000 })
+        if (r.exitCode === 0 && r.stdout.trim() === 'ok') {
+          ok = true
+          break
+        }
+      }
+    }
+  } catch {
+    ok = false
+  }
+  if (ok) return
+  $.ui.toast('Expediente: não achei o painel dessa sessão')
+  await copiarComando($, comando, surface)
+}
+
+/** O texto do /escritorio e, onde a sessão desenha, o painel aberto. */
 async function expedienteText($: EngineInterface): Promise<string> {
   const e = await readEnv($)
   const url = `http://localhost:${e.port}`
-  const asked = await askExpediente($, e.port, '')
+  const asked = await atualizarPainel($)
   if (asked.kind === 'outdated') return outdatedText(url)
   if (asked.kind === 'offline') return offlineText(url)
+  if ((await $.session.surfaces()).length) {
+    renovador ??= $.clock.every(RENOVA_MS, () => {
+      void renovar($)
+    })
+    try {
+      await $.ui.open({ id: PAINEL, title: 'Escritório' })
+    } catch {
+      // sem painel, o texto basta
+    }
+  }
   return summaryText(asked.summary, url)
 }
 
@@ -533,5 +599,62 @@ export const register: Register = (on) => {
     } catch {
       return { text: offlineText(`http://localhost:${env?.port ?? DEFAULT_PORT}`) }
     }
+  })
+
+  on('ui.render', { component: 'Pane', requestId: PAINEL }, async ($, e) => {
+    const { Box, Text, Button, Link, Code } = $.ui.resolve(e)
+    desenhadoEm = await $.clock.now()
+    if (!painel) return <Text dimColor>Rode /escritorio para carregar a lista.</Text>
+    const { resumo, ir, porta } = painel
+    const linhas = listaTexto([], resumo.self)
+    return (
+      <Box flexDirection="column">
+        {linhas.map((l) => (
+          <Text dimColor>{l}</Text>
+        ))}
+        {porEstado(resumo.usage).map((g) => (
+          <Box flexDirection="column">
+            <Text bold>{`${g.titulo} (${g.sessoes.length})`}</Text>
+            {g.sessoes.map((u) => {
+              const v = ir.get(u.id)
+              const foco = focos.get(u.id)
+              const acoes = v ? acoesDaSessao({ superficie: e.surface, id: u.id, porta, ir: v, focavel: !!(foco?.zellij || foco?.tty) }) : []
+              return (
+                <Box key={u.id} flexDirection="column">
+                  <Text>{nomeDaLinha(u)}</Text>
+                  {detalheTexto(u) ? <Text dimColor>{detalheTexto(u)}</Text> : undefined}
+                  {acoes.map((a) => {
+                    if (a.tipo === 'app') {
+                      return (
+                        <Box>
+                          <Link href={a.href} label="Abrir no app" />
+                          <Button key={`abrir:${u.id}`} label="Abrir" onPress={() => void abrirNoApp($, a.href)} />
+                        </Box>
+                      )
+                    }
+                    if (a.tipo === 'app-http') return <Link href={a.href} label="Abrir no app" />
+                    if (a.tipo === 'focar') return <Button key={`focar:${u.id}`} label="Focar" onPress={(p) => void focar($, u.id, v?.comando ?? '', p.surface)} />
+                    if (a.tipo === 'copiar') {
+                      return (
+                        <Box flexDirection="column">
+                          <Button key={`copiar:${u.id}`} label={a.rotulo} onPress={(p) => void copiarComando($, a.comando, p.surface)} />
+                          {a.aviso ? <Text dimColor>{a.aviso}</Text> : undefined}
+                        </Box>
+                      )
+                    }
+                    return (
+                      <Box flexDirection="column">
+                        <Code source={a.comando} />
+                        {a.aviso ? <Text dimColor>{a.aviso}</Text> : undefined}
+                      </Box>
+                    )
+                  })}
+                </Box>
+              )
+            })}
+          </Box>
+        ))}
+      </Box>
+    )
   })
 }

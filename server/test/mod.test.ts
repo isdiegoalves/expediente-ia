@@ -77,11 +77,11 @@ describe('marketplace e plugins do Claude Code', () => {
         expect(existsSync(join(dir, path!)), path).toBe(true);
       }
     }
-    expect(json('mod/expediente/hooks/hooks.json').modules).toEqual(['./register.ts']);
+    expect(json('mod/expediente/hooks/hooks.json').modules).toEqual(['./register.tsx']);
   });
 
   it('o mod só importa arquivos dele mesmo e tipos de "claude-code" (regra do Claude Code)', () => {
-    for (const spec of importsOf(join(ROOT, 'mod/expediente/hooks/register.ts'))) {
+    for (const spec of importsOf(join(ROOT, 'mod/expediente/hooks/register.tsx'))) {
       expect(spec === 'claude-code' || spec.startsWith('./') || spec.startsWith('../'), spec).toBe(true);
     }
   });

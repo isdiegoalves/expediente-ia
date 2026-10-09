@@ -3,6 +3,7 @@
 // (mock.clock), $.session.usage, $.session.id, $.session.surfaces, $.fs.write, $.http.fetch e $.ui.status.
 import type { CommandRunInput, HttpResponse, On, SessionRateLimit } from 'claude-code'
 import { describe, expect, mock, test } from 'claude-code/testing'
+import type { UsoAgente } from '../hooks/escritorio'
 import { configDirOf, normalizePath, parseSummary, statusText, usageDirOf, windowOf, type Summary, type WaitingAgent } from '../hooks/register'
 
 const NOW = Date.parse('2026-10-06T12:00:00Z')
@@ -23,7 +24,7 @@ function waiting(name: string, room: string, over: Partial<WaitingAgent> = {}): 
 }
 
 function summary(list: WaitingAgent[], over: Partial<Summary> = {}): Summary {
-  return { version: '0.3.0', agents: 7, working: 3, waiting: list, ...over }
+  return { version: '0.3.0', agents: 7, working: 3, waiting: list, usage: [], ...over }
 }
 
 interface World {
@@ -207,18 +208,41 @@ describe('linha embaixo do prompt', () => {
 })
 
 describe('/escritorio', () => {
-  test('no ar: versão, endereço, contagem e uma linha por quem espera (o escritório inteiro)', async ($, on) => {
+  test('no ar: contagem sem esta sessão e as sessões por estado, com contexto e custo; zero chamadas ao modelo', async ($, on) => {
+    const usage: UsoAgente[] = [
+      { id: '.claude:2', name: 'Valentina', kind: 'main', status: 'waiting', room: 'loja-virtual', title: 'Subir o deploy', compactions: 1, context: { tokens: 142_300, window: 1_000_000, percent: 14 }, cost: { usd: 4.5, estimated: true, unpriced: [] } },
+      { id: '.claude:3', name: 'Elias', kind: 'main', status: 'waiting', room: 'app-mobile', compactions: 0 },
+      { id: '.claude:4', name: 'Bia', kind: 'main', status: 'working', room: 'site', compactions: 0, cost: { usd: 2, estimated: false, unpriced: [] } },
+    ]
     const w = world(on, {
-      answer: () => summary([waiting('Valentina', 'loja-virtual', { answerable: true }), waiting('Elias', 'app-mobile', { waitingFor: 'responder no terminal' })]),
+      answer: () =>
+        summary([waiting('Valentina', 'loja-virtual', { id: '.claude:2', answerable: true }), waiting('Elias', 'app-mobile', { id: '.claude:3', waitingFor: 'responder no terminal' })], {
+          agents: 3,
+          working: 1,
+          usage,
+          self: { id: '.claude:1', name: 'Eu', kind: 'main', status: 'working', room: 'aqui', compactions: 0, context: { tokens: 50_000, window: 200_000, percent: 25 } },
+        }),
+    })
+    let modelo = 0
+    on('model.complete', () => {
+      modelo++
+      return { deny: 'sem modelo' }
     })
     const out = await $.command.run(RUN)
-    expect(w.fetches).toEqual([SUMMARY_URL])
+    expect(modelo).toBe(0)
+    expect(w.fetches[0]).toBe(`${SUMMARY_URL}?account=.claude-conta2&session=sess-1`)
     expect(out.text).toBe(
       [
         'Expediente 0.3.0 em http://localhost:4850',
-        '7 agentes · 3 trabalhando · 2 precisam de você',
-        '✋ Valentina (loja-virtual): aprovar uma permissão · dá para responder pelo escritório',
-        '✋ Elias (app-mobile): responder no terminal',
+        '3 agentes · 1 trabalhando · 2 precisam de você',
+        'Precisa de você (2)',
+        '  Valentina · loja-virtual · Subir o deploy · aprovar uma permissão (dá para responder pelo escritório)',
+        '    contexto 142,3 k de 1 M (14%) · compactou 1× · US$ 4,50 (estimado)',
+        '  Elias · app-mobile · responder no terminal',
+        'Trabalhando (1)',
+        '  Bia · site',
+        '    US$ 2,00',
+        'Esta sessão: contexto 50 k de 200 k (25%)',
       ].join('\n'),
     )
   })

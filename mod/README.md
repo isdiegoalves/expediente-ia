@@ -9,7 +9,7 @@ partir da 2.1.287; a API ainda é "early access" e pode mudar entre versões. A 
 
 ## `expediente` — o mod
 
-`expediente/hooks/register.ts`, um módulo só, sem build. Liga cada sessão ao escritório sem ler a conversa:
+`expediente/hooks/register.tsx`, um módulo só, sem build. Liga cada sessão ao escritório sem ler a conversa:
 
 - **Uso do plano (5h e semanal):** no início da sessão e a cada `session.measure` (depois de cada turno e quando
   um limite anda um ponto) lê `$.session.usage().rateLimits` e grava `~/.expediente/host/uso/<conta>.json` (ou em
@@ -21,16 +21,32 @@ partir da 2.1.287; a API ainda é "early access" e pode mudar entre versões. A 
   `🏢 2 precisam de você: Valentina (loja-virtual), Elias (app-mobile)` (até 3 nomes, depois "e mais N").
   Ninguém esperando ou Expediente fora do ar: a linha some; fora do ar, as perguntas passam a ser a cada 30 s até
   ele voltar. Só em sessões que desenham (no `claude -p` não pergunta nada).
-- **`/escritorio`:** resumo do escritório inteiro, respondido pelo próprio mod (não chama o modelo, não gasta uso):
+- **`/escritorio`:** as sessões por estado (precisa de você, trabalhando, esperando um comando, ociosas) com contexto,
+  compactações e custo de cada uma, mais uma linha da sua própria sessão. Respondido pelo próprio mod (não chama o
+  modelo, não gasta uso); o número exclui esta sessão e os subagentes dela:
 
   ```
-  Expediente 0.3.0 em http://localhost:4848
-  7 agentes · 3 trabalhando · 2 precisam de você
-  ✋ Valentina (loja-virtual): aprovar uma permissão · dá para responder pelo escritório
-  ✋ Elias (app-mobile): responder no terminal
+  Expediente 0.4.0 em http://localhost:4848
+  3 agentes · 1 trabalhando · 1 precisa de você
+  Precisa de você (1)
+    Valentina · loja-virtual · Subir o deploy · aprovar uma permissão (dá para responder pelo escritório)
+      contexto 142,3 k de 1 M (14%) · compactou 1× · US$ 4,50 (estimado)
+  Trabalhando (1)
+    Bia · site
+      US$ 2,00
+  Esta sessão: contexto 50 k de 200 k (25%)
   ```
 
   Fora do ar: `O Expediente não respondeu em http://localhost:4848. Para subir: npm run docker:up na pasta do Expediente.`
+
+  Onde a sessão desenha, o comando também abre o painel "Escritório" com o caminho de cada sessão, renovado a cada 30 s
+  enquanto está aberto. Sessão do app: no terminal, o link `claude://code/continue?session=local_…` e o botão "Abrir"
+  (`open`, só para URL da lista permitida); no app, o link `http://localhost:<porta>/api/agentes/<id>/ir?abrir=1&n=<nonce>`
+  (o servidor confere o nonce e responde 302 para o app). Sessão de terminal viva: "Focar" (painel do zellij e WezTerm à
+  frente; ramo genérico por tty para Terminal e iTerm2) quando o painel foi achado, e sempre a cópia
+  `claude --resume <id> --fork-session` rotulada como cópia; `kind=bg`: `claude attach <id>`; encerrada:
+  `cd -- '<cwd>' && claude --resume <id>`. No app o comando aparece num bloco para selecionar (ali não há como copiar).
+  Para achar o painel, o mod lê do processo da sessão só `ZELLIJ_PANE_ID` e `ZELLIJ_SESSION_NAME`, filtrados na origem.
 
 - **Ponte do app desktop:** a cada 5 s lê `~/Library/Application Support/Claude/claude-code-sessions/*/*/local_*.json`,
   seleciona por nome `sessionId`, `cliSessionId` e `isArchived` (nada mais do arquivo é copiado) e grava
@@ -46,16 +62,16 @@ Saída de `claude plugin validate --strict mod/expediente` (a análise estática
 carregar o módulo; nada fora desta lista é chamado):
 
 ```
-❯ ./register.ts hooks: session.start, session.measure, command.run{command=escritorio}
-❯ ./register.ts answers its own command: command.run{command=escritorio}
-❯ ./register.ts calls: $.clock.after (via askExpediente), $.clock.every (via ligarAmostrador, ligarPonte, schedule), $.clock.now (via amostrarRegistro, rodarPonte, writeUsage), $.command.register, $.env.get (via amostrarRegistro, readEnv, rodarPonte), $.fs.list (via amostrarRegistro, arquivosDoApp), $.fs.read (via amostrarRegistro, rodarPonte), $.fs.stat (via amostrarRegistro, rodarPonte), $.fs.write (via amostrarRegistro, rodarPonte, writeUsage), $.http.fetch (via askExpediente), $.process.run (via amostrarRegistro, rodarPonte), $.session.id (via poll, rodarPonte), $.session.surfaces (via ligarAmostrador, ligarPonte, poll), $.session.usage, $.ui.status (via setStatus)
-❯ ./register.ts env writes: nothing
-❯ ./register.ts env reads: CLAUDE_CONFIG_DIR, EXPEDIENTE_PORT, EXPEDIENTE_USAGE_DIR, HOME
+❯ ./register.tsx hooks: session.start, session.measure, command.run{command=escritorio}, ui.render{component=Pane, requestId=escritorio}
+❯ ./register.tsx answers its own command: command.run{command=escritorio}
+❯ ./register.tsx calls: $.clock.after (via getExpediente), $.clock.every (via expedienteText, ligarAmostrador, ligarPonte, schedule), $.clock.now, $.command.register, $.env.get (via amostrarRegistro, readEnv, rodarPonte), $.fs.list (via amostrarRegistro, arquivosDoApp), $.fs.read (via amostrarRegistro, rodarPonte), $.fs.stat (via amostrarRegistro, rodarPonte), $.fs.write (via amostrarRegistro, rodarPonte, writeUsage), $.http.fetch (via getExpediente), $.process.run (via abrirNoApp, acharFoco, amostrarRegistro, focar, rodarPonte), $.session.id (via consulta, rodarPonte), $.session.surfaces (via atualizarPainel, expedienteText, ligarAmostrador, ligarPonte, poll), $.session.usage, $.ui.copy (via copiarComando), $.ui.invalidate (via atualizarPainel), $.ui.open (via expedienteText), $.ui.resolve, $.ui.status (via setStatus), $.ui.toast (via abrirNoApp, copiarComando, focar)
+❯ ./register.tsx env writes: nothing
+❯ ./register.tsx env reads: CLAUDE_CONFIG_DIR, EXPEDIENTE_PORT, EXPEDIENTE_USAGE_DIR, HOME
 ```
 
 Em palavras: só observa (nenhum hook decide nada: não aprova ferramentas, não muda prompts, não lê mensagens),
 grava três tipos de arquivo em `~/.expediente/host` (o de uso, o `sessoes-app.json`, este por `mv`, e uma amostra por hora em
-`amostras/`), roda `$.process` só para o `mv` e para `ps -o ppid=,comm=`, fala só com `127.0.0.1` e lê quatro variáveis de ambiente. `$.clock.after` é o
+`amostras/`), roda `$.process` só para o `mv`, para `ps -o ppid=,comm=` e, a pedido no painel do `/escritorio`, para o leitor do painel, `open` (lista permitida), `zellij`, `pgrep` e `osascript`, fala só com `127.0.0.1` e lê quatro variáveis de ambiente. `$.clock.after` é o
 prazo de 2 s de cada pergunta ao Expediente (`$.http.fetch` não aceita AbortSignal).
 
 ## `expediente-permissoes` — responder permissões pelo escritório

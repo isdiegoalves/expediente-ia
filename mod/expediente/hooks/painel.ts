@@ -121,3 +121,19 @@ export function argvFocoTerminalApp(app: 'Terminal' | 'iTerm2', tty: string): st
   if (!TTY.test(tty)) throw new Error('tty inválido')
   return ['osascript', '-e', app === 'Terminal' ? SCRIPT_TERMINAL : SCRIPT_ITERM2, tty]
 }
+
+/** O tty da sessão para o ramo genérico; a saída do `ps` é `ttys003` ou `??`. */
+export function argvTtyDe(pid: number): string[] {
+  return ['ps', '-o', 'tty=', '-p', pidValido(pid)]
+}
+
+export function lerTty(texto: string): string | undefined {
+  const nome = texto.trim()
+  return /^ttys\d{1,4}$/.test(nome) ? `/dev/${nome}` : undefined
+}
+
+/** `osascript` abriria um app fechado: o foco só tenta Terminal e iTerm2 se o `pgrep` achar o processo. */
+export function argvAppRodando(app: 'Terminal' | 'iTerm2'): string[] {
+  if (app !== 'Terminal' && app !== 'iTerm2') throw new Error('app não suportado')
+  return ['pgrep', '-x', app]
+}

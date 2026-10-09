@@ -1,16 +1,33 @@
 // Testes do leitor de painel e da montagem do argv de foco. Nada aqui executa comando: o foco muda a tela do dono.
 import { describe, expect, test } from 'claude-code/testing'
 import {
+  argvAppRodando,
   argvAtivarPainelWezTerm,
   argvFocoTerminalApp,
   argvFocoZellij,
   argvLeitorClienteWezTerm,
   argvLeitorPainel,
   argvTrazerWezTerm,
+  argvTtyDe,
   lerClienteWezTerm,
   lerPainel,
+  lerTty,
   planoFocoZellij,
 } from '../hooks/painel'
+
+describe('ramo genérico', () => {
+  test('o tty sai do ps só com o pid inteiro, e só ttysNNN vira caminho', () => {
+    expect(argvTtyDe(507)).toEqual(['ps', '-o', 'tty=', '-p', '507'])
+    expect(() => argvTtyDe(0)).toThrow()
+    expect(lerTty('ttys003\n')).toBe('/dev/ttys003')
+    for (const ruim of ['??', '', 'ttys3; rm', '../ttys003', 'console']) expect(lerTty(ruim)).toBeUndefined()
+  })
+
+  test('pgrep -x só para os dois apps conhecidos', () => {
+    expect(argvAppRodando('iTerm2')).toEqual(['pgrep', '-x', 'iTerm2'])
+    expect(() => argvAppRodando('WezTerm' as 'Terminal')).toThrow()
+  })
+})
 
 const SOCKET = '/Users/fulano/.local/share/wezterm/gui-sock-70237'
 
