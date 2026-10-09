@@ -499,7 +499,24 @@ export function resolveCommit(git: GitRunner, root: string, ref: string | undefi
   }
   const rp = git(['rev-parse', '--verify', `${ref ?? 'HEAD'}^{commit}`], root);
   if (rp.code !== 0) return { error: `não achei o commit ${ref ?? 'HEAD'} (${rp.stderr || 'git falhou'})` };
-  return { commit: rp.stdout };
+  const commit = rp.stdout;
+  const nameAt = (file: string): string | undefined => {
+    const r = git(['show', `${commit}:${file}`], root);
+    if (r.code !== 0) return undefined;
+    try {
+      return (JSON.parse(r.stdout) as { name?: unknown }).name as string | undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  const plugin = 'mod/expediente/.claude-plugin/plugin.json';
+  if (nameAt(plugin) !== MARKETPLACE) {
+    return { error: `o commit ${commit.slice(0, 7)} não tem ${plugin} com "name": "${MARKETPLACE}" (anterior ao fork?); a cópia fixa sairia com o mod errado.` };
+  }
+  if (nameAt('.claude-plugin/marketplace.json') !== MARKETPLACE) {
+    return { error: `o commit ${commit.slice(0, 7)} não tem .claude-plugin/marketplace.json do marketplace "${MARKETPLACE}"; a cópia fixa sairia com o mod errado.` };
+  }
+  return { commit };
 }
 
 /** Cria (ou move para o commit) a cópia fixa. */

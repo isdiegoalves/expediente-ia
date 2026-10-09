@@ -128,6 +128,9 @@ describe('instalar.ts (CLI falso, HOME falso)', () => {
     writeFileSync(join(root, '.claude-plugin', 'marketplace.json'), '{"name":"expediente","plugins":[]}');
     writeFileSync(join(root, 'package.json'), '{"version":"0.2.0"}\n');
     git(root, 'init', '-q');
+    commit('antes do fork');
+    mkdirSync(join(root, 'mod', 'expediente', '.claude-plugin'), { recursive: true });
+    writeFileSync(join(root, 'mod', 'expediente', '.claude-plugin', 'plugin.json'), '{"name":"expediente"}\n');
     commit('primeiro');
     writeFileSync(join(home, '.claude', 'settings.json'), settingsDoDono);
   });
@@ -338,6 +341,27 @@ describe('instalar.ts (CLI falso, HOME falso)', () => {
     expect(await exec('install')).toBe(0);
     expect(git(copia(), 'rev-parse', 'HEAD')).toBe(segundo);
     expect(installed('.claude')[MOD_PLUGIN].version).toBe('0.3.0');
+  });
+
+  it('recusa commit sem o mod expediente (anterior ao fork ou de outro plugin)', async () => {
+    const antigo = git(root, 'rev-parse', 'HEAD~1');
+    expect(await exec('install', { commit: antigo })).toBe(1);
+    expect(out.join('\n')).toContain('não tem mod/expediente/.claude-plugin/plugin.json');
+
+    out = [];
+    writeFileSync(join(root, 'mod', 'expediente', '.claude-plugin', 'plugin.json'), '{"name":"habblaud"}\n');
+    commit('plugin de outro nome');
+    expect(await exec('install')).toBe(1);
+    expect(out.join('\n')).toContain('"name": "expediente"');
+
+    out = [];
+    writeFileSync(join(root, 'mod', 'expediente', '.claude-plugin', 'plugin.json'), '{"name":"expediente"}\n');
+    writeFileSync(join(root, '.claude-plugin', 'marketplace.json'), '{"name":"habblaud","plugins":[]}');
+    commit('marketplace de outro nome');
+    expect(await exec('install')).toBe(1);
+    expect(out.join('\n')).toContain('marketplace "expediente"');
+    expect(fake.mutating).toEqual([]);
+    expect(existsSync(copia())).toBe(false);
   });
 
   it('--dry-run não cria a cópia', async () => {
