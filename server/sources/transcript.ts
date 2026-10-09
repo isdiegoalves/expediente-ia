@@ -122,6 +122,14 @@ export interface TranscriptState {
   sawTaskReplace: boolean;
   stats: AgentStats;
   costSeen: boolean;
+  /** Epoch ms da última linha com horário antes do último `cost-state`: o que for posterior a isso o valor dele não inclui. */
+  costAnchor?: number;
+  /** `startTime` do último `cost-state` (começo do processo que o gravou). */
+  costStart?: number;
+  /** Custo estimado e quantidade de mensagens vistas depois do último `cost-state` (ou do começo, sem ele). */
+  costSince: { usd: number; n: number };
+  /** Horário e acréscimo de custo estimado de cada mensagem, para somar o que veio depois do `cost-state` de outro arquivo. */
+  costLog: Array<[number, number]>;
   model?: string;
   gitBranch?: string;
   permissionMode?: string;
@@ -172,6 +180,8 @@ export function createTranscriptState(opts: { trackPrefix?: boolean } = {}): Tra
     sawTaskReplace: false,
     stats: { toolCalls: 0, tokensIn: 0, tokensOut: 0, subagents: 0 },
     costSeen: false,
+    costSince: { usd: 0, n: 0 },
+    costLog: [],
     ended: false,
     pendingTools: new Map(),
     toolNames: new Map(),
@@ -408,7 +418,12 @@ class LineParser {
     if (typeof j.totalCostUSD === 'number') stats.costUSD = Math.round(j.totalCostUSD * 10_000) / 10_000;
     if (typeof j.totalLinesAdded === 'number') stats.linesAdded = j.totalLinesAdded;
     if (typeof j.totalLinesRemoved === 'number') stats.linesRemoved = j.totalLinesRemoved;
-    this.s.costSeen = true;
+    const s = this.s;
+    s.costSeen = true;
+    s.costAnchor = s.lastAt ?? Number.NEGATIVE_INFINITY;
+    s.costStart = typeof j.startTime === 'number' ? j.startTime : undefined;
+    s.costSince = { usd: 0, n: 0 };
+    marcarCustoDuvidoso(s);
     this.changed();
   }
 
@@ -422,6 +437,7 @@ class LineParser {
     if (s.skipUsage?.has(msgId)) return;
     if (s.firstMsgIds && s.firstMsgIds.size < FIRST_MSG_IDS && !s.usageByMsg.has(msgId)) s.firstMsgIds.add(msgId);
     // Linhas da mesma mensagem repetem o uso (às vezes parcial): conta só o acréscimo.
+    const primeira = !s.usageByMsg.has(msgId);
     const prev = s.usageByMsg.get(msgId) ?? { tin: 0, tout: 0, raw: SEM_USO, cost: 0 };
     const dIn = Math.max(0, tin - prev.tin);
     const dOut = Math.max(0, tout - prev.tout);
@@ -439,6 +455,12 @@ class LineParser {
       if (s.unpriced.size) s.stats.unpricedModels = [...s.unpriced];
     }
     remember(s.usageByMsg, msgId, { ...cur, raw, cost }, 256);
+    if (primeira || cost !== prev.cost) {
+      s.costLog.push([this.at, cost - prev.cost]);
+      s.costSince.usd += cost - prev.cost;
+      s.costSince.n++;
+      marcarCustoDuvidoso(s);
+    }
     if (dIn || dOut) {
       s.stats.tokensIn += dIn;
       s.stats.tokensOut += dOut;
@@ -907,6 +929,27 @@ export async function scanPrefix(
   return { state, signals, activities: activities.slice(-keep), shellEvents };
 }
 
+/** Publica em `stats` o que tira o ar de exato do `cost-state`: mensagens depois dele e processo que começou depois da primeira mensagem. */
+function marcarCustoDuvidoso(s: TranscriptState): void {
+  if (!s.costSeen) return;
+  if (s.costSince.n > 0) s.stats.costAfterUSD = Math.round(s.costSince.usd * 10_000) / 10_000;
+  else delete s.stats.costAfterUSD;
+  if (s.costStart !== undefined && s.firstAt !== undefined && s.costStart > s.firstAt) s.stats.costPartial = true;
+  else delete s.stats.costPartial;
+}
+
+/** Estimativa das mensagens de um subagente posteriores ao horário do último `cost-state` do principal. */
+export function custoDepoisDe(log: ReadonlyArray<[number, number]>, anchor: number): { usd: number; n: number } {
+  let usd = 0;
+  let n = 0;
+  for (const [at, delta] of log) {
+    if (at <= anchor) continue;
+    usd += delta;
+    n++;
+  }
+  return { usd, n };
+}
+
 /** Mescla o que veio do prefixo do arquivo no estado montado a partir da janela final. */
 export function mergePrefix(state: TranscriptState, prefix: TranscriptState): void {
   state.customTitle ??= prefix.customTitle;
@@ -930,7 +973,12 @@ export function mergePrefix(state: TranscriptState, prefix: TranscriptState): vo
     if (prefix.stats.costUSD !== undefined) state.stats.costUSD = prefix.stats.costUSD;
     if (prefix.stats.linesAdded !== undefined) state.stats.linesAdded = prefix.stats.linesAdded;
     if (prefix.stats.linesRemoved !== undefined) state.stats.linesRemoved = prefix.stats.linesRemoved;
+    state.costAnchor = prefix.costAnchor;
+    state.costStart = prefix.costStart;
+    state.costSince = { usd: prefix.costSince.usd + state.costSince.usd, n: prefix.costSince.n + state.costSince.n };
   }
+  state.costLog = [...prefix.costLog, ...state.costLog];
+  marcarCustoDuvidoso(state);
   state.firstMsgIds = null;
 }
 

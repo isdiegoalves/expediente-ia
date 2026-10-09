@@ -12,7 +12,7 @@ export interface ContextView {
 export interface CostView {
   /** Falta quando nenhum modelo da sessão tem preço na tabela. */
   usd?: number;
-  /** true = calculado dos `usage` e da tabela de preços; false = valor da linha `cost-state`. */
+  /** true = calculado dos `usage` e da tabela de preços; false = valor da linha `cost-state`, só quando ela cobre a sessão toda. */
   estimated: boolean;
   /** Modelos sem preço, que o custo estimado não inclui. */
   unpriced: string[];
@@ -29,8 +29,16 @@ export function contextView(s: AgentStats): ContextView | undefined {
 }
 
 export function costView(s: AgentStats): CostView | undefined {
-  if (s.costUSD !== undefined) return { usd: s.costUSD, estimated: false, unpriced: [] };
   const unpriced = s.unpricedModels ?? [];
+  if (s.costUSD !== undefined) {
+    const estimativa = s.costEstimatedUSD ?? 0;
+    const velho = s.costAfterUSD !== undefined;
+    const parcial = s.costPartial === true && s.costUSD < estimativa;
+    if (!velho && !parcial) return { usd: s.costUSD, estimated: false, unpriced: [] };
+    let usd = s.costUSD + (s.costAfterUSD ?? 0);
+    if (parcial) usd = Math.max(usd, estimativa);
+    return { usd: Math.round(usd * 10_000) / 10_000, estimated: true, unpriced };
+  }
   if (s.costEstimatedUSD === undefined && !unpriced.length) return undefined;
   return { ...(s.costEstimatedUSD !== undefined ? { usd: s.costEstimatedUSD } : {}), estimated: true, unpriced };
 }

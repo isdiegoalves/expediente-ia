@@ -2,6 +2,7 @@
 import { mkdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { costView } from '../../shared/stats';
 import type { AgentInfo, Notice } from '../../shared/types';
 import { AccountsService } from '../accounts/service';
 import { setQuiet } from '../log';
@@ -913,6 +914,38 @@ describe('ClaudeWatcher — contexto e custo calculado', () => {
       c.watcher.stop();
       c.tmp.cleanup();
     }
+  });
+});
+
+describe('ClaudeWatcher — cost-state e subagentes', () => {
+  const rodar = async (subAt: number) => {
+    const c = setup();
+    try {
+      const uso = { input_tokens: 200_000, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
+      const T = c.now() - 7_200_000;
+      writeLines(c.transcript('sess-cs'), [L.assistant([L.text('oi')], { msgId: 'm1', at: T, model: 'claude-opus-5', usage: uso }), L.raw('cost-state', { totalCostUSD: 7 })]);
+      const sub = c.subFile('sess-cs', 'velho', { agentType: 'Explore', description: 'Mapear', requestShape: 'foreground' }, [
+        L.assistant([L.text('feito')], { msgId: 's1', at: T + subAt, model: 'claude-opus-5', usage: uso, agentId: 'velho', stop: 'end_turn' }),
+      ]);
+      const antigo = new Date(c.now() - 3_600_000);
+      utimesSync(sub, antigo, antigo);
+      c.openSession(703, 'sess-cs');
+      c.watcher.boot();
+      await c.watcher.idle();
+      c.poll();
+      return costView(c.agent('.claude:703')!.stats);
+    } finally {
+      c.watcher.stop();
+      c.tmp.cleanup();
+    }
+  };
+
+  it('subagente com mensagem depois do cost-state do principal: o valor soma a parte dele e fica marcado', async () => {
+    expect(await rodar(60_000)).toEqual({ usd: 8, estimated: true, unpriced: [] });
+  });
+
+  it('subagente cujas mensagens já estavam no cost-state não muda o valor exato', async () => {
+    expect(await rodar(-60_000)).toEqual({ usd: 7, estimated: false, unpriced: [] });
   });
 });
 

@@ -32,6 +32,7 @@ import {
 import { FileTail } from './tail';
 import {
   createTranscriptState,
+  custoDepoisDe,
   mergePrefix,
   parseLine,
   scanPrefix,
@@ -110,7 +111,7 @@ interface SessionTracker {
   customTitleFile?: string;
   subs: Map<string, SubTracker>;
   /** Custo calculado de cada subagente da sessão (também dos que já saíram do escritório): o `cost-state` do principal os inclui. */
-  subCost: Map<string, { usd: number; unpriced: string[] }>;
+  subCost: Map<string, { usd: number; unpriced: string[]; log: TranscriptState['costLog']; msgs: number }>;
   /** Arquivos de subagentes já vistos e fora do escritório: tamanho conhecido. */
   known: Map<string, number>;
   spawns: Map<string, SpawnInfo & { owner: string }>;
@@ -531,23 +532,29 @@ export class ClaudeWatcher {
     if (!t.subCost.size) return;
     let usd = stats.costEstimatedUSD ?? 0;
     const unpriced = new Set(stats.unpricedModels);
+    let depois = stats.costAfterUSD;
     for (const c of t.subCost.values()) {
       usd += c.usd;
       for (const m of c.unpriced) unpriced.add(m);
+      if (t.state.costSeen) {
+        const d = custoDepoisDe(c.log, t.state.costAnchor ?? Number.NEGATIVE_INFINITY);
+        if (d.n) depois = (depois ?? 0) + d.usd;
+      }
     }
+    if (depois !== undefined) stats.costAfterUSD = Math.round(depois * 10_000) / 10_000;
     stats.costEstimatedUSD = Math.round(usd * 10_000) / 10_000;
     if (unpriced.size) stats.unpricedModels = [...unpriced];
   }
 
   /** Custo de um subagente que já terminou (ou que a sessão não reabriu): lido do arquivo inteiro, em segundo plano. */
   private queueSubCost(t: SessionTracker, file: SubagentFile): void {
-    t.subCost.set(file.agentId, { usd: 0, unpriced: [] });
+    t.subCost.set(file.agentId, { usd: 0, unpriced: [], log: [], msgs: 0 });
     this.prefixChain = this.prefixChain
       .then(async () => {
         if (this.stopped) return;
         const { state } = await scanPrefix(file.path, statSync(file.path).size, new Set());
         if (t.subs.has(file.agentId)) return;
-        t.subCost.set(file.agentId, { usd: state.estimatedCost, unpriced: [...state.unpriced] });
+        t.subCost.set(file.agentId, { usd: state.estimatedCost, unpriced: [...state.unpriced], log: state.costLog, msgs: state.costLog.length });
         this.applyMainSummary(t);
       })
       .catch((err) => log.warnOnce(`subcost:${file.path}`, `Não foi possível calcular o custo de um subagente (${errMsg(err)}).`));
@@ -716,7 +723,7 @@ export class ClaudeWatcher {
       }
     }
     t.scanned = true;
-    if (!t.state.costSeen) for (const file of files) if (!t.subs.has(file.agentId) && !t.subCost.has(file.agentId)) this.queueSubCost(t, file);
+    for (const file of files) if (!t.subs.has(file.agentId) && !t.subCost.has(file.agentId)) this.queueSubCost(t, file);
   }
 
   /**
@@ -828,8 +835,8 @@ export class ClaudeWatcher {
   private applySubSummary(sub: SubTracker, t: SessionTracker): void {
     const s = sub.state;
     const antes = t.subCost.get(sub.agentId);
-    if (antes?.usd !== s.estimatedCost || antes.unpriced.length !== s.unpriced.size) {
-      t.subCost.set(sub.agentId, { usd: s.estimatedCost, unpriced: [...s.unpriced] });
+    if (antes?.usd !== s.estimatedCost || antes.unpriced.length !== s.unpriced.size || antes.msgs !== s.costLog.length) {
+      t.subCost.set(sub.agentId, { usd: s.estimatedCost, unpriced: [...s.unpriced], log: s.costLog, msgs: s.costLog.length });
       this.applyMainSummary(t);
     }
     const summary: TranscriptSummary = { tasks: s.tasks, stats: { ...s.stats } };

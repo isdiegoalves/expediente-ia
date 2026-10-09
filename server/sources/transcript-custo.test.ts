@@ -1,6 +1,7 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { costView } from '../../shared/stats';
 import { L, tempDir } from '../test/fixtures';
 import { FileTail } from './tail';
 import { createTranscriptState, mergePrefix, parseLine, scanPrefix, type TranscriptState } from './transcript';
@@ -120,5 +121,60 @@ describe('contexto, compactações e custo calculado', () => {
     } finally {
       tmp.cleanup();
     }
+  });
+});
+
+describe('cost-state exato só quando cobre a sessão inteira', () => {
+  const m = (id: string, at: number) => L.assistant([L.text('x')], { msgId: id, at, model: 'claude-opus-5', usage: uso({ input_tokens: 1_000_000 }) });
+
+  it('mensagens depois da última linha cost-state entram no valor, que fica marcado como estimado', () => {
+    const s = createTranscriptState();
+    feed(s, [m('m1', T0), L.raw('cost-state', { totalCostUSD: 9 }), m('m2', T0 + 1000), m('m3', T0 + 2000)]);
+    expect(costView(s.stats)).toEqual({ usd: 19, estimated: true, unpriced: [] });
+  });
+
+  it('um cost-state novo zera o que veio depois do anterior', () => {
+    const s = createTranscriptState();
+    feed(s, [m('m1', T0), L.raw('cost-state', { totalCostUSD: 9 }), m('m2', T0 + 1000), L.raw('cost-state', { totalCostUSD: 14 })]);
+    expect(costView(s.stats)).toEqual({ usd: 14, estimated: false, unpriced: [] });
+  });
+
+  it('cost-state sem nada depois continua exato', () => {
+    const s = createTranscriptState();
+    feed(s, [m('m1', T0), L.raw('cost-state', { totalCostUSD: 9 })]);
+    expect(costView(s.stats)).toEqual({ usd: 9, estimated: false, unpriced: [] });
+  });
+
+  it('mensagem de modelo sem preço depois do cost-state também tira a marca de exato', () => {
+    const s = createTranscriptState();
+    feed(s, [
+      L.raw('cost-state', { totalCostUSD: 9 }),
+      L.assistant([L.text('x')], { msgId: 'q1', at: T0, model: 'Qwen3.8-27B-4bit', usage: uso({ input_tokens: 10 }) }),
+    ]);
+    expect(costView(s.stats)).toMatchObject({ usd: 9, estimated: true, unpriced: ['Qwen3.8-27B-4bit'] });
+  });
+
+  it('processo que começou depois da primeira mensagem e valor abaixo da estimativa: mostra a estimativa, marcada', () => {
+    const s = createTranscriptState();
+    feed(s, [m('m1', T0), m('m2', T0 + 3_600_000), L.raw('cost-state', { totalCostUSD: 3, startTime: T0 + 1_800_000 })]);
+    expect(costView(s.stats)).toEqual({ usd: 10, estimated: true, unpriced: [] });
+  });
+
+  it('processo que começou antes da primeira mensagem, ou valor que já alcança a estimativa, continua exato', () => {
+    const cedo = createTranscriptState();
+    feed(cedo, [m('m1', T0), m('m2', T0 + 1000), L.raw('cost-state', { totalCostUSD: 3, startTime: T0 - 5000 })]);
+    expect(costView(cedo.stats)).toEqual({ usd: 3, estimated: false, unpriced: [] });
+    const alto = createTranscriptState();
+    feed(alto, [m('m1', T0), m('m2', T0 + 1000), L.raw('cost-state', { totalCostUSD: 12, startTime: T0 + 500 })]);
+    expect(costView(alto.stats)).toEqual({ usd: 12, estimated: false, unpriced: [] });
+  });
+
+  it('cost-state no prefixo e mensagens depois dele na janela do fim continuam estimadas', () => {
+    const prefix = createTranscriptState();
+    feed(prefix, [m('p1', T0), L.raw('cost-state', { totalCostUSD: 9, startTime: T0 - 1 })]);
+    const janela = createTranscriptState();
+    feed(janela, [m('t1', T0 + 1000)]);
+    mergePrefix(janela, prefix);
+    expect(costView(janela.stats)).toEqual({ usd: 14, estimated: true, unpriced: [] });
   });
 });

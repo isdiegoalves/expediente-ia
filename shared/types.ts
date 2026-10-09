@@ -124,6 +124,10 @@ export interface AgentStats {
   compactions?: CompactionInfo[];
   /** Custo calculado dos `usage` e da tabela de preços; só vale quando falta `costUSD` (linha `cost-state`). */
   costEstimatedUSD?: number;
+  /** Estimativa das mensagens (principal e subagentes) depois da última linha `cost-state`; presente só quando há alguma. */
+  costAfterUSD?: number;
+  /** O processo do último `cost-state` começou depois da primeira mensagem: o `costUSD` pode cobrir só parte da sessão. */
+  costPartial?: boolean;
   /** Modelos que apareceram sem preço na tabela: o custo estimado não os inclui. */
   unpricedModels?: string[];
 }
