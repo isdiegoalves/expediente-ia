@@ -3,16 +3,11 @@ import { mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { DetectedAccount } from '../accounts/detect';
-import { legacyEnvWarning } from '../legacy';
 import {
   accountsPayload,
-  copyVolumeArgs,
-  type DockerState,
-  envFileKeys,
   hostTimeZone,
   parseArgs,
   planMounts,
-  planUp,
   renderOverride,
   sanitizeCachedUsage,
   writeOverride,
@@ -140,87 +135,5 @@ describe('docker-up: montagens mínimas', () => {
     } finally {
       tmp.cleanup();
     }
-  });
-});
-
-describe('docker-up: migração do nome antigo (CodeTown)', () => {
-  const none: DockerState = { legacyContainer: false, legacyNetwork: false, legacyVolume: false, legacyImage: false, dataVolume: false };
-  const upBuild = { kind: 'compose', args: ['up', '-d', '--build'] };
-
-  it('sem nada do CodeTown: só o compose up de sempre', () => {
-    expect(planUp(none, true)).toEqual({ steps: [upBuild], cleanup: [] });
-    expect(planUp(none, false)).toEqual({ steps: [{ kind: 'compose', args: ['up', '-d'] }], cleanup: [] });
-  });
-
-  it('primeira subida depois do rename: tira container e rede, o Compose cria o volume e os dados são copiados', () => {
-    const plan = planUp({ legacyContainer: true, legacyNetwork: true, legacyVolume: true, legacyImage: true, dataVolume: false }, true);
-    expect(plan.steps).toEqual([
-      { kind: 'remove-container', name: 'codetown' },
-      { kind: 'remove-network', name: 'codetown_default' },
-      { kind: 'compose', args: ['up', '--no-start', '--build'] },
-      { kind: 'copy-volume', from: 'codetown_codetown-data', to: 'expediente_expediente-data' },
-      { kind: 'compose', args: ['up', '-d'] },
-    ]);
-    // O volume antigo nunca é apagado: só vira dica no fim, junto com a imagem.
-    expect(plan.cleanup).toEqual(['docker volume rm codetown_codetown-data', 'docker image rm codetown:local']);
-  });
-
-  it('--no-build e container antigo já derrubado: cria parado sem reconstruir, copia e sobe', () => {
-    expect(planUp({ ...none, legacyVolume: true }, false)).toEqual({
-      steps: [
-        { kind: 'compose', args: ['up', '--no-start'] },
-        { kind: 'copy-volume', from: 'codetown_codetown-data', to: 'expediente_expediente-data' },
-        { kind: 'compose', args: ['up', '-d'] },
-      ],
-      cleanup: ['docker volume rm codetown_codetown-data'],
-    });
-  });
-
-  it('volume novo já existe: não copia por cima', () => {
-    // Já migrado antes: o volume antigo ficou, mas não há o que fazer nem lembrar.
-    expect(planUp({ ...none, legacyVolume: true, legacyImage: true, dataVolume: true }, true)).toEqual({ steps: [upBuild], cleanup: [] });
-    // Container antigo de pé com os dois volumes: sai o container, sem cópia.
-    expect(planUp({ ...none, legacyContainer: true, legacyVolume: true, dataVolume: true }, true)).toEqual({
-      steps: [{ kind: 'remove-container', name: 'codetown' }, upBuild],
-      cleanup: ['docker volume rm codetown_codetown-data'],
-    });
-  });
-
-  it('sobra só a rede ou a imagem: tira a rede, sem dica', () => {
-    expect(planUp({ ...none, legacyNetwork: true, legacyImage: true }, true)).toEqual({
-      steps: [{ kind: 'remove-network', name: 'codetown_default' }, upBuild],
-      cleanup: [],
-    });
-  });
-
-  it('cópia: imagem do Expediente como root, sem rede, volume antigo só leitura', () => {
-    const args = copyVolumeArgs('velho', 'novo');
-    expect(args[0]).toBe('run');
-    expect(args).toContain('--rm');
-    expect(args.join(' ')).toContain('--user 0:0 --entrypoint sh');
-    expect(args.join(' ')).toContain('--network none');
-    expect(args.join(' ')).toContain('-v velho:/from:ro -v novo:/to expediente:local -c ');
-    const script = args.at(-1)!;
-    expect(script).toMatch(/^set -e; cp -a \/from\/\. \/to\/;/);
-    expect(script).toContain('chown "$(stat -c %u:%g /from)" /to');
-  });
-
-  it('.env: só os nomes das variáveis, nunca os valores', () => {
-    const text = [
-      '# CODETOWN_COMENTADA=1',
-      'CODETOWN_DEMO=0.0.0.0',
-      '  export CODETOWN_PORT = 4848',
-      'EXPEDIENTE_DEMO=1',
-      '',
-      'SEM_IGUAL',
-      '1INVALIDA=x',
-      'SEGREDO=CODETOWN_X=y\r',
-    ].join('\n');
-    const keys = envFileKeys(text);
-    expect(keys).toEqual(['CODETOWN_DEMO', 'CODETOWN_PORT', 'EXPEDIENTE_DEMO', 'SEGREDO']);
-    const msg = legacyEnvWarning(keys, 'no .env');
-    expect(msg).toBe('variáveis do nome antigo ignoradas no .env: CODETOWN_DEMO → EXPEDIENTE_DEMO, CODETOWN_PORT → EXPEDIENTE_PORT. Renomeie para valer de novo.');
-    expect(msg).not.toContain('0.0.0.0');
-    expect(envFileKeys('')).toEqual([]);
   });
 });

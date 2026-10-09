@@ -22,7 +22,6 @@ import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { discoverClaudeDirs, expandHome, isDefaultDir } from '../server/accounts/detect';
-import { describeStateMigration, LEGACY_NAME, migrateLegacyStateDir } from '../server/legacy';
 
 const DEFAULT_PORT = 4848;
 
@@ -46,22 +45,6 @@ function usageDirOf(env: NodeJS.ProcessEnv, home: string): string {
   return d ? resolve(d.replace(/^~(?=\/|$)/, home)) : join(home, '.expediente', 'host', 'uso');
 }
 
-/** Leva ~/.codetown (nome antigo) para ~/.expediente. Devolve a linha para a saída (undefined = nada a fazer). */
-function migrateLegacyState(home: string, dryRun: boolean): string | undefined {
-  if (dryRun) {
-    let legacy = false;
-    try {
-      legacy = statSync(join(home, `.${LEGACY_NAME}`)).isDirectory();
-    } catch {
-      legacy = false;
-    }
-    return legacy ? `~ ~/.${LEGACY_NAME} (nome antigo) vai para ~/.expediente (simulação: nada movido)` : undefined;
-  }
-  const r = migrateLegacyStateDir(home);
-  const msg = describeStateMigration(r);
-  return msg && `${r.error ? '!' : '✓'} ${msg}`;
-}
-
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 /** Nome do marketplace em .claude-plugin/marketplace.json (contrato com mod/). */
@@ -70,10 +53,6 @@ export const MARKETPLACE = 'expediente';
 export const MOD_PLUGIN = `expediente@${MARKETPLACE}`;
 /** O hook PermissionRequest de responder pelo escritório, empacotado como plugin. */
 export const PERMISSIONS_PLUGIN = `expediente-permissoes@${MARKETPLACE}`;
-/** Marketplace do nome antigo (CodeTown, até a 0.3.2): a mesma pasta, registrada com o nome que ela tinha. */
-export const LEGACY_MARKETPLACE = LEGACY_NAME;
-/** Os plugins que vinham dele (o mod e o de permissões, com o nome antigo). */
-export const LEGACY_PLUGINS = [`${LEGACY_NAME}@${LEGACY_MARKETPLACE}`, `${LEGACY_NAME}-permissoes@${LEGACY_MARKETPLACE}`] as const;
 /** Primeira versão do Claude Code (terminal) que carrega mods. */
 export const MIN_CLAUDE_VERSION = '2.1.287';
 /** Os plugins vão sempre para o escopo do usuário: valem em todos os projetos da conta. */
@@ -85,7 +64,7 @@ const USAGE = `Uso: npm run <instalar|desinstalar|instalar:status> [-- opções]
 
   instalar          instala o mod do Expediente no Claude Code de cada conta (marketplace desta pasta + plugin),
                     só por \`claude plugin\`; o settings.json das contas nunca é editado por este script
-  desinstalar       tira os plugins e o marketplace do Expediente de cada conta (e os do nome antigo, se sobraram)
+  desinstalar       tira os plugins e o marketplace do Expediente de cada conta
   instalar:status   mostra, por conta, o marketplace e os plugins (e versões)
 
 Opções:
@@ -260,30 +239,12 @@ export function parseMarketplaceList(stdout: string): MarketplaceInfo[] | undefi
 /** O que uma conta tem do Expediente no Claude Code. */
 export interface AccountState {
   marketplace?: MarketplaceInfo;
-  /** O marketplace do nome antigo (codetown), se ainda estiver registrado. */
-  legacyMarketplace?: MarketplaceInfo;
   plugins: PluginInfo[];
 }
 
 /** A instalação de `id` no escopo do usuário (o único que este script gerencia). */
 export function userInstall(state: AccountState, id: string): PluginInfo | undefined {
   return state.plugins.find((p) => p.id === id && (p.scope === SCOPE || p.scope === undefined));
-}
-
-/** Plugins do nome antigo no escopo do usuário. */
-export function legacyPlugins(state: AccountState): PluginInfo[] {
-  return LEGACY_PLUGINS.map((id) => userInstall(state, id)).filter((p): p is PluginInfo => !!p);
-}
-
-/**
- * Os restos do nome antigo numa frase ("marketplace codetown, codetown@codetown 0.3.2"), ou undefined se não
- * sobrou nada. `where` descreve a pasta do marketplace (o status diz se é esta).
- */
-export function legacySummary(state: AccountState, where?: (m: MarketplaceInfo) => string): string | undefined {
-  const parts = legacyPlugins(state).map((p) => `${p.id}${p.version ? ` ${p.version}` : ''}`);
-  const m = state.legacyMarketplace;
-  if (m) parts.unshift(`marketplace ${LEGACY_MARKETPLACE}${where ? ` (${where(m)})` : ''}`);
-  return parts.length ? parts.join(', ') : undefined;
 }
 
 /** Uma chamada ao CLI, com a frase que conta o que ela faz. */
@@ -293,8 +254,6 @@ export interface CliStep {
   message: string;
   /** Plugin que depende deste passo (falhou = não conta como instalado). */
   plugin?: string;
-  /** Se falhar, os passos seguintes da instalação rodam assim mesmo (a falha ainda conta no fim). */
-  keepGoing?: boolean;
 }
 
 /** Item do plano, na ordem da saída: uma chamada ao CLI ou algo que já está certo (vira "="). */
@@ -349,23 +308,7 @@ export function habblaudPermissionsActive(state: AccountState): PluginInfo | und
 const shortName = (id: string) => id.split('@')[0];
 
 /**
- * Passos que tiram os restos do nome antigo: os plugins (escopo do usuário) e depois o marketplace. Um plugin
- * que não sair não segura os passos seguintes: tirar o marketplace leva junto o que veio dele.
- */
-function legacySteps(state: AccountState): CliStep[] {
-  const steps: CliStep[] = legacyPlugins(state).map((p) => ({
-    args: ['plugin', 'uninstall', p.id, '--scope', SCOPE],
-    message: `${shortName(p.id)} (nome antigo): removido`,
-    keepGoing: true,
-  }));
-  if (state.legacyMarketplace) {
-    steps.push({ args: ['plugin', 'marketplace', 'remove', LEGACY_MARKETPLACE], message: `marketplace ${LEGACY_MARKETPLACE} (nome antigo): removido` });
-  }
-  return steps;
-}
-
-/**
- * Passos de instalação de uma conta, a partir do que ela já tem. Os restos do nome antigo saem primeiro. O
+ * Passos de instalação de uma conta, a partir do que ela já tem. O
  * marketplace é adicionado (ou, se já existe, tem o catálogo relido; se apontava para outra pasta, passa a
  * apontar para esta). Cada plugin é instalado, religado (se estava desligado) ou atualizado (se a versão
  * registrada difere da do package.json).
@@ -373,9 +316,6 @@ function legacySteps(state: AccountState): CliStep[] {
 export function planInstall(state: AccountState, o: PlanOptions): InstallPlan {
   const same = o.sameDir ?? sameDir;
   const plan: InstallPlan = { items: [], notes: [], plugins: [], refusals: [] };
-  // O marketplace codetown aponta para esta mesma pasta: ele sai antes de o expediente entrar, para nunca ficarem
-  // dois nomes registrados para a mesma pasta (um deles que o manifesto não tem mais).
-  plan.items.push(...legacySteps(state));
   const m = state.marketplace;
   if (!m) {
     plan.items.push({ args: ['plugin', 'marketplace', 'add', o.root], message: `marketplace ${MARKETPLACE}: adicionado (esta pasta)` });
@@ -435,12 +375,12 @@ export function planInstall(state: AccountState, o: PlanOptions): InstallPlan {
 }
 
 /**
- * Passos de remoção: os restos do nome antigo (se houver), os plugins do escopo do usuário e o marketplace, só o
+ * Passos de remoção: os plugins do escopo do usuário e o marketplace, só o
  * que existir. (Tirar o marketplace já desinstalaria o que veio dele, mas um passo por plugin deixa claro, na
  * saída, o que saiu.)
  */
 export function planUninstall(state: AccountState): InstallPlan {
-  const plan: InstallPlan = { items: [...legacySteps(state)], notes: [], plugins: [], refusals: [] };
+  const plan: InstallPlan = { items: [], notes: [], plugins: [], refusals: [] };
   for (const id of [MOD_PLUGIN, PERMISSIONS_PLUGIN]) {
     const name = shortName(id);
     if (userInstall(state, id)) plan.items.push({ args: ['plugin', 'uninstall', id, '--scope', SCOPE], message: `${name}: removido`, plugin: id });
@@ -473,10 +413,6 @@ export type UpdatePlan =
 
 export function planUpdate(state: AccountState, o: { root: string; version: string; sameDir?: (a: string, b: string) => boolean }): UpdatePlan {
   const same = o.sameDir ?? sameDir;
-  // Nome antigo: a troca (tirar o codetown, instalar o expediente) é do instalar; aqui só o aviso. Um aviso conta
-  // como "instalado", então a dica de instalar do zero não aparece para quem já usava o mod.
-  const legacy = legacySummary(state);
-  if (legacy) return { action: 'warn', message: `ainda com o nome antigo (${legacy}); o docker:up não troca sozinho: rode npm run instalar` };
   const installed = [MOD_PLUGIN, PERMISSIONS_PLUGIN].map((id) => userInstall(state, id)).filter((p): p is PluginInfo => !!p);
   if (!installed.length) return { action: 'none', installed: false };
   const stale = installed.filter((p) => p.version !== o.version);
@@ -529,8 +465,6 @@ export function describeStatus(state: AccountState, o: { root: string; version: 
       lines.push(`${name}: ${parts.join(', ')}`);
     }
   }
-  const legacy = legacySummary(state, (lm) => (lm.path && same(lm.path, o.root) ? 'esta pasta' : lm.path ? tildify(lm.path, o.home) : (lm.source ?? '?')));
-  if (legacy) lines.push(`! nome antigo ainda registrado: ${legacy}; npm run instalar troca pelo expediente`);
   return lines;
 }
 
@@ -622,7 +556,7 @@ export function readAccountState(claude: ClaudeRunner, env: NodeJS.ProcessEnv): 
   if (pr.error || pr.code !== 0) return { error: `não consegui listar os plugins (${cliMessage(pr)})` };
   const plugins = parsePluginList(pr.stdout);
   if (!plugins) return { error: 'não entendi a lista de plugins do Claude Code' };
-  return { marketplace: markets.find((m) => m.name === MARKETPLACE), legacyMarketplace: markets.find((m) => m.name === LEGACY_MARKETPLACE), plugins };
+  return { marketplace: markets.find((m) => m.name === MARKETPLACE), plugins };
 }
 
 /** Pastas das contas: as de --conta (que precisam existir) ou as detectadas. */
@@ -695,11 +629,6 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
     out(`Claude Code ${cliVersion ?? '(versão desconhecida)'}${cliVersion && !versionAtLeast(cliVersion, MIN_CLAUDE_VERSION) ? ` — o mod precisa do ${MIN_CLAUDE_VERSION}+` : ''} · Expediente ${ctx.version} em ${tildify(ctx.root, home)}`);
   }
 
-  // Nome antigo: ~/.codetown vira ~/.expediente antes de criar (ou usar) a pasta do uso.
-  if (opts.command === 'install') {
-    const moved = migrateLegacyState(home, opts.dryRun);
-    if (moved) out(moved);
-  }
   // O mod grava o uso em ~/.expediente/host/uso, mas não cria a pasta (o docker:up monta ~/.expediente/host no container).
   if (opts.command === 'install' && !opts.dryRun) {
     const usageDir = usageDirOf(env, home);
@@ -753,8 +682,7 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
         continue;
       }
       // Na instalação, depois de uma falha os passos seguintes desta conta não rodam (sem marketplace não há
-      // plugin), menos depois de um plugin do nome antigo que não saiu (o marketplace dele o leva junto). Na
-      // remoção, segue: o que der para tirar, sai.
+      // plugin). Na remoção, segue: o que der para tirar, sai.
       if (broken && opts.command === 'install') {
         if (item.plugin) failed.add(item.plugin);
         continue;
@@ -768,7 +696,7 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
         out(`  ✗ ${item.message.split(':')[0]}: falhou (${cliMessage(r)})`);
         if (item.plugin) failed.add(item.plugin);
         stepFailed = true;
-        if (!item.keepGoing) broken = true;
+        broken = true;
       }
     }
     if (stepFailed) failures++;
@@ -780,8 +708,6 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
       const after = readAccountState(ctx.claude, cenv);
       if (!('error' in after)) {
         for (const w of verifyInstall(after, plan.plugins, ctx.version)) out(`  ! ${w}`);
-        const legacy = legacySummary(after);
-        if (legacy) out(`  ! nome antigo ainda registrado: ${legacy}; rode npm run instalar de novo (ou confira com npm run instalar:status)`);
       }
     }
   }

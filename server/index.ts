@@ -16,7 +16,6 @@ import { TerminalStreams } from './http/terminal';
 import { createTimelineHandler } from './http/timeline';
 import { TIMELINE_DIR, TimelineRecorder } from './history/timeline';
 import { DayStatsService } from './history/daystats';
-import { describeStateMigration, legacyEnvWarning, migrateLegacyStateDir } from './legacy';
 import { errMsg, log } from './log';
 import { NameStore } from './model/names';
 import { Office } from './model/office';
@@ -32,16 +31,6 @@ const config = loadConfig();
 // Terminal, histórico e permissões: no container só com a publicação da porta confirmada pelo docker-up.
 const gate = createTerminalGate({ terminal: config.terminal, inDocker: config.inDocker, file: join(config.dataDir, PUBLICACAO_ARQUIVO) });
 const startedAt = Date.now();
-
-// Nome antigo (CodeTown, até a 0.3.2): leva ~/.codetown para ~/.expediente antes de ler qualquer estado e avisa
-// das variáveis CODETOWN_* que não valem mais. No Docker, quem migra é o docker:up.
-if (!config.inDocker) {
-  const r = migrateLegacyStateDir(config.home);
-  const msg = describeStateMigration(r);
-  if (msg) (r.error ? log.warn : log.info)(msg);
-}
-const legacyEnv = legacyEnvWarning(Object.keys(process.env));
-if (legacyEnv) log.warn(legacyEnv);
 
 const names = new NameStore(join(config.dataDir, 'names.json'));
 names.load();

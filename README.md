@@ -210,29 +210,6 @@ O `docker:up` também atualiza o mod nas contas em que ele já está instalado (
 "Mod atualizado para 0.3.0 na Conta D; sessões abertas: /reload-plugins". No modo Node, rode `npm run instalar`
 depois de atualizar. Para não consultar o GitHub, use `EXPEDIENTE_UPDATE_CHECK=0` (no `.env`, para o Docker).
 
-#### Vindo do CodeTown
-
-O Expediente se chamava **CodeTown** até a 0.3.2. Depois do `git pull`, rode uma vez:
-
-```bash
-npm install
-npm run instalar         # troca o marketplace e os plugins codetown pelos expediente, em cada conta
-npm run docker:up        # tira o container codetown e copia os dados do volume antigo para o novo
-```
-
-- **Mod:** até o `instalar`, o Claude Code das contas reclama do marketplace `codetown` (as pastas
-  `mod/codetown*` mudaram de nome). O `docker:up` avisa, mas não troca sozinho.
-- **Docker:** o volume antigo (`codetown_codetown-data`) fica intacto. Depois de conferir que os nomes dos personagens
-  vieram, apague-o com `docker volume rm codetown_codetown-data`, e a imagem antiga com `docker image rm codetown:local`.
-- **Pasta local:** `~/.codetown` vira `~/.expediente` sozinha (no servidor, no `docker:up` e no `instalar`).
-- **Navegador:** preferências e moedinhas passam para as chaves novas na primeira vez que a página abre.
-- **Variáveis:** as `CODETOWN_*` não valem mais; renomeie para `EXPEDIENTE_*` no `.env` (ex.: `EXPEDIENTE_PORT`). O
-  servidor e o `docker:up` avisam quando acham uma antiga.
-- **Repositório:** agora é `github.com/marmottajr/habblaud` (o GitHub redireciona o endereço antigo). Para acertar o
-  clone: `git remote set-url origin https://github.com/marmottajr/habblaud.git`. A pasta local pode continuar com o
-  nome antigo.
-- Backups do `settings.json` feitos antes da troca continuam com o nome `settings.json.codetown-backup-<data>`.
-
 ### Desinstalar
 
 ```bash

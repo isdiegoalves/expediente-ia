@@ -206,17 +206,21 @@ describe('instalar.ts (CLI falso, HOME falso)', () => {
       conta.marketplaces.set('habblaud', '/habblaud');
       conta.plugins.set('habblaud@habblaud', { version: '1.0.0', enabled: true });
       conta.plugins.set('habblaud-permissoes@habblaud', { version: '1.0.0', enabled: true });
-      conta.marketplaces.set('codetown', root);
+      conta.marketplaces.set('codetown', '/habblaud-antigo');
       conta.plugins.set('codetown@codetown', { version: '0.3.2', enabled: true });
+      conta.plugins.set('codetown-permissoes@codetown', { version: '0.3.2', enabled: true });
     }
     await exec('install', { permissions: true });
     await exec('uninstall');
     const remocoes = fake.calls.filter((c) => c.args[1] === 'uninstall' || (c.args[1] === 'marketplace' && c.args[2] === 'remove'));
     expect(remocoes.length).toBeGreaterThan(0);
-    for (const c of remocoes) expect(c.args.join(' ')).not.toMatch(/habblaud/i);
+    for (const c of remocoes) expect(c.args.join(' ')).not.toMatch(/habblaud|codetown/i);
     for (const acc of ['.claude', '.claude-conta2']) {
       expect(installed(acc)['habblaud@habblaud']).toBeDefined();
       expect(installed(acc)['habblaud-permissoes@habblaud']).toBeDefined();
+      expect(installed(acc)['codetown@codetown']).toBeDefined();
+      expect(installed(acc)['codetown-permissoes@codetown']).toBeDefined();
+      expect(fake.account(join(home, acc)).marketplaces.has('codetown')).toBe(true);
     }
   });
 

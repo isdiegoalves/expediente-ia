@@ -12,26 +12,21 @@
 //    credenciais e configurações — e a ponte do mod (~/.expediente/host, criada se faltar) em /host,
 //    também somente leitura. Passa EXPEDIENTE_CLAUDE_DIRS, EXPEDIENTE_ACCOUNTS, EXPEDIENTE_USAGE_DIR (/host/uso)
 //    e o fuso do host (TZ) ao container.
-// 3. Migra o que sobrou do nome antigo (CodeTown, até a 0.3.2): ~/.codetown vira ~/.expediente, o container
-//    `codetown` e a rede codetown_default saem e, se o volume novo ainda não existe, os dados de
-//    codetown_codetown-data são copiados para ele (o antigo fica, para apagar à mão). Avisa de CODETOWN_*
-//    no ambiente e no .env, que não valem mais.
-// 4. Roda `docker compose up -d --build`, espera o /api/health e mostra a URL.
-// 5. Atualiza o mod do Expediente nas contas onde ele JÁ está instalado com outra versão (depois de
+// 3. Roda `docker compose up -d --build`, espera o /api/health e mostra a URL.
+// 4. Atualiza o mod do Expediente nas contas onde ele JÁ está instalado com outra versão (depois de
 //    atualizar o Expediente): relê o marketplace desta pasta e roda `claude plugin update` com o
 //    CLAUDE_CONFIG_DIR de cada conta. Nunca instala sozinho; se o `claude` faltar ou falhar, é só um aviso.
 //
 // Uso de 5h/semanal ao vivo: o mod do Expediente (npm run instalar; Claude Code 2.1.287+) grava os números em
 // ~/.expediente/host/uso, que o container lê em /host/uso. Sem ele, vale o cache do /usage lido das contas ao subir.
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { AccountInfo, SourceInfo } from '../shared/types';
 import { detectAccounts, discoverClaudeDirs, type DetectedAccount } from '../server/accounts/detect';
 import { PUBLICACAO_ARQUIVO, planejarConfirmacao } from '../server/publicacao';
-import { describeStateMigration, LEGACY_NAME, legacyEnvWarning, migrateLegacyStateDir } from '../server/legacy';
 import { makeClaudeRunner, MIN_CLAUDE_VERSION, readPackageVersion, updateInstalledMods, type ModUpdateResult } from './instalar';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -39,7 +34,6 @@ const HOME = process.env.HOME || homedir();
 const STATE_DIR = join(HOME, '.expediente');
 const OVERRIDE_FILE = join(ROOT, 'docker-compose.override.yml');
 /** O .env desta pasta, que o Compose lê sozinho. */
-const ENV_FILE = join(ROOT, '.env');
 /** Ponte do mod no host: a única pasta fora das contas que o container monta. */
 const HOST_DIR = join(STATE_DIR, 'host');
 /** Onde a ponte aparece no container, e onde o servidor lê o uso ao vivo. */
@@ -52,17 +46,6 @@ const CONTAINER_ROOT = '/claude';
 const MOUNTED_SUBDIRS = ['projects', 'sessions'] as const;
 const DEFAULT_PORT = 4848;
 const HEALTH_TIMEOUT_MS = 120_000;
-/** Imagem e volume de dados como o Compose os nomeia (`name: expediente` no docker-compose.yml). */
-const IMAGE = 'expediente:local';
-const DATA_VOLUME = 'expediente_expediente-data';
-/** O mesmo no CodeTown (até a 0.3.2), só para a migração: container_name fixo, rede padrão, volume e imagem. */
-const LEGACY_DOCKER = {
-  container: LEGACY_NAME,
-  network: `${LEGACY_NAME}_default`,
-  volume: `${LEGACY_NAME}_${LEGACY_NAME}-data`,
-  image: `${LEGACY_NAME}:local`,
-} as const;
-
 const USAGE = `Uso: npm run docker:up [-- opções]
 
 Opções:
@@ -296,106 +279,8 @@ export function modHint(mod: Pick<ModUpdateResult, 'installed' | 'unavailable'>)
 }
 
 // ---------------------------------------------------------------------------------------------
-// Nome antigo (CodeTown, até a 0.3.2): plano da subida no Docker e nomes do .env (funções puras)
-// ---------------------------------------------------------------------------------------------
-
-/** O que já existe no Docker antes de subir. */
-export interface DockerState {
-  /** Container `codetown` do CodeTown (container_name fixo: prende o nome e a porta). */
-  legacyContainer: boolean;
-  /** Rede codetown_default. */
-  legacyNetwork: boolean;
-  /** Volume codetown_codetown-data (nomes dos personagens, linha do tempo, estatísticas). */
-  legacyVolume: boolean;
-  /** Imagem codetown:local. */
-  legacyImage: boolean;
-  /** Volume de dados do Expediente (expediente_expediente-data). */
-  dataVolume: boolean;
-}
-
-export type UpStep =
-  | { kind: 'remove-container'; name: string }
-  | { kind: 'remove-network'; name: string }
-  | { kind: 'compose'; args: string[] }
-  | { kind: 'copy-volume'; from: string; to: string };
-
-export interface UpPlan {
-  steps: UpStep[];
-  /** Comandos para apagar o que sobrou do CodeTown, mostrados no fim quando esta subida migrou algo. */
-  cleanup: string[];
-}
-
-/**
- * Passos para subir o Expediente. Antes, tira do caminho o container do CodeTown e a rede dele. Se o volume antigo
- * existe e o novo ainda não, os dados são copiados: o Compose cria o volume (com os labels dele; um volume criado
- * à mão gera aviso e pedido para recriar) e o container, ainda parado; a cópia entra e só então ele sobe. O volume
- * antigo nunca é apagado aqui.
- */
-export function planUp(state: DockerState, build: boolean): UpPlan {
-  const steps: UpStep[] = [];
-  if (state.legacyContainer) steps.push({ kind: 'remove-container', name: LEGACY_DOCKER.container });
-  if (state.legacyNetwork) steps.push({ kind: 'remove-network', name: LEGACY_DOCKER.network });
-  const copy = state.legacyVolume && !state.dataVolume;
-  if (copy) {
-    steps.push(
-      { kind: 'compose', args: build ? ['up', '--no-start', '--build'] : ['up', '--no-start'] },
-      { kind: 'copy-volume', from: LEGACY_DOCKER.volume, to: DATA_VOLUME },
-      { kind: 'compose', args: ['up', '-d'] },
-    );
-  } else steps.push({ kind: 'compose', args: build ? ['up', '-d', '--build'] : ['up', '-d'] });
-
-  const cleanup: string[] = [];
-  if (state.legacyContainer || copy) {
-    if (state.legacyVolume) cleanup.push(`docker volume rm ${LEGACY_DOCKER.volume}`);
-    if (state.legacyImage) cleanup.push(`docker image rm ${LEGACY_DOCKER.image}`);
-  }
-  return { steps, cleanup };
-}
-
-/**
- * `docker run` descartável que copia o volume `from` (somente leitura) para `to` com a própria imagem do
- * Expediente, como root (ela roda como `node`) e sem rede; a raiz de `to` fica com o dono e as permissões da de
- * `from`. O --rm leva junto o volume anônimo do VOLUME /data da imagem.
- */
-export function copyVolumeArgs(from: string, to: string, image: string = IMAGE): string[] {
-  const script = 'set -e; cp -a /from/. /to/; chown "$(stat -c %u:%g /from)" /to; chmod "$(stat -c %a /from)" /to';
-  const flags = ['--rm', '--pull', 'never', '--network', 'none', '--no-healthcheck', '--user', '0:0', '--entrypoint', 'sh'];
-  return ['run', ...flags, '-v', `${from}:/from:ro`, '-v', `${to}:/to`, image, '-c', script];
-}
-
-/** Nomes das variáveis de um .env (linhas `NOME=valor`, com ou sem `export`). Os valores ficam de fora. */
-export function envFileKeys(text: string): string[] {
-  const keys: string[] = [];
-  for (const line of text.split(/\r?\n/)) {
-    const m = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/.exec(line);
-    if (m) keys.push(m[1]);
-  }
-  return keys;
-}
-
-// ---------------------------------------------------------------------------------------------
 // Estado no host (~/.expediente)
 // ---------------------------------------------------------------------------------------------
-
-/** Avisa das variáveis CODETOWN_* (nome antigo, ignoradas) no ambiente e no .env desta pasta. */
-function warnLegacyEnv(): void {
-  let fileKeys: string[] = [];
-  try {
-    fileKeys = envFileKeys(readFileSync(ENV_FILE, 'utf8'));
-  } catch {
-    // sem .env (o normal) ou ilegível: nada a avisar
-  }
-  for (const msg of [legacyEnvWarning(Object.keys(process.env)), legacyEnvWarning(fileKeys, 'no .env')]) {
-    if (msg) warn(msg);
-  }
-}
-
-/** Leva ~/.codetown (nome antigo) para ~/.expediente; roda antes de criar a pasta do uso, para ser um rename. */
-function migrateStateDir(): void {
-  const result = migrateLegacyStateDir(HOME);
-  const msg = describeStateMigration(result);
-  if (msg) (result.error ? warn : say)(msg);
-}
 
 /** Cria a ponte do mod se faltar e devolve o caminho real (ou undefined, se falhar). */
 function ensureHostDir(): string | undefined {
@@ -478,77 +363,6 @@ function confirmarPublicacao(): void {
   say(`Publicação confirmada só em 127.0.0.1 (${plano.publicacao.portas.map((p) => p.porta).join(', ')}): terminal, histórico e permissões ligados.`);
 }
 
-/** O que já existe no Docker do CodeTown e do Expediente (entrada de planUp). */
-function inspectDocker(): DockerState {
-  const exists = (kind: 'network' | 'volume' | 'image', name: string) => dockerQuiet([kind, 'inspect', name]).ok;
-  // Só sai o container `codetown` que é mesmo do CodeTown: da imagem antiga ou do projeto antigo do Compose.
-  const { container, image } = LEGACY_DOCKER;
-  const c = dockerQuiet(['container', 'inspect', '--format', '{{.Config.Image}} {{index .Config.Labels "com.docker.compose.project"}}', container]);
-  const [cImage = '', cProject = ''] = c.out.trim().split(' ');
-  const legacyContainer = c.ok && (cImage === image || cProject === LEGACY_NAME);
-  if (c.ok && !legacyContainer) warn(`existe um container ${container} que não é do CodeTown (imagem ${cImage || '?'}); ele fica como está.`);
-  return {
-    legacyContainer,
-    legacyNetwork: exists('network', LEGACY_DOCKER.network),
-    legacyVolume: exists('volume', LEGACY_DOCKER.volume),
-    legacyImage: exists('image', image),
-    dataVolume: exists('volume', DATA_VOLUME),
-  };
-}
-
-/** Copia os dados do volume do CodeTown para o do Expediente. Falha é só um aviso: o escritório sobe sem eles. */
-function copyVolume(from: string, to: string): boolean {
-  // O volume novo tem de vir do Compose: o `docker run -v` criaria um sem os labels dele.
-  if (!dockerQuiet(['volume', 'inspect', to]).ok) {
-    warn(`o Compose não criou o volume ${to}; os dados do CodeTown não foram copiados e continuam em ${from}.`);
-    return false;
-  }
-  say(`Copiando os dados do CodeTown (nomes dos personagens, linha do tempo e estatísticas) de ${from} para ${to}…`);
-  const res = dockerQuiet(copyVolumeArgs(from, to));
-  if (!res.ok) {
-    warn(
-      `não consegui copiar os dados do CodeTown (${res.error}). O escritório sobe sem eles; os dados continuam em ${from}.\n` +
-        `  Para tentar de novo: npm run docker:down && docker volume rm ${to} && npm run docker:up`,
-    );
-    return false;
-  }
-  say(`Dados copiados; o volume ${from} ficou intacto.`);
-  return true;
-}
-
-/** Executa os passos de planUp. Derrubam o docker:up só o Compose e o container antigo que não sai. */
-function runPlan(plan: UpPlan, build: boolean): { copyFailed: boolean } {
-  let copyFailed = false;
-  let created = false;
-  for (const step of plan.steps) {
-    switch (step.kind) {
-      case 'remove-container': {
-        say(`Removendo o container ${step.name} (CodeTown, o nome antigo)…`);
-        const res = dockerQuiet(['rm', '-f', step.name]);
-        if (!res.ok) fail(`não consegui remover o container antigo ${step.name} (${res.error}). Remova com docker rm -f ${step.name} e rode de novo.`);
-        break;
-      }
-      case 'remove-network': {
-        const res = dockerQuiet(['network', 'rm', step.name]);
-        if (!res.ok) warn(`não consegui remover a rede antiga ${step.name} (${res.error}); apague depois com docker network rm ${step.name}.`);
-        break;
-      }
-      case 'copy-volume':
-        copyFailed = !copyVolume(step.from, step.to);
-        break;
-      case 'compose':
-        if (step.args.includes('--no-start')) {
-          say(`${build ? 'Construindo a imagem e criando' : 'Criando'} o container, ainda parado, para receber os dados do CodeTown…`);
-          created = true;
-        } else if (created) say('Subindo o container…');
-        else say(build ? 'Construindo a imagem e subindo o container…' : 'Subindo o container (sem reconstruir a imagem)…');
-        compose(step.args);
-        break;
-    }
-  }
-  return { copyFailed };
-}
-
 interface Health {
   ok: boolean;
   version?: string;
@@ -594,7 +408,6 @@ function down(): void {
 
 async function up(opts: Options, port: number): Promise<void> {
   checkDocker();
-  warnLegacyEnv();
   const baseUrl = `http://127.0.0.1:${port}`;
   const publicUrl = `http://localhost:${port}`;
 
@@ -625,14 +438,13 @@ async function up(opts: Options, port: number): Promise<void> {
     if (!mounts.some((m) => m.hostDir === dir)) warn(`${tildify(dir)} não tem projects/ nem sessions/; conta ignorada.`);
   }
 
-  migrateStateDir();
   const hostDir = ensureHostDir();
   if (hostDir) say(`Ponte do mod: monta ${tildify(HOST_DIR)} em ${CONTAINER_HOST_DIR}, somente leitura.`);
   writeOverride(OVERRIDE_FILE, renderOverride(mounts, new Date(), hostDir, hostTimeZone()));
   say('docker-compose.override.yml gerado.');
 
-  const plan = planUp(inspectDocker(), opts.build);
-  const { copyFailed } = runPlan(plan, opts.build);
+  say(opts.build ? 'Construindo a imagem e subindo o container…' : 'Subindo o container (sem reconstruir a imagem)…');
+  compose(opts.build ? ['up', '-d', '--build'] : ['up', '-d']);
 
   say(`Aguardando o Expediente responder em ${publicUrl}…`);
   const health = await waitHealthy(baseUrl);
@@ -650,8 +462,6 @@ async function up(opts: Options, port: number): Promise<void> {
     say(`  Conta ${acc.short} (${acc.id}): ${state}${usage ? ` · ${USAGE_STATUS[usage]}` : ''}`);
   }
   for (const line of modHint(updateMods(dirs, accounts))) say(line);
-  // Com a cópia falha, os dados só existem no volume antigo: nada de sugerir apagá-lo.
-  if (plan.cleanup.length && !copyFailed) say(`  Sobrou do CodeTown; depois de conferir o escritório, apague com: ${plan.cleanup.join(' · ')}`);
   say('  Logs: npm run docker:logs · Parar: npm run docker:down');
 }
 
