@@ -216,6 +216,10 @@
     color 0.15s;
 }
 
+a.ui-btn {
+  text-decoration: none;
+}
+
 .ui-btn .ui-px-icon {
   width: 14px;
   height: 14px;

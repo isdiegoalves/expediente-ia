@@ -19,6 +19,7 @@ import {
   shortPath,
 } from './format';
 import { ICONS } from './icons';
+import { IrSection } from './ir';
 import {
   accountsOf,
   activityFallback,
@@ -218,6 +219,8 @@ class AgentView {
   private origin: HTMLElement;
   private appRow: HTMLElement;
   private appId: HTMLElement;
+  private ir = new IrSection();
+  private irSec: ReturnType<typeof section>;
 
   constructor(
     private ctx: UiContext,
@@ -273,6 +276,8 @@ class AgentView {
       h('span', { class: 'ui-term-cta__ro', text: 'somente leitura' }),
       h('kbd', { class: 'ui-kbd', text: 'T', attrs: { 'aria-hidden': 'true' } }),
     );
+
+    this.irSec = section('Ir para a sessão', this.ir.el);
 
     this.alertText = h('p', { class: 'ui-alert__text' });
     const alertIcon = h('span', { class: 'ui-alert__icon', attrs: { 'aria-hidden': 'true' } });
@@ -355,6 +360,7 @@ class AgentView {
       this.gone,
       statusRow,
       this.termBtn,
+      this.irSec.el,
       this.alert,
       this.perm.el,
       this.shellBox,
@@ -429,6 +435,8 @@ class AgentView {
     setTitle(this.origin, origin ? `Origem da sessão: ${origin.text}` : '');
     setHidden(this.appRow, !origin?.appSessionId);
     setText(this.appId, origin?.appSessionId ?? '');
+    setHidden(this.irSec.el, a.kind !== 'main');
+    this.ir.setAgent(a.id);
     setText(this.title, a.title ?? '');
     setHidden(this.title, !a.title);
     setTitle(this.title, a.title ?? '');
