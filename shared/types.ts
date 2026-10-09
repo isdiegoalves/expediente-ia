@@ -421,6 +421,13 @@ export interface ModAgentUsage {
   /** = AgentInfo.id. */
   id: string;
   name: string;
+  kind: AgentKind;
+  status: AgentStatus;
+  /** Nome exibido da sala (projeto). */
+  room: string;
+  /** Título da sessão (principal) ou descrição da tarefa (sub), já mascarado. */
+  title?: string;
+  origin?: AgentOrigin;
   context?: { tokens: number; window?: number; percent?: number };
   compactions: number;
   /** A compactação mais recente, com os tokens de `compactMetadata`. */

@@ -146,13 +146,15 @@ export function modSummary(
     agents: present.length,
     working: present.filter((a) => a.status === 'working').length,
     waiting,
-    usage: present.map(usageOf),
-    ...(self ? { self: usageOf(self) } : {}),
+    usage: present.map((a) => usageOf(a, rooms)),
+    ...(self ? { self: usageOf(self, rooms) } : {}),
   };
 }
 
-function usageOf(a: AgentInfo): ModAgentUsage {
-  const out: ModAgentUsage = { id: a.id, name: a.name, compactions: a.stats.compactionCount ?? 0 };
+function usageOf(a: AgentInfo, rooms: ReadonlyMap<string, string>): ModAgentUsage {
+  const out: ModAgentUsage = { id: a.id, name: a.name, kind: a.kind, status: a.status, room: rooms.get(a.roomId) ?? a.roomId, compactions: a.stats.compactionCount ?? 0 };
+  if (a.title) out.title = a.title;
+  if (a.origin) out.origin = a.origin;
   const context = contextView(a.stats);
   if (context) out.context = context;
   const last = a.stats.compactions?.at(-1);

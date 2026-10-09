@@ -278,6 +278,17 @@ describe('GET /api/mod/summary (mod do Claude Code)', () => {
     expect(s.waiting).toMatchObject([{ id: '.claude:2', answerable: true, waitingFor: 'responder no terminal' }]);
   });
 
+  it('usage: cada agente traz tipo, estado, sala e título, e o título sai com o segredo mascarado', async () => {
+    const stats = { toolCalls: 0, tokensIn: 0, tokensOut: 0, subagents: 0 };
+    env.office.applyTranscript('.claude:2', { title: 'Corrigir deploy com ghp_aB3dE6gH9jK2mN5pQ8sT1vW4yZ7cF0hJ3kL6', tasks: [], stats });
+    const s = await summary();
+    const u2 = s.usage.find((u) => u.id === '.claude:2')!;
+    expect(u2).toMatchObject({ kind: 'main', status: 'waiting', room: 'app' });
+    expect(u2.title).toMatch(/^Corrigir deploy com /);
+    expect(JSON.stringify(s)).not.toContain('ghp_aB3dE6gH9jK2mN5pQ8sT1vW4yZ7cF0hJ3kL6');
+    expect(s.usage.find((u) => u.id === 's1:a1')).toMatchObject({ kind: 'sub', status: 'waiting' });
+  });
+
   it('agentes do demo ficam de fora (mesmo esperando); quem encerrou também', async () => {
     await fetch(`${env.base}/api/demo`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ enabled: true }) });
     const snap = await snapshotOf(env.base);
