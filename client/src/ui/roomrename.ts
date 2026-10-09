@@ -9,11 +9,19 @@ import { isLocalHostname } from './permission';
 const NAME_MAX = 40;
 
 /**
- * Dá para renomear esta sala daqui? O servidor recusa as de demonstração e quem não abriu o Expediente pelo próprio
- * computador; no modo mock e no timelapse não há servidor para gravar.
+ * Dá para renomear esta sala daqui? O servidor recusa as de demonstração, quem não abriu o Expediente pelo próprio
+ * computador e o Expediente exposto na rede (sem a trava do terminal); no modo mock e no timelapse não há servidor para
+ * gravar.
  */
 export function canRenameRoom(ctx: UiContext, roomId: string): boolean {
-  return !!ctx.renameRoom && !isDemoId(roomId) && !ctx.store.mock && !ctx.store.replaying && isLocalHostname(location.hostname);
+  return (
+    !!ctx.renameRoom &&
+    !isDemoId(roomId) &&
+    !ctx.store.mock &&
+    !ctx.store.replaying &&
+    !!ctx.store.snapshot?.meta.terminal &&
+    isLocalHostname(location.hostname)
+  );
 }
 
 async function renameRequest(id: string, name: string): Promise<void> {
