@@ -1,5 +1,5 @@
 // Amostra horária do registro de sessões: quantas sessões há por `entrypoint × kind` e quais programas aparecem na
-// cadeia de processos pai delas. Grava só contagens e nomes de programa. As chamadas a `$` ficam em register.ts.
+// cadeia de processos pai delas. Grava só contagens e nomes de programa. As chamadas a `$` ficam em register.tsx.
 export const AMOSTRA_MS = 10 * 60_000
 export const MAX_PIDS = 50
 export const MAX_NIVEIS = 8

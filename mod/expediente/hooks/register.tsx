@@ -19,7 +19,7 @@
 // 5. Amostra horária (amostra.ts): contagem por entrypoint × kind e nomes de programa da cadeia de pais das sessões vivas.
 //
 // Regras: nenhum hook lança (um hook que lança é pulado, mas o que ele deixou pela metade fica): cada
-// passo tem seu try/catch e falha = silêncio. $.process roda só argv fixo, sem shell montado de texto alheio: mv (ponte),
+// passo tem seu try/catch e falha = silêncio. $.process roda só argv fixo, sem shell montado de texto alheio: mv e rm -f do .tmp (ponte),
 // pgrep e o próprio ps (amostra, tty, confirmação do programa do pid), o leitor de ZELLIJ_*/WEZTERM_* (foco), zellij, open -a WezTerm, osascript
 // (foco) e open com URL da lista permitida (abrir o app); nada de
 // $.model, $.prompt, decisão de ferramenta nem leitura da conversa; a rede é só 127.0.0.1. O estado fica em variáveis do módulo: um
