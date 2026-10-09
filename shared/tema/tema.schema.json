@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://expediente.localhost/tema.schema.json",
   "title": "Tema do Expediente",
-  "description": "Rascunho (Fase 2). O tema é dado: cores, textos curtos e nomes de arquivo PNG. Nenhum campo aceita URL, HTML, CSS ou código. O mínimo da F1 (B-11) cobre paleta, textos e decoração PNG; móveis, personagens e telas animadas ficam chumbados até o B-29.",
+  "description": "Tema do Expediente. O tema é dado: cores, textos curtos e nomes de arquivo PNG. Nenhum campo aceita URL, HTML, CSS ou código. Cobre paleta, textos e decoração PNG; móveis, personagens e telas animadas ficam fixos no código.",
   "type": "object",
   "required": [
     "versao",
@@ -33,7 +33,7 @@
       "$ref": "#/$defs/texto"
     },
     "origem": {
-      "description": "De onde o tema veio. Na F4 (/tema) toda fonte consultada fica registrada aqui.",
+      "description": "De onde o tema veio. Toda fonte consultada para montar o tema fica registrada aqui.",
       "type": "object",
       "required": [
         "tipo",
@@ -271,7 +271,7 @@
           }
         },
         "piso": {
-          "description": "Rampas de cor dos 6 tipos de piso que hoje têm literal de cor em client/src/art/surfaces/floor.ts. Concreto, mármore e calçada são calculados sem literal e ficam como estão até o B-29.",
+          "description": "Rampas de cor dos 6 tipos de piso que hoje têm literal de cor em client/src/art/surfaces/floor.ts. Concreto, mármore e calçada são derivados destas rampas e não têm entrada própria.",
           "type": "object",
           "additionalProperties": false,
           "properties": {
@@ -466,7 +466,7 @@
           }
         },
         "salas": {
-          "description": "Opcional (F4): renomear salas de projeto, que hoje levam o nome da pasta. `pasta` é o nome da pasta como o escritório mostra.",
+          "description": "Opcional: renomear salas de projeto, que hoje levam o nome da pasta. `pasta` é o nome da pasta como o escritório mostra.",
           "type": "array",
           "maxItems": 64,
           "items": {
@@ -489,7 +489,7 @@
       }
     },
     "tipografia": {
-      "description": "Fonte livre empacotada com o tema: arquivo dentro da pasta do tema, licença livre declarada; nenhuma fonte é baixada em tempo de execução. Na F4, `equivalenteDe` registra a fonte proprietária da marca que esta substitui.",
+      "description": "Fonte livre empacotada com o tema: arquivo dentro da pasta do tema, licença livre declarada; nenhuma fonte é baixada em tempo de execução. `equivalenteDe` registra a fonte proprietária da marca que esta substitui.",
       "type": "object",
       "required": [
         "familia",
@@ -523,7 +523,7 @@
       }
     },
     "decoracao": {
-      "description": "Decoração em PNG, arquivos relativos à pasta do tema. SVG é rasterizado antes de entrar (F4).",
+      "description": "Decoração em PNG, arquivos relativos à pasta do tema. SVG precisa ser rasterizado antes de entrar.",
       "type": "object",
       "required": [
         "marca",
