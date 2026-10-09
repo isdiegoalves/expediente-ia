@@ -1,6 +1,6 @@
 // Mod do Expediente (Claude Code 2.1.287+): liga cada sessão ao escritório sem ler a conversa.
 //
-// Faz três coisas pequenas, e `claude plugin validate` lista exatamente o que o módulo chama (a saída
+// Faz quatro coisas pequenas, e `claude plugin validate` lista exatamente o que o módulo chama (a saída
 // está no mod/README.md):
 //
 // 1. Uso do plano (substitui o tap de statusline): em `session.start` e a cada `session.measure`
@@ -13,15 +13,18 @@
 //    linha some e as perguntas passam a ser a cada 30 s até ele voltar. Só onde a sessão desenha
 //    (`$.session.surfaces()` vazia = `claude -p`/SDK: nada a mostrar, nada a perguntar).
 // 3. /escritorio: resumo do escritório, respondido pelo próprio mod (não chama o modelo, não gasta uso).
+// 4. Ponte do app desktop (ponte.ts): a cada 5 s copia 3 campos por sessão do app para
+//    ~/.expediente/host/sessoes-app.json, que o servidor no container lê.
 //
 // Regras: nenhum hook lança (um hook que lança é pulado, mas o que ele deixou pela metade fica): cada
-// passo tem seu try/catch e falha = silêncio. Nada de $.process, $.model, $.prompt, decisão de
-// ferramenta nem leitura da conversa; a rede é só 127.0.0.1. O estado fica em variáveis do módulo: um
+// passo tem seu try/catch e falha = silêncio. $.process só para trocar o arquivo da ponte (mv); nada de
+// $.model, $.prompt, decisão de ferramenta nem leitura da conversa; a rede é só 127.0.0.1. O estado fica em variáveis do módulo: um
 // hot reload recomeça do zero, o que aqui custa no máximo uma regravação a mais do arquivo de uso.
 //
 // Análise estática do Claude Code: cada chamada é escrita por extenso ($.noun.método), o nome do evento é
 // sempre uma string literal e `$` só é passado para funções declaradas no topo deste arquivo.
 import type { EngineInterface, Register, SessionRateLimit } from 'claude-code'
+import { appDirOf, filtrarSessaoApp, FRESCO_MS, PONTE_MS, sessoesAppFileOf, type SessaoApp } from './ponte'
 
 /** Porta padrão do Expediente (a mesma do servidor, do hook de permissão e do docker-compose). */
 export const DEFAULT_PORT = 4848
@@ -243,6 +246,7 @@ let lastWrite: { key: string; at: number } | undefined
 let lastStatus: string | undefined | null = null
 let timer: { cancel: () => void } | undefined
 let timerMs = 0
+let ponteTimer: { cancel: () => void } | undefined
 /** Uma pergunta por vez: um Expediente lento não acumula perguntas. */
 let polling = false
 
@@ -318,6 +322,70 @@ function schedule($: EngineInterface, ms: number): void {
   })
 }
 
+/** Por arquivo do app: o que foi lido na última vez que o tamanho ou a data mudaram. */
+const cache = new Map<string, { size: number; mtimeMs: number; sessao?: SessaoApp }>()
+let rodando = false
+
+async function arquivosDoApp($: EngineInterface, appDir: string): Promise<Array<{ path: string; size: number; mtimeMs: number }>> {
+  const achados: Array<{ path: string; size: number; mtimeMs: number }> = []
+  // <conta>/<organização>/local_<uuid>.json
+  for (const conta of await $.fs.list(appDir)) {
+    if (conta.kind !== 'dir') continue
+    for (const org of await $.fs.list(`${appDir}/${conta.name}`).catch(() => [])) {
+      if (org.kind !== 'dir') continue
+      const pasta = `${appDir}/${conta.name}/${org.name}`
+      for (const f of await $.fs.list(pasta).catch(() => [])) {
+        if (f.kind === 'file' && f.name.startsWith('local_') && f.name.endsWith('.json')) achados.push({ path: `${pasta}/${f.name}`, size: f.size, mtimeMs: f.mtimeMs })
+      }
+    }
+  }
+  return achados
+}
+
+/** Uma rodada da ponte. Pode lançar: quem chama engole. */
+async function rodarPonte($: EngineInterface): Promise<void> {
+  if (rodando) return
+  rodando = true
+  try {
+    const home = (await $.env.get('HOME'))?.trim()
+    if (!home) return
+    const final = sessoesAppFileOf(home)
+    const agora = await $.clock.now()
+    const antigo = await $.fs.stat(final).catch(() => undefined)
+    if (antigo && agora - antigo.mtimeMs >= 0 && agora - antigo.mtimeMs < FRESCO_MS) return
+    const arquivos = await arquivosDoApp($, appDirOf(home)).catch(() => undefined)
+    if (!arquivos) return
+    const sessoes: SessaoApp[] = []
+    const vistos = new Set<string>()
+    for (const a of arquivos) {
+      vistos.add(a.path)
+      let c = cache.get(a.path)
+      if (!c || c.size !== a.size || c.mtimeMs !== a.mtimeMs) {
+        const sessao = await $.fs.read(a.path).then(filtrarSessaoApp, () => undefined)
+        c = { size: a.size, mtimeMs: a.mtimeMs, ...(sessao ? { sessao } : {}) }
+        cache.set(a.path, c)
+      }
+      if (c.sessao) sessoes.push(c.sessao)
+    }
+    for (const p of [...cache.keys()]) if (!vistos.has(p)) cache.delete(p)
+    sessoes.sort((a, b) => (a.sessionId < b.sessionId ? -1 : 1))
+    const tmp = `${final}.${(await $.session.id()).replace(/[^A-Za-z0-9-]/g, '')}.tmp`
+    await $.fs.write(tmp, `${JSON.stringify({ geradoEm: agora, sessoes })}\n`)
+    const mv = await $.process.run(['mv', '-f', tmp, final])
+    if (mv.exitCode !== 0) await $.process.run(['rm', '-f', tmp])
+  } finally {
+    rodando = false
+  }
+}
+
+/** Liga a ponte do app desktop uma vez por carga, só onde a sessão desenha (não no `claude -p`). */
+async function ligarPonte($: EngineInterface): Promise<void> {
+  if (ponteTimer || !(await $.session.surfaces()).length) return
+  ponteTimer = $.clock.every(PONTE_MS, () => {
+    void rodarPonte($).catch(() => undefined)
+  })
+}
+
 /** Uma rodada do aviso embaixo do prompt. Nunca lança. */
 async function poll($: EngineInterface): Promise<void> {
   if (polling) return
@@ -374,6 +442,11 @@ export const register: Register = (on) => {
       schedule($, POLL_MS)
     } catch {
       // sem o aviso embaixo do prompt, o resto segue
+    }
+    try {
+      await ligarPonte($)
+    } catch {
+      // sem a ponte, o resto segue
     }
     return next(e)
   })

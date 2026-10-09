@@ -34,21 +34,27 @@ instaladores de sempre (`npm run usage:install` e `npm run hooks:install`). A in
 
   Fora do ar: `O Expediente não respondeu em http://localhost:4848. Para subir: npm run docker:up na pasta do Expediente.`
 
+- **Ponte do app desktop:** a cada 5 s lê `~/Library/Application Support/Claude/claude-code-sessions/*/*/local_*.json`,
+  seleciona por nome `sessionId`, `cliSessionId` e `isArchived` (nada mais do arquivo é copiado) e grava
+  `~/.expediente/host/sessoes-app.json` (`{geradoEm, sessoes}`) num `.tmp` trocado por `mv -f`. Só relê o arquivo
+  cujo tamanho ou data mudou; se o arquivo final tem menos de 4 s, a sessão pula a rodada. Só em sessões que desenham.
+
 ### O que ele acessa
 
 Saída de `claude plugin validate --strict mod/expediente` (a análise estática que o Claude Code faz antes de
 carregar o módulo; nada fora desta lista é chamado):
 
 ```
-❯ ./register.ts hooks: session.start, session.measure, command.run{command=expediente}
-❯ ./register.ts answers its own command: command.run{command=expediente}
-❯ ./register.ts calls: $.clock.after (via askExpediente), $.clock.every (via schedule), $.clock.now (via writeUsage), $.command.register, $.env.get (via readEnv), $.fs.write (via writeUsage), $.http.fetch (via askExpediente), $.session.id (via poll), $.session.surfaces (via poll), $.session.usage, $.ui.status (via setStatus)
+❯ ./register.ts hooks: session.start, session.measure, command.run{command=escritorio}
+❯ ./register.ts answers its own command: command.run{command=escritorio}
+❯ ./register.ts calls: $.clock.after (via askExpediente), $.clock.every (via ligarPonte, schedule), $.clock.now (via rodarPonte, writeUsage), $.command.register, $.env.get (via readEnv, rodarPonte), $.fs.list (via arquivosDoApp), $.fs.read (via rodarPonte), $.fs.stat (via rodarPonte), $.fs.write (via rodarPonte, writeUsage), $.http.fetch (via askExpediente), $.process.run (via rodarPonte), $.session.id (via poll, rodarPonte), $.session.surfaces (via ligarPonte, poll), $.session.usage, $.ui.status (via setStatus)
 ❯ ./register.ts env writes: nothing
 ❯ ./register.ts env reads: CLAUDE_CONFIG_DIR, EXPEDIENTE_PORT, EXPEDIENTE_USAGE_DIR, HOME
 ```
 
 Em palavras: só observa (nenhum hook decide nada: não aprova ferramentas, não muda prompts, não lê mensagens),
-grava um único arquivo (o de uso), fala só com `127.0.0.1` e lê quatro variáveis de ambiente. `$.clock.after` é o
+grava dois arquivos em `~/.expediente/host` (o de uso e o `sessoes-app.json`, este por `mv`, o único uso de
+`$.process`), fala só com `127.0.0.1` e lê quatro variáveis de ambiente. `$.clock.after` é o
 prazo de 2 s de cada pergunta ao Expediente (`$.http.fetch` não aceita AbortSignal).
 
 ## `expediente-permissoes` — responder permissões pelo escritório
