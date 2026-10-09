@@ -573,12 +573,10 @@ describe('legibilidade das mesas, sofá e olhos', () => {
 
 describe('pisos e paredes', () => {
   const floors: FloorKind[] = ['carpet', 'wood', 'tile_check', 'tile_white', 'concrete', 'marble', 'grass', 'sidewalk', 'street'];
-  it('blocos de piso são opacos e determinísticos', () => {
-    for (const k of floors) {
-      const a = floorChunk(k, 2, -1, { seed: 3, tint: '#c9d1dc', tint2: '#bdc6d3' });
-      expect(a.countOpaque(), k).toBe(CHUNK_PX * CHUNK_PX);
-      expect(floorChunk(k, 2, -1, { seed: 3, tint: '#c9d1dc', tint2: '#bdc6d3' }).data).toEqual(a.data);
-    }
+  it.each(floors)('bloco de piso %s é opaco e determinístico', (k) => {
+    const a = floorChunk(k, 2, -1, { seed: 3, tint: '#c9d1dc', tint2: '#bdc6d3' });
+    expect(a.countOpaque(), k).toBe(CHUNK_PX * CHUNK_PX);
+    expect(floorChunk(k, 2, -1, { seed: 3, tint: '#c9d1dc', tint2: '#bdc6d3' }).data).toEqual(a.data);
   });
 
   it('a madeira continua entre blocos vizinhos (sem emenda na borda)', () => {
