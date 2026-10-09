@@ -1019,6 +1019,25 @@ describe('time, nome, rodada e parada pelo usuário do subagente', () => {
     }
   });
 
+  it('subagente recente que o pai já recebeu como concluído também entra na contagem', () => {
+    const c = setup();
+    try {
+      writeLines(c.transcript('sess-w'), [
+        L.prompt('oi'),
+        L.assistant([L.tool('toolu_w', 'Agent', { description: 'feito', subagent_type: 'general-purpose', prompt: 'x' })]),
+        L.result('toolu_w', 'pronto', { toolUseResult: { status: 'completed', agentId: 'w1' } }),
+      ]);
+      c.subFile('sess-w', 'w1', { agentType: 'general-purpose', description: 'feito', toolUseId: 'toolu_w', teamName: 'gauntlet', name: 'r3-e1' }, [L.prompt('agora', { agentId: 'w1', at: c.now() })]);
+      c.openSession(803, 'sess-w');
+      c.watcher.boot();
+      expect(c.agents().filter((a) => a.kind === 'sub')).toEqual([]);
+      expect(c.office.commit().snapshot.equipes).toMatchObject([{ concluidos: 1, total: 1, rodadas: [{ n: 3, concluidos: 1, total: 1 }] }]);
+    } finally {
+      c.watcher.stop();
+      c.tmp.cleanup();
+    }
+  });
+
   it('stoppedByUser que aparece depois no .meta.json chega ao agente', () => {
     const c = setup();
     try {
