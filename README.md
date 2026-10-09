@@ -558,10 +558,10 @@ Mais detalhes do servidor em [`server/README.md`](server/README.md).
 | --- | --- | --- |
 | `<conta>/sessions/` | `/claude/<conta>/sessions` (somente leitura) | Sessões abertas e seus status. |
 | `<conta>/projects/` | `/claude/<conta>/projects` (somente leitura) | Transcripts das sessões e dos subagentes. |
-| `~/.expediente/usage/` | `/usage` (somente leitura) | Uso capturado pelo mod (ou pelo tap de statusline). |
+| `~/.expediente/host/` | `/host` (somente leitura) | Ponte do mod; o uso ao vivo é lido de `/host/uso`. |
 | volume `expediente-data` | `/data` | Dados do próprio Expediente (nomes dos personagens, linha do tempo do timelapse e estatísticas do Meu dia). |
 
-A pasta da conta **nunca** é montada inteira (lá ficam credenciais e configurações). O container roda como usuário sem
+Todo bind do host é somente leitura. A pasta da conta **nunca** é montada inteira (lá ficam credenciais e configurações). O container roda como usuário sem
 privilégios, com sistema de arquivos somente leitura, sem capabilities extras e com `no-new-privileges`. Os metadados
 das contas (letra, e-mail, organização) são lidos no host pelo `docker:up` e passados ao container.
 

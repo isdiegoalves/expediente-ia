@@ -1,4 +1,6 @@
 // Funções puras de scripts/docker-up.ts (importar o módulo não sobe nada).
+import { mkdirSync, statSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { DetectedAccount } from '../accounts/detect';
 import { legacyEnvWarning } from '../legacy';
@@ -13,8 +15,10 @@ import {
   planUp,
   renderOverride,
   sanitizeCachedUsage,
+  writeOverride,
   yamlString,
 } from '../../scripts/docker-up';
+import { tempDir } from './fixtures';
 
 const acc = (id: string, extra: Partial<DetectedAccount> = {}): DetectedAccount => ({
   id,
@@ -57,20 +61,20 @@ describe('docker-up', () => {
     ).toEqual({ fetchedAtMs: 5, utilization: { five_hour: { utilization: 10 }, seven_day: { utilization: 20, resets_at: 'x' } } });
   });
 
-  it('override: somente leitura, sem criar pastas no host, `$` escapado e a pasta do statusline em /usage', () => {
+  it('override: somente leitura, sem criar pastas no host, `$` escapado e a ponte em /host', () => {
     const mounts = planMounts(['/Users/fu$lano/.claude'], [acc('.claude', { email: 'a@b.c', cachedUsage: { fetchedAtMs: 1, utilization: {} } })], (p) => p);
-    const yml = renderOverride(mounts, new Date('2026-10-06T00:00:00Z'), '/Users/fulano/.expediente/usage');
+    const yml = renderOverride(mounts, new Date('2026-10-06T00:00:00Z'), '/Users/fulano/.expediente/host');
     expect(yml).toContain('source: "/Users/fu$$lano/.claude/projects"');
-    expect(yml).toContain('EXPEDIENTE_USAGE_DIR: "/usage"');
-    expect(yml).toContain('source: "/Users/fulano/.expediente/usage"\n        target: "/usage"\n        read_only: true');
+    expect(yml).toContain('EXPEDIENTE_USAGE_DIR: "/host/uso"');
+    expect(yml).toContain('source: "/Users/fulano/.expediente/host"\n        target: "/host"\n        read_only: true');
     const binds = yml.split('- type: bind').length - 1;
     expect(binds).toBe(3);
     expect(yml.match(/read_only: true/g)).toHaveLength(3);
     expect(yml.match(/create_host_path: false/g)).toHaveLength(3);
     // Payload das contas: sem cache vazio, sem campos que não existem.
     expect(accountsPayload(mounts)).toEqual([{ id: '.claude', configDir: '/Users/fulano/.claude', mountDir: '/claude/.claude', short: 'C', name: 'Conta C', color: '#000000', email: 'a@b.c' }]);
-    // Sem a pasta do statusline: nada de /usage.
-    expect(renderOverride(mounts)).not.toContain('/usage');
+    // Sem a ponte: nada de /host.
+    expect(renderOverride(mounts)).not.toContain('target: "/host"');
     expect(yamlString('a"b$c')).toBe('"a\\"b$$c"');
   });
 
@@ -82,6 +86,60 @@ describe('docker-up', () => {
     expect(hostTimeZone({ TZ: ':Europe/Lisbon' })).toBe('Europe/Lisbon');
     expect(hostTimeZone({ TZ: 'x"; rm -rf' })).toBeUndefined();
     expect(hostTimeZone({})).toMatch(/^[A-Za-z]/);
+  });
+});
+
+describe('docker-up: montagens mínimas', () => {
+  const HOST_DIR = '/Users/fulano/.expediente/host';
+  const dirs = ['/Users/fulano/.claude', '/Users/fulano/.claude-conta2'];
+
+  function binds(yml: string): Array<{ source: string; target: string; readOnly: boolean }> {
+    return yml
+      .split('- type: bind')
+      .slice(1)
+      .map((b) => ({
+        source: /source: "([^"]*)"/.exec(b)?.[1] ?? '',
+        target: /target: "([^"]*)"/.exec(b)?.[1] ?? '',
+        readOnly: /read_only: true/.test(b),
+      }));
+  }
+
+  it('todo bind é read_only e vem de projects/, sessions/ ou ~/.expediente/host', () => {
+    const mounts = planMounts(dirs, [acc('.claude'), acc('.claude-conta2')], (p) => p);
+    const lista = binds(renderOverride(mounts, new Date(0), HOST_DIR));
+    expect(lista).toHaveLength(5);
+    for (const b of lista) {
+      expect(b.readOnly, b.source).toBe(true);
+      expect(b.source === HOST_DIR || /\/\.claude(-conta2)?\/(projects|sessions)$/.test(b.source), b.source).toBe(true);
+      expect(dirs).not.toContain(b.source);
+    }
+    expect(lista.filter((b) => b.source === HOST_DIR).map((b) => b.target)).toEqual(['/host']);
+  });
+
+  it('claude-code-sessions nunca entra no override', () => {
+    const pedidos: string[] = [];
+    const mounts = planMounts(dirs, [acc('.claude'), acc('.claude-conta2')], (p) => {
+      pedidos.push(p);
+      return p;
+    });
+    expect(pedidos.every((p) => /\/(projects|sessions)$/.test(p))).toBe(true);
+    expect(renderOverride(mounts, new Date(0), HOST_DIR)).not.toContain('claude-code-sessions');
+  });
+
+  it('o arquivo de override gerado tem modo 600', () => {
+    const tmp = tempDir();
+    try {
+      const file = join(tmp.dir, 'docker-compose.override.yml');
+      writeFileSync(file, 'antigo', { mode: 0o644 });
+      writeOverride(file, 'services: {}\n');
+      expect(statSync(file).mode & 0o777).toBe(0o600);
+      const novo = join(tmp.dir, 'sub');
+      mkdirSync(novo);
+      writeOverride(join(novo, 'o.yml'), 'x');
+      expect(statSync(join(novo, 'o.yml')).mode & 0o777).toBe(0o600);
+    } finally {
+      tmp.cleanup();
+    }
   });
 });
 

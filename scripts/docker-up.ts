@@ -9,9 +9,9 @@
 //    CLAUDE_CONFIG_DIR ou EXPEDIENTE_CLAUDE_DIRS) e lê os metadados das contas com detectAccounts.
 // 2. Gera o docker-compose.override.yml montando SOMENTE <conta>/projects e <conta>/sessions,
 //    somente leitura, em /claude/<conta>/... — nunca a pasta inteira da conta, onde ficam
-//    credenciais e configurações — e a pasta do uso capturado pelo statusline
-//    (~/.expediente/usage, criada se faltar) em /usage, também somente leitura. Passa
-//    EXPEDIENTE_CLAUDE_DIRS, EXPEDIENTE_ACCOUNTS, EXPEDIENTE_USAGE_DIR e o fuso do host (TZ) ao container.
+//    credenciais e configurações — e a ponte do mod (~/.expediente/host, criada se faltar) em /host,
+//    também somente leitura. Passa EXPEDIENTE_CLAUDE_DIRS, EXPEDIENTE_ACCOUNTS, EXPEDIENTE_USAGE_DIR (/host/uso)
+//    e o fuso do host (TZ) ao container.
 // 3. Migra o que sobrou do nome antigo (CodeTown, até a 0.3.2): ~/.codetown vira ~/.expediente, o container
 //    `codetown` e a rede codetown_default saem e, se o volume novo ainda não existe, os dados de
 //    codetown_codetown-data são copiados para ele (o antigo fica, para apagar à mão). Avisa de CODETOWN_*
@@ -22,8 +22,9 @@
 //    CLAUDE_CONFIG_DIR de cada conta. Nunca instala sozinho; se o `claude` faltar ou falhar, é só um aviso.
 //
 // Uso de 5h/semanal ao vivo: o mod do Expediente (npm run mod:install; Claude Code 2.1.287+) ou, em
-// versões anteriores, o tap de statusline (npm run usage:install). Os dois gravam os números na pasta
-// montada em /usage. Sem eles, vale o cache do /usage lido das contas ao subir.
+// versões anteriores, o tap de statusline (npm run usage:install). Os dois gravam os números em
+// ~/.expediente/usage; o container só os vê se estiverem em ~/.expediente/host/uso. Sem eles, vale o cache do /usage
+// lido das contas ao subir.
 import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -40,10 +41,11 @@ const STATE_DIR = join(HOME, '.expediente');
 const OVERRIDE_FILE = join(ROOT, 'docker-compose.override.yml');
 /** O .env desta pasta, que o Compose lê sozinho. */
 const ENV_FILE = join(ROOT, '.env');
-/** Uso capturado no host pelo mod do Expediente ou pelo tap de statusline (scripts/statusline-tap.mjs). */
-const USAGE_DIR = process.env.EXPEDIENTE_USAGE_DIR?.trim() ? resolve(process.env.EXPEDIENTE_USAGE_DIR.trim()) : join(STATE_DIR, 'usage');
-/** Onde essa pasta aparece no container. */
-const CONTAINER_USAGE_DIR = '/usage';
+/** Ponte do mod no host: a única pasta fora das contas que o container monta. */
+const HOST_DIR = join(STATE_DIR, 'host');
+/** Onde a ponte aparece no container, e onde o servidor lê o uso ao vivo. */
+const CONTAINER_HOST_DIR = '/host';
+const CONTAINER_USAGE_DIR = `${CONTAINER_HOST_DIR}/uso`;
 const SERVICE = 'expediente';
 /** Raiz das montagens dentro do container: /claude/<conta>/{projects,sessions}. */
 const CONTAINER_ROOT = '/claude';
@@ -253,27 +255,27 @@ export function hostTimeZone(env: NodeJS.ProcessEnv = process.env): string | und
 }
 
 /**
- * `usageDir`: pasta do host com o uso capturado pelo tap de statusline (já existente; caminho real),
- * montada somente leitura em /usage. `timeZone`: fuso do host, repassado como TZ.
+ * `hostDir`: ponte do mod no host (já existente; caminho real), montada somente leitura em /host.
+ * `timeZone`: fuso do host, repassado como TZ.
  */
-export function renderOverride(mounts: AccountMount[], generatedAt: Date = new Date(), usageDir?: string, timeZone?: string): string {
+export function renderOverride(mounts: AccountMount[], generatedAt: Date = new Date(), hostDir?: string, timeZone?: string): string {
   const env: Array<[string, string]> = [
     ['EXPEDIENTE_CLAUDE_DIRS', mounts.map((m) => m.mountDir).join(',')],
     ['EXPEDIENTE_ACCOUNTS', JSON.stringify(accountsPayload(mounts))],
   ];
-  if (usageDir) env.push(['EXPEDIENTE_USAGE_DIR', CONTAINER_USAGE_DIR]);
+  if (hostDir) env.push(['EXPEDIENTE_USAGE_DIR', CONTAINER_USAGE_DIR]);
   if (timeZone) env.push(['TZ', timeZone]);
   const lines = [
     `# Gerado por scripts/docker-up.ts em ${generatedAt.toISOString()} — não edite: é recriado a cada \`npm run docker:up\`.`,
     '# Contém caminhos do host e e-mails das contas: fica fora do git e com permissão 600.',
-    '# Montagens: SOMENTE <conta>/projects, <conta>/sessions e a pasta do uso do statusline, todas somente leitura.',
+    '# Montagens: SOMENTE <conta>/projects, <conta>/sessions e ~/.expediente/host, todas somente leitura.',
     'services:',
     `  ${SERVICE}:`,
     '    environment:',
     ...env.map(([k, v]) => `      ${k}: ${yamlString(v)}`),
   ];
   const binds = mounts.flatMap((m) => m.binds);
-  if (usageDir) binds.push({ source: usageDir, target: CONTAINER_USAGE_DIR });
+  if (hostDir) binds.push({ source: hostDir, target: CONTAINER_HOST_DIR });
   if (binds.length) {
     lines.push('    volumes:');
     for (const b of binds) {
@@ -404,15 +406,23 @@ function migrateStateDir(): void {
   if (msg) (result.error ? warn : say)(msg);
 }
 
-/** Cria a pasta do uso do statusline se faltar e devolve o caminho real (ou undefined, se falhar). */
-function ensureUsageDir(): string | undefined {
+/** Cria a ponte do mod se faltar e devolve o caminho real (ou undefined, se falhar). */
+function ensureHostDir(): string | undefined {
   try {
-    mkdirSync(USAGE_DIR, { recursive: true, mode: 0o700 });
-    return realDir(USAGE_DIR);
+    mkdirSync(HOST_DIR, { recursive: true, mode: 0o700 });
+    return realDir(HOST_DIR);
   } catch (err) {
-    warn(`não consegui criar ${tildify(USAGE_DIR)} (${(err as Error).message}); o uso do statusline não vai aparecer no container.`);
+    warn(`não consegui criar ${tildify(HOST_DIR)} (${(err as Error).message}); o container não vai ver o uso ao vivo.`);
     return undefined;
   }
+}
+
+/** Grava o override com modo 600: ele tem caminhos do host e e-mails das contas. */
+export function writeOverride(file: string, yml: string): void {
+  const tmp = `${file}.tmp`;
+  writeFileSync(tmp, yml, { mode: 0o600 });
+  chmodSync(tmp, 0o600);
+  renameSync(tmp, file);
 }
 
 function tildify(p: string): string {
@@ -595,12 +605,9 @@ async function up(opts: Options, port: number): Promise<void> {
   }
 
   migrateStateDir();
-  const usageDir = ensureUsageDir();
-  if (usageDir) say(`Uso ao vivo (mod ou tap de statusline): monta ${tildify(USAGE_DIR)} em ${CONTAINER_USAGE_DIR}, somente leitura.`);
-  const tmp = `${OVERRIDE_FILE}.tmp`;
-  writeFileSync(tmp, renderOverride(mounts, new Date(), usageDir, hostTimeZone()), { mode: 0o600 });
-  chmodSync(tmp, 0o600);
-  renameSync(tmp, OVERRIDE_FILE);
+  const hostDir = ensureHostDir();
+  if (hostDir) say(`Ponte do mod: monta ${tildify(HOST_DIR)} em ${CONTAINER_HOST_DIR}, somente leitura.`);
+  writeOverride(OVERRIDE_FILE, renderOverride(mounts, new Date(), hostDir, hostTimeZone()));
   say('docker-compose.override.yml gerado.');
 
   const plan = planUp(inspectDocker(), opts.build);

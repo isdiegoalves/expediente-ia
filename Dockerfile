@@ -4,7 +4,7 @@
 #
 # Use `npm run docker:up` (scripts/docker-up.ts): ele detecta as contas do Claude Code no host,
 # gera o docker-compose.override.yml com as montagens SOMENTE LEITURA de <conta>/projects,
-# <conta>/sessions e ~/.expediente/usage e sobe o serviço. Este Dockerfile sozinho não monta nada do host.
+# <conta>/sessions e ~/.expediente/host e sobe o serviço. Este Dockerfile sozinho não monta nada do host.
 
 # ---------------------------------------------------------------------------------------------
 # Estágio 1: compila o cliente (Vite) e empacota o servidor (esbuild) em dist/.
@@ -25,11 +25,11 @@ RUN npm run build
 # ---------------------------------------------------------------------------------------------
 FROM node:24-alpine AS runtime
 
-# EXPEDIENTE_USAGE_DIR: onde o docker-up monta (somente leitura) o uso capturado pelo tap de statusline.
+# EXPEDIENTE_USAGE_DIR: o uso/ da ponte que o docker-up monta em /host (somente leitura).
 ENV NODE_ENV=production \
     EXPEDIENTE_PORT=4848 \
     EXPEDIENTE_DATA_DIR=/data \
-    EXPEDIENTE_USAGE_DIR=/usage
+    EXPEDIENTE_USAGE_DIR=/host/uso
 
 WORKDIR /app
 

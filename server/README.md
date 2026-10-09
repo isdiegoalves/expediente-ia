@@ -231,7 +231,7 @@ sugestão inválidos), 404 (pedido desconhecido, já entregue ou expirado), 405,
 | `EXPEDIENTE_TIMELINE` | ligado | `0` desliga a gravação da linha do tempo do timelapse |
 | `EXPEDIENTE_DEMO` | desligado | `1` liga o modo demonstração ao iniciar |
 | `EXPEDIENTE_ACCOUNTS` | — | JSON com metadados das contas vindos do host (Docker): `[{id, configDir, mountDir, short, name, email, organization, plan, color, cachedUsage}]`, casados por `id`, `mountDir` ou `configDir` |
-| `EXPEDIENTE_USAGE_DIR` | `~/.expediente/usage` (Docker: `/usage`) | pasta do uso capturado pelo tap de statusline ou pelo mod do Claude Code, relida a cada 5 s |
+| `EXPEDIENTE_USAGE_DIR` | `~/.expediente/usage` (Docker: `/host/uso`) | pasta do uso capturado pelo tap de statusline ou pelo mod do Claude Code, relida a cada 5 s |
 
 No hook de permissão (ambiente do Claude Code; os argumentos `--port`/`--timeout` gravados pelo instalador têm
 preferência): `EXPEDIENTE_PORT` (porta do Expediente, padrão `4848`), `EXPEDIENTE_PERMISSION_TIMEOUT` (segundos de espera

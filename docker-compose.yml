@@ -3,8 +3,8 @@
 # Suba com `npm run docker:up`: o script detecta as contas do Claude Code no host e gera o
 # docker-compose.override.yml (fora do controle de versão) com:
 #   - montagens SOMENTE LEITURA de <conta>/projects e <conta>/sessions em /claude/<conta>/...
-#     (nunca a pasta inteira da conta: lá ficam credenciais e configurações) e de ~/.expediente/usage
-#     (uso de 5h/semanal capturado pelo tap de statusline) em /usage;
+#     (nunca a pasta inteira da conta: lá ficam credenciais e configurações) e de ~/.expediente/host
+#     (a ponte do mod, com o uso de 5h/semanal) em /host;
 #   - EXPEDIENTE_CLAUDE_DIRS, EXPEDIENTE_ACCOUNTS e EXPEDIENTE_USAGE_DIR.
 # O Compose mescla o override automaticamente em qualquer `docker compose ...` rodado nesta pasta.
 name: expediente
