@@ -25,7 +25,7 @@ interface Sessao {
 }
 
 const CLAUDE = '/Users/fulano/.local/bin/claude\n'
-const ehPrograma = (argv: readonly string[]) => argv[0] === 'ps' && argv[1] === '-o' && argv[2] === 'comm='
+const ehPrograma = (argv: readonly string[]) => /^ps -o comm= -p \d+$/.test(argv.join(' '))
 
 function nonce(n: number): string {
   return String(n).padStart(32, '0')

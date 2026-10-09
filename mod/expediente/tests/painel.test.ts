@@ -7,6 +7,7 @@ import {
   argvFocoZellij,
   argvLeitorClienteWezTerm,
   argvLeitorPainel,
+  argvProgramaDe,
   argvTrazerWezTerm,
   argvTtyDe,
   lerClienteWezTerm,
@@ -21,6 +22,11 @@ describe('ramo genérico', () => {
     expect(() => argvTtyDe(0)).toThrow()
     expect(lerTty('ttys003\n')).toBe('/dev/ttys003')
     for (const ruim of ['??', '', 'ttys3; rm', '../ttys003', 'console']) expect(lerTty(ruim)).toBeUndefined()
+  })
+
+  test('o nome do programa do pid sai do ps com o argv exato, sem ler ambiente', () => {
+    expect(argvProgramaDe(507)).toEqual(['ps', '-o', 'comm=', '-p', '507'])
+    expect(() => argvProgramaDe(0)).toThrow()
   })
 
   test('pgrep -x só para os dois apps conhecidos', () => {
