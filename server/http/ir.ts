@@ -59,6 +59,8 @@ function montar(src: NonNullable<ReturnType<Office['irSource']>>): Omit<IrInfo, 
       ? { rotulo: 'Abrir o projeto no app', href: `claude://code/new?folder=${encodeURIComponent(cwd)}` }
       : { rotulo: 'Abrir o projeto no terminal', href: `claude-cli://open?cwd=${encodeURIComponent(cwd)}` },
   ];
+  const direto = vivo && noApp && src.appSessionId && ID_APP.test(src.appSessionId) ? `claude://code/continue?session=${src.appSessionId}` : undefined;
+  if (direto && urlPermitida(direto)) links.unshift({ rotulo: 'Abrir a sessão no app', href: direto });
   const base = { estado: vivo ? ('vivo' as const) : ('encerrado' as const), ...(origin ? { origin } : {}) };
   if (!vivo) {
     if (origin === 'terminal') links.push({ rotulo: 'Retomar no app', href: `claude://resume?session=${sessionId}` });

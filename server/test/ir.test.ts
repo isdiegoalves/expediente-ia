@@ -105,8 +105,20 @@ describe('GET /api/agentes/:id/ir', () => {
     expect(j.estado).toBe('vivo');
     expect(j.comando).toBe(`claude --resume ${SESSAO} --fork-session`);
     expect(j.aviso).toBe('cria uma cópia, não responde à sessão original');
-    expect(j.links).toEqual([{ rotulo: 'Abrir o projeto no app', href: 'claude://code/new?folder=%2Fp%2Floja' }]);
+    expect(j.links).toEqual([
+      { rotulo: 'Abrir a sessão no app', href: `claude://code/continue?session=${APP}` },
+      { rotulo: 'Abrir o projeto no app', href: 'claude://code/new?folder=%2Fp%2Floja' },
+    ]);
     expect(j.nonce).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  it('o link direto da sessão só sai para agente vivo do app com sessão casada', async () => {
+    agente('a:6', { entrypoint: 'claude-desktop', sessionId: 'sem-par-no-mapa' });
+    agente('a:7', { entrypoint: 'cli', kind: 'interactive' });
+    agente('a:8', { entrypoint: 'claude-desktop', encerrado: true });
+    for (const id of ['a:6', 'a:7', 'a:8']) {
+      expect((await ir(id)).links.map((l) => l.href).filter((h) => h.startsWith('claude://code/continue'))).toEqual([]);
+    }
   });
 
   it('terminal vivo: attach se kind=bg, fork rotulado se interactive', async () => {
