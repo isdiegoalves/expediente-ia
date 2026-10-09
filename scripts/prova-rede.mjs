@@ -2,17 +2,15 @@
 // Prova de que o servidor não abre conexões de saída: amostra as conexões TCP por um tempo e grava os
 // destinos fora do loopback (a lista tem de ficar vazia).
 //
-//   node scripts/prova-rede.mjs [--duracao 3600] [--intervalo 10] [--container expediente | --pid <pid>] [--saida <arquivo>]
+//   node scripts/prova-rede.mjs [--duracao 3600] [--intervalo 10] [--container expediente | --pid <pid>] [--saida <arquivo> [--sobrescrever]]
 //
+// Sem --saida o relatório vai só para a saída padrão. Arquivo que já existe só é trocado com --sobrescrever.
 // Container: lê /proc/net/tcp e /proc/net/tcp6 por `docker exec` (só leitura). Nativo: `lsof -nP -i -a -p <pid>`.
 // Sai com 1 se houver destino externo e com 2 se alguma amostra falhar (sem amostra não há prova).
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const SAIDA_PADRAO = join(ROOT, '.docs-arquivo/escritorio-agentes/fatias/f2/evidencias/rede.txt');
 
 function expandirV6(texto) {
   let t = texto.replace(/^\[|\]$/g, '').split('%')[0];
@@ -114,7 +112,7 @@ export function destinosExternos(conexoes) {
 }
 
 export function parseArgs(argv) {
-  const o = { duracao: 3600, intervalo: 10, container: 'expediente', pid: undefined, saida: SAIDA_PADRAO, ajuda: false };
+  const o = { duracao: 3600, intervalo: 10, container: 'expediente', pid: undefined, saida: undefined, sobrescrever: false, ajuda: false };
   const inteiro = (nome, v) => {
     if (!/^[1-9]\d*$/.test(v ?? '')) throw new Error(`${nome} pede um inteiro positivo`);
     return Number(v);
@@ -127,6 +125,7 @@ export function parseArgs(argv) {
     else if (a === '--pid') o.pid = inteiro(a, argv[++i]);
     else if (a === '--container') o.container = argv[++i];
     else if (a === '--saida') o.saida = resolve(argv[++i] ?? '');
+    else if (a === '--sobrescrever') o.sobrescrever = true;
     else throw new Error(`opção desconhecida: ${a}`);
   }
   if (!o.container) throw new Error('--container pede um nome');
@@ -184,15 +183,18 @@ function amostrador(o) {
 async function main() {
   const o = parseArgs(process.argv.slice(2));
   if (o.ajuda) {
-    console.log('uso: node scripts/prova-rede.mjs [--duracao 3600] [--intervalo 10] [--container expediente | --pid <pid>] [--saida <arquivo>]');
+    console.log('uso: node scripts/prova-rede.mjs [--duracao 3600] [--intervalo 10] [--container expediente | --pid <pid>] [--saida <arquivo> [--sobrescrever]]');
     return 0;
   }
+  if (o.saida && existsSync(o.saida) && !o.sobrescrever) throw new Error(`${o.saida} já existe: use --sobrescrever para trocar`);
   const modo = o.pid ? `nativo (pid ${o.pid})` : `container ${o.container}`;
   const inicio = new Date();
   const r = await coletar(o, amostrador(o), (ms) => new Promise((ok) => setTimeout(ok, ms)));
   const texto = renderRelatorio({ inicio, fim: new Date(), modo, duracao: o.duracao, intervalo: o.intervalo, ...r });
-  mkdirSync(dirname(o.saida), { recursive: true });
-  writeFileSync(o.saida, texto);
+  if (o.saida) {
+    mkdirSync(dirname(o.saida), { recursive: true });
+    writeFileSync(o.saida, texto, { flag: o.sobrescrever ? 'w' : 'wx' });
+  }
   process.stdout.write(texto);
   return r.destinos.length ? 1 : r.falhas ? 2 : 0;
 }

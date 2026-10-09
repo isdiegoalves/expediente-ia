@@ -1,4 +1,6 @@
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -16,7 +18,7 @@ const prova = (await import(join(ROOT, 'scripts/prova-rede.mjs'))) as {
   parseProcNetTcp: (t: string) => Conexao[];
   parseLsof: (t: string) => Conexao[];
   destinosExternos: (c: Conexao[]) => string[];
-  parseArgs: (a: string[]) => { duracao: number; intervalo: number; container: string; pid?: number; saida: string };
+  parseArgs: (a: string[]) => { duracao: number; intervalo: number; container: string; pid?: number; saida?: string; sobrescrever: boolean };
   coletar: (o: { duracao: number; intervalo: number }, amostrar: () => Promise<Conexao[]>, dormir: (ms: number) => Promise<void>) => Promise<{ amostras: number; falhas: number; destinos: string[] }>;
   renderRelatorio: (r: Record<string, unknown>) => string;
 };
@@ -97,6 +99,9 @@ describe('prova de rede: execução', () => {
     expect(prova.parseArgs([])).toMatchObject({ duracao: 3600, intervalo: 10, container: 'expediente', pid: undefined });
     expect(prova.parseArgs(['--duracao', '60', '--intervalo', '5', '--pid', '12'])).toMatchObject({ duracao: 60, intervalo: 5, pid: 12 });
     expect(() => prova.parseArgs(['--duracao', '0'])).toThrow(/inteiro positivo/);
+    expect(prova.parseArgs([]).saida).toBeUndefined();
+    expect(prova.parseArgs([]).sobrescrever).toBe(false);
+    expect(prova.parseArgs(['--saida', 'x.txt', '--sobrescrever'])).toMatchObject({ saida: resolve('x.txt'), sobrescrever: true });
     expect(() => prova.parseArgs(['--x'])).toThrow(/opção desconhecida/);
   });
 
@@ -115,6 +120,28 @@ describe('prova de rede: execução', () => {
     );
     expect(r).toEqual({ amostras: 4, falhas: 1, destinos: ['1.2.3.4:80'] });
     expect(esperas).toEqual([10000, 10000, 10000]);
+  });
+
+  it('o script não grava sem --saida e recusa arquivo existente sem --sobrescrever', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'prova-rede-'));
+    try {
+      const alvo = join(dir, 'rede.txt');
+      writeFileSync(alvo, 'prova anterior\n');
+      const roda = (...extra: string[]) =>
+        spawnSync(process.execPath, [join(ROOT, 'scripts/prova-rede.mjs'), '--pid', String(process.pid), '--duracao', '1', '--intervalo', '1', ...extra], { encoding: 'utf8' });
+      const recusa = roda('--saida', alvo);
+      expect(recusa.status).toBe(2);
+      expect(recusa.stderr).toContain('--sobrescrever');
+      expect(readFileSync(alvo, 'utf8')).toBe('prova anterior\n');
+      const semSaida = roda();
+      expect(semSaida.stdout).toContain('# prova de rede');
+      expect(readdirSync(dir)).toEqual(['rede.txt']);
+      const sobre = roda('--saida', alvo, '--sobrescrever');
+      expect(sobre.stdout).toContain('# prova de rede');
+      expect(readFileSync(alvo, 'utf8')).toContain('# prova de rede');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('relatório com cabeçalho e a linha de lista vazia', () => {
