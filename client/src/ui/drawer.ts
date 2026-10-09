@@ -571,7 +571,7 @@ class AgentView {
       setText(this.teamSec.extra, subs.length ? String(subs.length) : '');
       setText(this.teamEmpty, a.stats.subagents ? `Nenhum ativo agora (${plural(a.stats.subagents, 'disparado', 'disparados')} nesta sessão).` : 'Nenhum subagente disparado ainda.');
       setHidden(this.teamEmpty, subs.length > 0);
-      this.team.sync(itensDeSubs(subs, (id) => this.ctx.agent(id)?.name));
+      this.team.sync(itensDeSubs(subs, (id) => this.ctx.agent(id)?.name, this.ctx.store.snapshot?.equipes));
     } else {
       const parent = a.parentId ? this.ctx.agent(a.parentId) : undefined;
       setText(this.teamSec.title, 'Responsável');

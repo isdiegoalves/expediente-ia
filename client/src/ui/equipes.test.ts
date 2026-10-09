@@ -58,3 +58,16 @@ describe('itensDeSubs', () => {
     expect(resumoGrupo(g)).toBe('0/1 concluídos');
   });
 });
+
+describe('contagem que o servidor publica', () => {
+  it('só um dos dois subagentes segue no escritório: o grupo mostra a contagem do servidor', () => {
+    const equipes = [{ key: 's|time:g', concluidos: 1, total: 2, paradosPorVoce: 0, rodadas: [{ n: 1, concluidos: 1, total: 2 }] }];
+    const [g] = grupos(itensDeSubs([sub('e2', { teamName: 'g', rodada: 1, sessionId: 's' })], pai, equipes));
+    expect(resumoGrupo(g)).toBe('1/2 concluídos · rodada 1: 1/2');
+  });
+
+  it('parado por você entra no resumo', () => {
+    const [g] = grupos(itensDeSubs([sub('a', { teamName: 't', sessionId: 's' })], pai, [{ key: 's|time:t', concluidos: 1, total: 2, paradosPorVoce: 1, rodadas: [] }]));
+    expect(resumoGrupo(g)).toBe('1/2 concluídos · 1 parado por você');
+  });
+});

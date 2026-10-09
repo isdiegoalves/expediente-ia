@@ -1,4 +1,5 @@
-import type { AgentInfo } from '../../../shared/types';
+import { chaveEquipe } from '../../../shared/equipes';
+import type { AgentInfo, EquipeResumo } from '../../../shared/types';
 import { h, setHidden, setText } from './dom';
 
 export interface RodadaResumo {
@@ -16,6 +17,7 @@ export interface GrupoSubs {
   concluidos: number;
   total: number;
   rodadas: RodadaResumo[];
+  paradosPorVoce: number;
 }
 
 export interface ItemSub {
@@ -33,13 +35,17 @@ export function soSubs(agents: readonly AgentInfo[]): ItemSubs[] {
 
 /**
  * Cabeçalhos de grupo (time, senão o pai) antes dos subagentes. Sem time nem rodada em nenhum deles a lista
- * segue plana, como antes.
+ * segue plana, como antes. A contagem vem do servidor (`equipes`); sem ela, conta só os que estão na lista.
  */
-export function itensDeSubs(subs: readonly AgentInfo[], paiNome: (id: string) => string | undefined): ItemSubs[] {
+export function itensDeSubs(
+  subs: readonly AgentInfo[],
+  paiNome: (id: string) => string | undefined,
+  equipes: readonly EquipeResumo[] = [],
+): ItemSubs[] {
   if (!subs.some((s) => s.teamName || s.rodada !== undefined)) return soSubs(subs);
   const grupos = new Map<string, AgentInfo[]>();
   for (const s of subs) {
-    const key = s.teamName ? `time:${s.teamName}` : `pai:${s.parentId ?? ''}`;
+    const key = chaveEquipe(s);
     const lista = grupos.get(key);
     if (lista) lista.push(s);
     else grupos.set(key, [s]);
@@ -54,12 +60,14 @@ export function itensDeSubs(subs: readonly AgentInfo[], paiNome: (id: string) =>
       if (concluido(s)) r.concluidos++;
       rodadas.set(s.rodada, r);
     }
+    const publicada = equipes.find((e) => e.key === key);
     const g: GrupoSubs = {
       tipo: 'grupo',
       key: `grupo:${key}`,
-      concluidos: lista.filter(concluido).length,
-      total: lista.length,
-      rodadas: [...rodadas.values()].sort((a, b) => a.n - b.n),
+      concluidos: publicada?.concluidos ?? lista.filter(concluido).length,
+      total: publicada?.total ?? lista.length,
+      rodadas: publicada?.rodadas ?? [...rodadas.values()].sort((a, b) => a.n - b.n),
+      paradosPorVoce: publicada?.paradosPorVoce ?? lista.filter((s) => s.stoppedByUser).length,
     };
     if (lista[0].teamName) g.time = lista[0].teamName;
     else {
@@ -78,6 +86,7 @@ export function tituloGrupo(g: GrupoSubs): string {
 export function resumoGrupo(g: GrupoSubs): string {
   const partes = [`${g.concluidos}/${g.total} concluídos`];
   for (const r of g.rodadas) partes.push(`rodada ${r.n}: ${r.concluidos}/${r.total}`);
+  if (g.paradosPorVoce) partes.push(`${g.paradosPorVoce} ${g.paradosPorVoce === 1 ? 'parado' : 'parados'} por você`);
   return partes.join(' · ');
 }
 

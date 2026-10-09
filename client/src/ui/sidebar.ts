@@ -275,7 +275,7 @@ export class Sidebar implements UiComponent {
       const shown = n.subs.length;
       setText(r.subsCaption, shown === n.subTotal ? plural(n.subTotal, 'subagente', 'subagentes') : `${shown} de ${plural(n.subTotal, 'subagente', 'subagentes')}`);
     }
-    r.subs.sync(itensDeSubs(n.subs, (id) => this.ctx.agent(id)?.name));
+    r.subs.sync(itensDeSubs(n.subs, (id) => this.ctx.agent(id)?.name, this.ctx.store.snapshot?.equipes));
   }
 
   private updateRow(row: HTMLElement, a: AgentInfo): void {

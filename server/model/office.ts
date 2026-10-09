@@ -9,6 +9,7 @@ import type {
   AgentOrigin,
   AgentStats,
   AgentStatus,
+  EquipeResumo,
   FeedItem,
   Notice,
   NoticeLevel,
@@ -22,6 +23,7 @@ import type {
   TaskItem,
 } from '../../shared/types';
 import { SHELL_WAIT_TOOL, SPECIAL, type ShellOutcome } from '../../shared/activity';
+import { chaveEquipe } from '../../shared/equipes';
 import { DemoSimulator } from '../../shared/demo/simulator';
 import { describeGitHubEvent, githubEventKey, RoomEffects, type GitHubEvent } from '../../shared/github';
 import { hash32 } from '../../shared/hash';
@@ -167,10 +169,21 @@ function cloneAgent(a: AgentInfo): AgentInfo {
   return c;
 }
 
+interface SubVisto {
+  sessionId: string;
+  parentId: string;
+  teamName?: string;
+  rodada?: number;
+  done: boolean;
+  stoppedByUser: boolean;
+}
+
 const byStart = (a: ShellJob, b: ShellJob) => a.startedAt - b.startedAt || a.id.localeCompare(b.id);
 
 export class Office {
   private agents = new Map<string, AgentRecord>();
+  /** Todo subagente visto, por id; sobrevive à saída do escritório e alimenta a contagem das equipes. */
+  private vistos = new Map<string, SubVisto>();
   private rooms = new Map<string, { path: string; createdAt: number }>();
   private slots = new SlotAllocator(SLOT_COOLDOWN_MS);
   private roomNames = new Map<string, string>();
@@ -532,6 +545,7 @@ export class Office {
         sub.info.status = 'done';
         sub.info.statusSince = now;
       }
+      this.lembrarSub(sub.info);
       sub.removeAt = Math.min(sub.removeAt ?? Infinity, rec.removeAt);
     }
     this.notice('leave', id, 'info', `🚪 ${info.name} encerrou a sessão`, info.roomId);
@@ -576,8 +590,49 @@ export class Office {
     if (p.rodada !== undefined) info.rodada = p.rodada;
     if (p.stoppedByUser) info.stoppedByUser = true;
     this.agents.set(p.id, { info, history: [], turnStart: now });
+    this.lembrarSub(info);
     this.markDirty();
     return true;
+  }
+
+  /** Subagente que já tinha terminado quando o servidor o viu (não entra no escritório, só na contagem). */
+  noteSubEncerrado(p: Pick<SubInput, 'id' | 'parentId' | 'sessionId' | 'teamName' | 'rodada' | 'stoppedByUser'>): void {
+    if (!this.agents.has(p.parentId) || this.agents.has(p.id)) return;
+    const antes = this.vistos.get(p.id);
+    if (antes?.done) return;
+    this.vistos.set(p.id, { sessionId: p.sessionId, parentId: p.parentId, teamName: p.teamName, rodada: p.rodada, done: true, stoppedByUser: !!p.stoppedByUser });
+    this.markDirty();
+  }
+
+  private lembrarSub(info: AgentInfo): void {
+    this.vistos.set(info.id, {
+      sessionId: info.sessionId,
+      parentId: info.parentId ?? '',
+      teamName: info.teamName,
+      rodada: info.rodada,
+      done: info.status === 'done' || info.status === 'offline',
+      stoppedByUser: !!info.stoppedByUser,
+    });
+  }
+
+  private equipes(): EquipeResumo[] {
+    const out = new Map<string, EquipeResumo>();
+    for (const v of this.vistos.values()) {
+      const key = chaveEquipe(v);
+      const e = out.get(key) ?? { key, concluidos: 0, total: 0, paradosPorVoce: 0, rodadas: [] };
+      e.total++;
+      if (v.done) e.concluidos++;
+      if (v.stoppedByUser) e.paradosPorVoce++;
+      if (v.rodada !== undefined) {
+        let r = e.rodadas.find((x) => x.n === v.rodada);
+        if (!r) e.rodadas.push((r = { n: v.rodada, concluidos: 0, total: 0 }));
+        r.total++;
+        if (v.done) r.concluidos++;
+      }
+      out.set(key, e);
+    }
+    for (const e of out.values()) e.rodadas.sort((a, b) => a.n - b.n);
+    return [...out.values()];
   }
 
   completeSub(id: string, opts: { notify?: boolean } = {}): void {
@@ -590,6 +645,7 @@ export class Office {
     delete info.shells;
     delete info.parado;
     rec.removeAt = now + DONE_GRACE_MS;
+    this.lembrarSub(info);
     if (!this.booting && info.activity?.kind !== 'done') {
       const act: Activity = { id: `${id}#done:${++this.seq}`, at: now, ...SPECIAL.turnDone(now - info.startedAt), durationMs: now - info.startedAt };
       this.addActivity(id, act, true);
@@ -611,6 +667,7 @@ export class Office {
     rec.info.status = 'working';
     rec.info.statusSince = this.now();
     delete rec.removeAt;
+    this.lembrarSub(rec.info);
     this.markDirty();
   }
 
@@ -626,6 +683,7 @@ export class Office {
     const info = this.agents.get(id)?.info;
     if (!info || info.kind !== 'sub' || info.stoppedByUser) return;
     info.stoppedByUser = true;
+    this.lembrarSub(info);
     this.markDirty();
   }
 
@@ -797,6 +855,7 @@ export class Office {
     for (const [id, rec] of this.agents) {
       if (rec.removeAt !== undefined && now >= rec.removeAt) {
         this.agents.delete(id);
+        if (rec.info.kind === 'main') for (const [subId, v] of this.vistos) if (v.sessionId === rec.info.sessionId) this.vistos.delete(subId);
         removed = true;
       }
     }
@@ -865,11 +924,13 @@ export class Office {
     const trim = (a: AgentInfo): AgentInfo => (a.recent.length > SNAPSHOT_RECENT ? { ...a, recent: a.recent.slice(-SNAPSHOT_RECENT) } : a);
     const sessions = new Map<string, number>();
     for (const a of real) if (a.kind === 'main' && a.status !== 'offline') sessions.set(a.account, (sessions.get(a.account) ?? 0) + 1);
+    const equipes = this.equipes();
     return {
       rev: this.rev,
       serverTime: now,
       rooms,
       agents: [...real, ...(this.demoSnap?.agents ?? [])].map(trim),
+      ...(equipes.length ? { equipes } : {}),
       accounts: [...this.deps.accounts(sessions), ...(this.demoSnap?.accounts ?? [])],
       meta: {
         demo: this.isDemo(),

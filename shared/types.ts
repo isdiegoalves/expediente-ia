@@ -334,12 +334,24 @@ export interface AccountInfo {
   usageStatus: 'ok' | 'stale' | 'disabled';
 }
 
+/** Contagem de um time (ou, sem time, do pai) de subagentes: inclui quem já saiu do escritório. */
+export interface EquipeResumo {
+  /** Ver `chaveEquipe`. */
+  key: string;
+  concluidos: number;
+  total: number;
+  paradosPorVoce: number;
+  rodadas: { n: number; concluidos: number; total: number }[];
+}
+
 export interface OfficeSnapshot {
   /** Incrementa a cada mudança. */
   rev: number;
   serverTime: number;
   rooms: RoomInfo[];
   agents: AgentInfo[];
+  /** Contagens por time ou pai de todo subagente visto na sessão; ausente quando não há subagentes. */
+  equipes?: EquipeResumo[];
   /** Contas do Claude detectadas (com uso de 5h/semanal quando disponível). */
   accounts: AccountInfo[];
   meta: {

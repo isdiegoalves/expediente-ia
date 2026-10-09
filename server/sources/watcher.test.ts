@@ -999,6 +999,26 @@ describe('time, nome, rodada e parada pelo usuário do subagente', () => {
     }
   });
 
+  it('subagente que terminou antes do boot entra na contagem do time, com a rodada', () => {
+    const c = setup();
+    try {
+      writeLines(c.transcript('sess-v'), [L.prompt('oi')]);
+      const antigo = c.subFile('sess-v', 'v0', { agentType: 'general-purpose', description: 'velho', teamName: 'gauntlet', name: 'r1-e1', stoppedByUser: true }, [L.prompt('antigo', { agentId: 'v0' })]);
+      const passado = (c.now() - 10 * 60_000) / 1000;
+      utimesSync(antigo, passado, passado);
+      c.subFile('sess-v', 'v1', { agentType: 'general-purpose', description: 'vivo', teamName: 'gauntlet', name: 'r1-e2' }, [L.prompt('agora', { agentId: 'v1', at: c.now() })]);
+      c.openSession(802, 'sess-v');
+      c.watcher.boot();
+      expect(c.agents().filter((a) => a.kind === 'sub').map((a) => a.id)).toEqual(['sess-v:v1']);
+      expect(c.office.commit().snapshot.equipes).toEqual([
+        { key: 'sess-v|time:gauntlet', concluidos: 1, total: 2, paradosPorVoce: 1, rodadas: [{ n: 1, concluidos: 1, total: 2 }] },
+      ]);
+    } finally {
+      c.watcher.stop();
+      c.tmp.cleanup();
+    }
+  });
+
   it('stoppedByUser que aparece depois no .meta.json chega ao agente', () => {
     const c = setup();
     try {

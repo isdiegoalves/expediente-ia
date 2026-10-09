@@ -297,4 +297,47 @@ describe('Office', () => {
     expect(new Office({ ...deps, terminal: true }).commit().snapshot.meta.terminal).toBe(true);
     expect(new Office({ ...deps, terminal: false }).commit().snapshot.meta.terminal).toBe(false);
   });
+  describe('contagem das equipes de subagentes', () => {
+    const main = (office: Office, now: number) => office.addMain({ id: 'acc:1', account: 'acc', sessionId: 's1', cwd: '/p/loja', role: 'Agente principal', startedAt: now, status: 'working' });
+    const sub = (office: Office, id: string, now: number, over: object = {}) =>
+      office.addSub({ id: `s1:${id}`, parentId: 'acc:1', sessionId: 's1', role: 'general-purpose', background: false, startedAt: now, teamName: 'g', rodada: 1, ...over });
+
+    it('o concluído continua na conta depois do período de graça, por time e por rodada', () => {
+      const { office, advance, now } = makeOffice();
+      main(office, now());
+      sub(office, 'e1', now());
+      sub(office, 'e2', now());
+      office.completeSub('s1:e1');
+      advance(DONE_GRACE_MS + 1_000);
+      office.tick();
+      const snap = office.commit().snapshot;
+      expect(snap.agents.filter((a) => a.kind === 'sub').map((a) => a.id)).toEqual(['s1:e2']);
+      expect(snap.equipes).toEqual([{ key: 's1|time:g', concluidos: 1, total: 2, paradosPorVoce: 0, rodadas: [{ n: 1, concluidos: 1, total: 2 }] }]);
+    });
+
+    it('subagente que terminou antes do boot entra no total; parado por você é contado', () => {
+      const { office, now } = makeOffice();
+      main(office, now());
+      office.noteSubEncerrado({ id: 's1:antigo', parentId: 'acc:1', sessionId: 's1', teamName: 'g', rodada: 1, stoppedByUser: true });
+      sub(office, 'vivo', now(), { rodada: 2 });
+      expect(office.commit().snapshot.equipes).toEqual([
+        { key: 's1|time:g', concluidos: 1, total: 2, paradosPorVoce: 1, rodadas: [{ n: 1, concluidos: 1, total: 1 }, { n: 2, concluidos: 0, total: 1 }] },
+      ]);
+    });
+
+    it('sem time o grupo é o do pai; reativar desfaz a conclusão; a conta sai com a sessão', () => {
+      const { office, advance, now } = makeOffice();
+      main(office, now());
+      sub(office, 'a', now(), { teamName: undefined, rodada: undefined });
+      office.completeSub('s1:a');
+      expect(office.commit().snapshot.equipes).toMatchObject([{ key: 's1|pai:acc:1', concluidos: 1, total: 1 }]);
+      office.reactivateSub('s1:a');
+      expect(office.commit().snapshot.equipes).toMatchObject([{ concluidos: 0, total: 1 }]);
+      office.closeMain('acc:1');
+      advance(OFFLINE_GRACE_MS + 1_000);
+      office.tick();
+      expect(office.commit().snapshot.equipes).toBeUndefined();
+    });
+  });
+
 });

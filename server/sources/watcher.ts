@@ -715,6 +715,7 @@ export class ClaudeWatcher {
       if (known === undefined) {
         if (firstScan && now - mtimeMs > BOOT_RECENT_MS && !this.maybeStillRunning(t, file, now - mtimeMs)) {
           t.known.set(file.path, size);
+          this.lembrarEncerrado(t, file, readSubagentMeta(file.metaPath));
           continue;
         }
         this.openSub(t, file, firstScan ? 'replay' : 'new');
@@ -779,10 +780,11 @@ export class ClaudeWatcher {
       (mode !== 'new' && concludedByIdle({ now, lastWriteAt: tail.mtimeMs, ended: state.ended, pendingTool: state.pendingTools.size > 0 }));
     if (finished) {
       t.known.set(file.path, tail.size);
+      this.lembrarEncerrado(t, file, meta);
       return;
     }
     const spawn = meta?.toolUseId ? t.spawns.get(meta.toolUseId) : undefined;
-    const parentId = spawn && spawn.owner !== t.key && office.has(spawn.owner) && !office.isSubDone(spawn.owner) ? spawn.owner : t.key;
+    const parentId = this.donoDoSub(t, spawn);
     const journalLabel = file.runId ? this.journal(t, file.runId).get(file.agentId)?.label : undefined;
     const title = meta?.description ?? spawn?.description ?? journalLabel;
     const background = meta?.requestShape ? meta.requestShape !== 'foreground' || !!spawn?.background : !!spawn?.background;
@@ -810,6 +812,23 @@ export class ClaudeWatcher {
       if (t.subs.get(file.agentId) !== sub) return;
       this.applySubSummary(sub, t);
       this.mergeOlderShells(t, id, shellEvents);
+    });
+  }
+
+  private donoDoSub(t: SessionTracker, spawn: { owner: string } | undefined): string {
+    const office = this.opts.office;
+    return spawn && spawn.owner !== t.key && office.has(spawn.owner) && !office.isSubDone(spawn.owner) ? spawn.owner : t.key;
+  }
+
+  private lembrarEncerrado(t: SessionTracker, file: SubagentFile, meta: SubagentMeta | undefined): void {
+    const spawn = meta?.toolUseId ? t.spawns.get(meta.toolUseId) : undefined;
+    this.opts.office.noteSubEncerrado({
+      id: `${t.sessionId}:${file.agentId}`,
+      parentId: this.donoDoSub(t, spawn),
+      sessionId: t.sessionId,
+      teamName: meta?.teamName,
+      rodada: rodadaDoNome(meta?.name),
+      stoppedByUser: meta?.stoppedByUser,
     });
   }
 
