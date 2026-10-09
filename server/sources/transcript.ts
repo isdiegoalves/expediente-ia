@@ -84,7 +84,8 @@ export interface SpawnInfo {
  */
 export type TranscriptSignal =
   | { type: 'spawn'; spawn: SpawnInfo }
-  | { type: 'launched'; toolUseId: string; agentId?: string; runId?: string; taskId?: string }
+  /** `teammate` = nome do subagente com nome (Agent com `name`): é por ele que o TaskStop o encerra. */
+  | { type: 'launched'; toolUseId: string; agentId?: string; runId?: string; taskId?: string; teammate?: string }
   | { type: 'finished'; toolUseId: string; agentId?: string; runId?: string; error: boolean }
   | { type: 'notification'; toolUseId?: string; taskId?: string; status?: string; summary?: string }
   | { type: 'stopped'; taskId: string }
@@ -306,6 +307,8 @@ const INTERRUPTED = /^\[Request interrupted by user/;
 const REJECTED = /doesn't want to proceed|tool use was rejected|user rejected/i;
 // Mensagens "de sistema" gravadas como user (comandos locais, lembretes, saída de bash...).
 const SYSTEM_TAG = /^<(local-command-[\w-]+|command-stdout|command-stderr|system-reminder|bash-[\w-]+|user-memory-input|user-prompt-submit-hook|persisted-output)\b/;
+/** Mensagem entregue a um teammate: o pedido vem embrulhado em <teammate-message …>…</teammate-message>. */
+const TEAMMATE_MESSAGE = /^<teammate-message\b[^>]*>([\s\S]*?)<\/teammate-message>/;
 // Comandos de barra que não são instruções de trabalho.
 const LOCAL_COMMANDS = new Set([
   '/clear', '/compact', '/model', '/cost', '/usage', '/status', '/config', '/login', '/logout', '/exit', '/quit', '/resume',
@@ -647,7 +650,10 @@ class LineParser {
     if (INTERRUPTED.test(text)) return this.interrupted();
     if (SYSTEM_TAG.test(text) || text.startsWith('Caveat:')) return;
     let prompt = text;
-    if (/^<command-(name|message|args)>/.test(text)) {
+    const teammateText = TEAMMATE_MESSAGE.exec(text)?.[1]?.trim();
+    if (teammateText) {
+      prompt = teammateText;
+    } else if (/^<command-(name|message|args)>/.test(text)) {
       const cmd = /<command-name>([\s\S]*?)<\/command-name>/.exec(text)?.[1]?.trim();
       const args = /<command-args>([\s\S]*?)<\/command-args>/.exec(text)?.[1]?.trim() ?? '';
       if (!cmd || LOCAL_COMMANDS.has(cmd)) return;
@@ -700,12 +706,16 @@ class LineParser {
     if (isSpawn) {
       const agentId = str(tur.agentId);
       const runId = str(tur.runId);
-      if (tur.status === 'async_launched' || tur.isAsync === true) {
+      // Subagente com nome vira teammate: nasce em segundo plano e fica vivo esperando mensagens.
+      const teammate = tur.status === 'teammate_spawned';
+      if (tur.status === 'async_launched' || tur.isAsync === true || teammate) {
         const sig: TranscriptSignal = { type: 'launched', toolUseId: id };
         if (agentId) sig.agentId = agentId;
         if (runId) sig.runId = runId;
         const taskId = str(tur.taskId);
         if (taskId) sig.taskId = taskId;
+        const teammateName = teammate ? str(tur.name) : undefined;
+        if (teammateName) sig.teammate = teammateName;
         this.out.signals.push(sig);
       } else {
         const sig: TranscriptSignal = { type: 'finished', toolUseId: id, error: isError };

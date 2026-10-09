@@ -255,6 +255,17 @@ describe('parseLine — sinais de subagentes', () => {
     expect(r[5].signals).toEqual([{ type: 'stopped', taskId: 'w1' }]);
   });
 
+  it('teammate (Agent com name): lançado com o nome, não termina; o pedido chega sem o <teammate-message>', () => {
+    const s = createTranscriptState();
+    const r = feed(s, [
+      L.assistant([L.tool('toolu_t', 'Agent', { description: 'Sonda', subagent_type: 'qa', name: 'sonda', run_in_background: true })]),
+      L.result('toolu_t', 'Spawned successfully.', { toolUseResult: { status: 'teammate_spawned', agentId: 'asonda-1', name: 'sonda' } }),
+      L.prompt('<teammate-message teammate_id="team-lead" summary="Pergunta">\nCapital do Chile?\n</teammate-message>'),
+    ]);
+    expect(r[1].signals).toEqual([{ type: 'launched', toolUseId: 'toolu_t', agentId: 'asonda-1', teammate: 'sonda' }]);
+    expect(acts([r[2]]).map((a) => a.activity.text)).toEqual(['Nova tarefa: “Capital do Chile?”']);
+  });
+
   it('fork: a cópia herdada da chamada Agent não vira spawn nem término; a instrução vira o prompt', () => {
     const s = createTranscriptState();
     const r = feed(s, [

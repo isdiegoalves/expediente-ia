@@ -237,6 +237,38 @@ describe('ClaudeWatcher', () => {
     expect(c.agent('sess-a:fk2')).toMatchObject({ status: 'working' });
   });
 
+  it('teammate (Agent com name): fica à toa entre turnos, volta com mensagem nova e sai com TaskStop', () => {
+    const mainId = bootWithSession();
+    appendLines(c.transcript('sess-a'), [
+      L.assistant([L.tool('toolu_t', 'Agent', { description: 'Sonda', subagent_type: 'qa', name: 'sonda', run_in_background: true })]),
+      L.result('toolu_t', 'Spawned successfully.', { toolUseResult: { status: 'teammate_spawned', agentId: 'asonda-1', name: 'sonda' } }),
+    ]);
+    const meta = { agentType: 'sonda', description: 'Sonda', name: 'sonda', requestShape: 'background', taskKind: 'in_process_teammate', customAgentType: 'qa' };
+    const path = c.subFile('sess-a', 'asonda-1', meta, [
+      L.prompt('<teammate-message teammate_id="team-lead">\nCapital do Chile?\n</teammate-message>', { agentId: 'asonda-1' }),
+      L.assistant([L.text('Santiago.')], { agentId: 'asonda-1', stop: 'end_turn' }),
+    ]);
+    c.poll();
+    expect(c.agent('sess-a:asonda-1')).toMatchObject({ kind: 'sub', parentId: mainId, status: 'working', title: 'Sonda' });
+    c.advance(6_000);
+    c.poll();
+    expect(c.agent('sess-a:asonda-1')!.status).toBe('idle');
+    c.advance(10 * 60_000);
+    c.poll();
+    expect(c.agent('sess-a:asonda-1')!.status).toBe('idle');
+
+    appendLines(path, [L.prompt('<teammate-message teammate_id="team-lead">\nE a do Peru?\n</teammate-message>', { agentId: 'asonda-1' })]);
+    c.poll();
+    expect(c.agent('sess-a:asonda-1')).toMatchObject({ status: 'working', activity: { text: 'Nova tarefa: “E a do Peru?”' } });
+
+    appendLines(c.transcript('sess-a'), [L.assistant([L.tool('toolu_s', 'TaskStop', { task_id: 'sonda' })]), L.result('toolu_s', 'parado')]);
+    c.poll();
+    expect(c.agent('sess-a:asonda-1')!.status).toBe('done');
+    c.advance(26_000);
+    c.poll();
+    expect(c.agent('sess-a:asonda-1')).toBeUndefined();
+  });
+
   it('subagente conclui por end_turn + 5 s de silêncio', () => {
     bootWithSession();
     c.subFile('sess-a', 'e1', { agentType: 'Plan', description: 'Planejar', toolUseId: 'toolu_x' }, [

@@ -23,6 +23,8 @@ export interface SubagentMeta {
   /** Parâmetro `name` passado ao Agent. */
   name?: string;
   stoppedByUser?: boolean;
+  /** Teammate (Agent com `name`): não termina no fim do turno, fica esperando mensagens. */
+  teammate?: boolean;
 }
 
 /** Sem escrita há 5 s depois de um end_turn: concluiu. */
@@ -93,6 +95,7 @@ export function parseSubagentMeta(raw: string): SubagentMeta | undefined {
     if (teamName) meta.teamName = teamName;
     if (name) meta.name = name;
     if (j.stoppedByUser === true) meta.stoppedByUser = true;
+    if (j.taskKind === 'in_process_teammate') meta.teammate = true;
     return meta;
   } catch {
     return undefined;
