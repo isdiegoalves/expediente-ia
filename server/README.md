@@ -107,7 +107,11 @@ cliente com mais de 8 MB acumulados é desconectado.
 
 A porta só é alcançável pelo próprio computador: fora do container o Node escuta em 127.0.0.1; dentro dele, em
 `0.0.0.0` (modo vindo de `/.dockerenv`), e o `docker-compose.yml` publica `127.0.0.1:4848:4848`. Nenhuma variável
-muda isso. `EXPEDIENTE_TERMINAL=0` desliga o recurso (`config.ts`, `terminalOffReason`).
+muda isso. Como lá dentro o servidor não distingue a origem do pedido, terminal, histórico e permissões só ligam
+depois que o `docker:up` conferir com `docker inspect` que toda porta publicada está em 127.0.0.1 e gravar
+`/data/publicacao.json` (id do container, portas, hora); sem o arquivo, ou com o de outro container, ficam
+desligados (`publicacao.ts`) e ligam sozinhos quando ele aparece. `EXPEDIENTE_TERMINAL=0` desliga sempre
+(`config.ts`, `terminalOffReason`).
 
 Além disso, cada requisição precisa de `Host` local (`localhost`, `*.localhost`, 127.x ou `[::1]`): IPs da rede recebem 403. O estado sai em `meta.terminal` do snapshot e em
 `terminal` no `/api/health`. Erros antes do stream respondem JSON `{error}`: 403 (desligado ou acesso que não é

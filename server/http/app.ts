@@ -18,8 +18,8 @@ export interface ApiDeps {
   sources: () => SourceInfo[];
   version: string;
   inDocker: boolean;
-  /** Terminal somente leitura ligado (ServerConfig.terminal: só com bind local). */
-  terminal?: boolean;
+  /** Terminal somente leitura, histórico e permissões ligados; função quando a trava muda durante a execução (publicacao.ts). */
+  terminal?: boolean | (() => boolean);
   /** Streams do terminal; sem eles o recurso fica desligado mesmo com `terminal`. */
   terminals?: TerminalStreams;
   /** Histórico de sessões do terminal (GET /api/sessions/*, http/sessions.ts); mesma trava do terminal. */
@@ -137,7 +137,7 @@ export function modSummary(
 /** Devolve um handler que trata /api/* e responde false para o resto. */
 export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: ServerResponse, url: URL) => boolean {
   const { office, hub, accounts } = deps;
-  const terminals = deps.terminal ? deps.terminals : undefined;
+  const terminalOn = () => (typeof deps.terminal === 'function' ? deps.terminal() : deps.terminal === true);
 
   const methodNotAllowed = (res: ServerResponse, allow: string) => {
     res.setHeader('Allow', allow);
@@ -181,8 +181,8 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
           version: deps.version,
           demo: office.isDemo(),
           docker: deps.inDocker,
-          terminal: !!terminals,
-          permissions: !!deps.permissions,
+          terminal: terminalOn() && !!deps.terminals,
+          permissions: terminalOn() && !!deps.permissions,
           sources: deps.sources(),
           accounts: accounts.entries().map((a) => ({ id: a.id, usageStatus: accounts.usageView(a.id).status })),
         });
@@ -198,6 +198,7 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
       }
       return true;
     }
+    const terminals = terminalOn() ? deps.terminals : undefined;
     const terminalMatch = TERMINAL_ROUTE.exec(path);
     if (terminalMatch) {
       if (method !== 'GET') methodNotAllowed(res, 'GET');
@@ -218,12 +219,12 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
       return true;
     }
     if (path.startsWith('/api/sessions/')) {
-      handleSessionsRoute(req, res, path, { history: deps.terminal ? deps.sessions : undefined, terminals });
+      handleSessionsRoute(req, res, path, { history: terminalOn() ? deps.sessions : undefined, terminals });
       return true;
     }
     if (path === '/api/permissions' || path.startsWith('/api/permissions/')) {
       // Responder pelo escritório age sobre as sessões: a mesma trava do terminal (bind local + Host local).
-      if (!deps.permissions) {
+      if (!deps.permissions || !terminalOn()) {
         sendJson(res, 403, { error: 'responder pelo escritório desligado: só funciona com o Expediente acessível apenas pelo próprio computador' });
       } else if (!isLoopbackHost(req.headers.host)) {
         sendJson(res, 403, { error: 'pedidos de permissão só são respondidos pelo próprio computador (http://localhost ou http://127.0.0.1)' });

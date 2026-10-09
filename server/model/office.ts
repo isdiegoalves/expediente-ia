@@ -58,7 +58,7 @@ export interface OfficeDeps {
   /** Nome amigável da conta (ex.: "Conta D") para os avisos. */
   accountName: (id: string) => string | undefined;
   /** Terminal somente leitura ligado (ver OfficeSnapshot.meta.terminal e ServerConfig.terminal). */
-  terminal?: boolean;
+  terminal?: boolean | (() => boolean);
   /** Pedidos de permissão pendentes por agente (PermissionRegistry.snapshot), postos no snapshot. */
   permissions?: () => ReadonlyMap<string, PermissionRequestInfo>;
   now?: () => number;
@@ -796,7 +796,7 @@ export class Office {
         startedAt: this.deps.startedAt,
         version: this.deps.version,
         build: this.deps.build?.(),
-        terminal: this.deps.terminal === true,
+        terminal: typeof this.deps.terminal === 'function' ? this.deps.terminal() : this.deps.terminal === true,
       },
     };
   }

@@ -32,6 +32,7 @@ import { dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { AccountInfo, SourceInfo } from '../shared/types';
 import { detectAccounts, discoverClaudeDirs, type DetectedAccount } from '../server/accounts/detect';
+import { PUBLICACAO_ARQUIVO, planejarConfirmacao } from '../server/publicacao';
 import { describeStateMigration, LEGACY_NAME, legacyEnvWarning, migrateLegacyStateDir } from '../server/legacy';
 import { makeClaudeRunner, MIN_CLAUDE_VERSION, readPackageVersion, updateInstalledMods, type ModUpdateResult } from './mod-install';
 
@@ -457,6 +458,37 @@ function dockerQuiet(args: string[]): { ok: boolean; out: string; error: string 
   return { ok: res.status === 0, out: res.stdout ?? '', error };
 }
 
+/**
+ * Confere com `docker inspect` que TODA porta publicada do container está em 127.0.0.1 e grava a confirmação em
+ * /data/publicacao.json. Sem ela o servidor mantém terminal, histórico e permissões desligados.
+ */
+function confirmarPublicacao(): void {
+  const file = `/data/${PUBLICACAO_ARQUIVO}`;
+  const apagar = () => dockerQuiet(['exec', SERVICE, 'rm', '-f', file]);
+  const inspect = dockerQuiet(['inspect', '--type', 'container', SERVICE]);
+  let plano: ReturnType<typeof planejarConfirmacao>;
+  try {
+    if (!inspect.ok) throw new Error(inspect.error);
+    plano = planejarConfirmacao((JSON.parse(inspect.out) as unknown[])[0]);
+  } catch (err) {
+    plano = { motivo: `não consegui ler o docker inspect (${(err as Error).message})` };
+  }
+  if ('motivo' in plano) {
+    apagar();
+    warn(`${plano.motivo}; terminal, histórico e permissões ficam desligados.`);
+    return;
+  }
+  const grava = spawnSync('docker', ['exec', '-i', SERVICE, 'sh', '-c', `cat > ${file}.tmp && mv ${file}.tmp ${file}`], {
+    input: JSON.stringify(plano.publicacao),
+    encoding: 'utf8',
+  });
+  if (grava.status !== 0) {
+    warn(`não consegui gravar ${file} no container (${(grava.stderr ?? '').trim() || grava.status}); terminal, histórico e permissões ficam desligados.`);
+    return;
+  }
+  say(`Publicação confirmada só em 127.0.0.1 (${plano.publicacao.portas.map((p) => p.porta).join(', ')}): terminal, histórico e permissões ligados.`);
+}
+
 /** O que já existe no Docker do CodeTown e do Expediente (entrada de planUp). */
 function inspectDocker(): DockerState {
   const exists = (kind: 'network' | 'volume' | 'image', name: string) => dockerQuiet([kind, 'inspect', name]).ok;
@@ -616,6 +648,8 @@ async function up(opts: Options, port: number): Promise<void> {
   say(`Aguardando o Expediente responder em ${publicUrl}…`);
   const health = await waitHealthy(baseUrl);
   if (!health) fail(`o Expediente não respondeu em ${HEALTH_TIMEOUT_MS / 1000} s. Veja o que aconteceu com: npm run docker:logs`);
+
+  confirmarPublicacao();
 
   console.log('');
   say(`Expediente${health.version ? ` ${health.version}` : ''} no ar: ${publicUrl}`);

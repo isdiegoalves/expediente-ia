@@ -8,6 +8,7 @@ import { AccountsService } from './accounts/service';
 import { loadConfig, terminalOffReason } from './config';
 import { createApiHandler, sendJson } from './http/app';
 import { createRequestGuard } from './http/guard';
+import { createTerminalGate, PUBLICACAO_ARQUIVO } from './publicacao';
 import { Hub } from './http/sse';
 import { createStaticHandler } from './http/static';
 import { TerminalStreams } from './http/terminal';
@@ -25,6 +26,8 @@ import { ClaudeWatcher } from './sources/watcher';
 import { createBuildReader } from './build';
 
 const config = loadConfig();
+// Terminal, histórico e permissões: no container só com a publicação da porta confirmada pelo docker-up.
+const gate = createTerminalGate({ terminal: config.terminal, inDocker: config.inDocker, file: join(config.dataDir, PUBLICACAO_ARQUIVO) });
 const startedAt = Date.now();
 
 // Nome antigo (CodeTown, até a 0.3.2): leva ~/.codetown para ~/.expediente antes de ler qualquer estado e avisa
@@ -58,7 +61,7 @@ const office = new Office({
   accounts: (sessions) => accounts.list(sessions),
   sources: () => late.watcher?.sources() ?? [],
   accountName: (id) => accounts.find(id)?.detected.name,
-  terminal: config.terminal,
+  terminal: gate.on,
   permissions: () => late.permissions?.snapshot() ?? new Map(),
 });
 const watcher = new ClaudeWatcher({ accounts, office, inDocker: config.inDocker });
@@ -115,7 +118,7 @@ const api = createApiHandler({
   sources: () => watcher.sources(),
   version: config.version,
   inDocker: config.inDocker,
-  terminal: config.terminal,
+  terminal: gate.on,
   terminals,
   sessions: history,
   timeline: createTimelineHandler({ dir: timelineDir, recording: !!timeline }),
@@ -183,10 +186,11 @@ server.listen(config.port, config.host, () => {
     log.info(`   Conta ${a.detected.short} (${a.id}): ${src?.sessions ?? 0} sessão(ões) aberta(s) · uso: ${usage} · ${a.dir}`);
   }
   if (office.isDemo()) log.info('   Modo demonstração ligado (agentes simulados misturados aos reais).');
-  if (config.terminal) log.info('   Terminal somente leitura: ligado (acesso só local).');
-  else log.info(`   Terminal somente leitura: desligado (${terminalOffReason(process.env)}).`);
+  const off = gate.offReason();
+  if (off === undefined) log.info('   Terminal somente leitura: ligado (acesso só local).');
+  else log.info(`   Terminal somente leitura: desligado (${terminalOffReason(process.env) ?? off})${terminalOffReason(process.env) ? '' : '; liga sozinho quando o docker-up confirmar a publicação'}.`);
   log.info(timeline ? `   Linha do tempo (timelapse): gravando em ${timelineDir}.` : '   Linha do tempo (timelapse): gravação desligada (EXPEDIENTE_TIMELINE).');
-  log.info(`   Responder pelo escritório: ${config.terminal ? 'ligado (precisa do mod: npm run mod:install; ou do hook antigo: npm run hooks:install)' : 'desligado (mesma trava do terminal)'}.`);
+  log.info(`   Responder pelo escritório: ${off === undefined ? 'ligado (precisa do mod: npm run mod:install; ou do hook antigo: npm run hooks:install)' : 'desligado (mesma trava do terminal)'}.`);
 });
 
 let shuttingDown = false;
