@@ -855,7 +855,7 @@ export class Office {
     for (const [id, rec] of this.agents) {
       if (rec.removeAt !== undefined && now >= rec.removeAt) {
         this.agents.delete(id);
-        if (rec.info.kind === 'main') for (const [subId, v] of this.vistos) if (v.sessionId === rec.info.sessionId) this.vistos.delete(subId);
+        if (rec.info.kind === 'main') for (const [subId, v] of this.vistos) if (v.sessionId === rec.info.sessionId || v.parentId === id) this.vistos.delete(subId);
         removed = true;
       }
     }

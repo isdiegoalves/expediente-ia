@@ -338,6 +338,24 @@ describe('Office', () => {
       office.tick();
       expect(office.commit().snapshot.equipes).toBeUndefined();
     });
+
+    it('depois do /clear a conta da sessão antiga também sai quando o principal sai', () => {
+      const { office, advance, now } = makeOffice();
+      main(office, now());
+      for (const id of ['e1', 'e2', 'e3']) {
+        sub(office, id, now());
+        office.completeSub(`s1:${id}`);
+      }
+      advance(DONE_GRACE_MS + 1_000);
+      office.tick();
+      office.switchSession('acc:1', 's2');
+      expect(office.commit().snapshot.equipes).toMatchObject([{ key: 's1|time:g', total: 3 }]);
+      office.closeMain('acc:1');
+      advance(OFFLINE_GRACE_MS + 1_000);
+      office.tick();
+      expect(office.commit().snapshot.agents).toEqual([]);
+      expect(office.commit().snapshot.equipes).toBeUndefined();
+    });
   });
 
 });
