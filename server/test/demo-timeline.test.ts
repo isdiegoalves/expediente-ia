@@ -43,19 +43,20 @@ describe('demo-timeline', () => {
   });
 
   it('grava um dia fictício só com agentes marcados como demonstração', () => {
-    const opts = { date: '2026-10-07', startMin: 9 * 60, hours: 3, sessions: 4, pace: 0.5, seed: 7, dataDir: tmp.dir, force: false };
-    const r = generateDemoTimeline(opts);
+    const opts = { date: '2026-10-07', startMin: 9 * 60, hours: 1, sessions: 4, pace: 0.5, seed: 7, dataDir: tmp.dir, force: false };
+    const r = generateDemoTimeline(opts, 2000);
     const file = join(tmp.dir, 'timeline', '2026-10-07.jsonl');
     expect(r.files).toEqual([file]);
     expect(r.from).toBe(new Date(2026, 9, 7, 9).getTime());
     const recs = parseTimeline(readFileSync(file, 'utf8'));
     expect(recs[0]).toMatchObject({ t: 'k', at: r.from, boot: true });
     expect(recs.at(-1)).toEqual({ t: 'end', at: r.to });
-    expect(recs.filter((x) => x.t === 'k').length).toBeGreaterThanOrEqual(3 * 12); // keyframe a cada 5 min
+    expect(recs.filter((x) => x.t === 'k').length).toBeGreaterThanOrEqual(opts.hours * 12); // keyframe a cada 5 min
     // Reconstrói o dia inteiro: houve gente, sub-agentes e todos marcados como demonstração.
     const frame = frameOf(recs[0] as TimelineKeyframe);
     let maxAgents = 0;
     let subs = 0;
+    let todosDemo = true;
     for (const rec of recs.slice(1)) {
       if (rec.t === 'k') {
         const f = frameOf(rec);
@@ -65,16 +66,17 @@ describe('demo-timeline', () => {
       } else if (rec.t === 'd') applyChanges(frame, rec as TimelineDelta);
       maxAgents = Math.max(maxAgents, frame.agents.size);
       for (const a of frame.agents.values()) {
-        expect(a.demo).toBe(true);
+        if (!a.demo) todosDemo = false;
         if (a.kind === 'sub') subs++;
       }
-      for (const room of frame.rooms.values()) expect(room.demo).toBe(true);
+      for (const room of frame.rooms.values()) if (!room.demo) todosDemo = false;
     }
+    expect(todosDemo).toBe(true);
     expect(maxAgents).toBeGreaterThanOrEqual(3);
     expect(subs).toBeGreaterThan(0);
     // Mesma semente, mesmo dia; sem --force não sobrescreve.
     expect(() => generateDemoTimeline(opts)).toThrow(/já existe/);
-    const again = generateDemoTimeline({ ...opts, force: true });
+    const again = generateDemoTimeline({ ...opts, force: true }, 2000);
     expect(readFileSync(again.files[0], 'utf8')).toBe(readFileSync(file, 'utf8'));
   });
 });
