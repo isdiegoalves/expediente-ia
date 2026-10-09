@@ -455,7 +455,7 @@ export class DemoSimulator {
     this.dirty = true;
   }
 
-  private spawnSub(parent: SimAgent, now: number): void {
+  private spawnSub(parent: SimAgent, now: number, grupo?: { time: string; nome: string; rodada: number; parado?: boolean }): void {
     const n = ++this.seq;
     const agentId = `a${Math.floor(this.rng() * 1e12).toString(16)}`;
     const id = `${parent.info.sessionId}:${agentId}`;
@@ -485,6 +485,12 @@ export class DemoSimulator {
       seed: hash32(id),
       background: rng() < 0.3,
     };
+    if (grupo) {
+      info.teamName = grupo.time;
+      info.agentName = grupo.nome;
+      info.rodada = grupo.rodada;
+      if (grupo.parado) info.stoppedByUser = true;
+    }
     const sub: SimAgent = {
       info,
       project: parent.project,
@@ -599,7 +605,10 @@ export class DemoSimulator {
           } else if (roll < 0.2 && a.children.length === 0) {
             const count = 2 + Math.floor(a.rng() * 3);
             this.activity(a, now, describeTool('Agent', { description: `${count} frentes em paralelo`, subagent_type: 'general-purpose' }));
-            for (let i = 0; i < count; i++) this.spawnSub(a, now);
+            for (let i = 0; i < count; i++) {
+              const rodada = i < 2 ? 1 : 2;
+              this.spawnSub(a, now, count >= 3 ? { time: 'gauntlet', nome: `r${rodada}-e${i + 1}-avaliador`, rodada, parado: i === count - 1 && count === 4 } : undefined);
+            }
             a.phase = 'delegating';
           } else if (roll < 0.2 + FOREGROUND_CHANCE && !a.foregroundThisTurn && a.actionsLeft > 0) {
             this.startForeground(a, now);

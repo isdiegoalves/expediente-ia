@@ -6955,3 +6955,42 @@ html.is-replay #world {
     display: none;
   }
 }
+
+.ui-grupo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  padding: 6px 6px 2px;
+  font-size: 10.5px;
+}
+
+.ui-grupo__titulo {
+  font-weight: 600;
+  color: var(--ui-text);
+}
+
+.ui-grupo__resumo {
+  color: var(--ui-faint);
+}
+
+.ui-subs__grupo {
+  list-style: none;
+}
+
+.ui-subs__grupo .ui-grupo {
+  padding-left: 2px;
+}
+
+.ui-agent__tag {
+  flex: 0 0 auto;
+  height: 17px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--lv-warn);
+  background: color-mix(in srgb, var(--lv-warn) 16%, transparent);
+}

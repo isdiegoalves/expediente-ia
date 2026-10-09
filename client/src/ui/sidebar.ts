@@ -2,6 +2,7 @@
 import type { AccountInfo, AgentInfo } from '../../../shared/types';
 import { roomTheme } from '../art';
 import type { UiComponent, UiContext } from './context';
+import { createGrupoHead, itemKey, itensDeSubs, updateGrupoHead, type ItemSubs } from './equipes';
 import { h, iconButton, KeyedList, setAttr, setHidden, setStyleVar, setText, setTitle } from './dom';
 import { plural, shortPath } from './format';
 import { ICONS } from './icons';
@@ -26,7 +27,7 @@ interface NodeRefs {
   row: HTMLButtonElement;
   subsWrap: HTMLElement;
   subsCaption: HTMLElement;
-  subs: KeyedList<AgentInfo>;
+  subs: KeyedList<ItemSubs>;
 }
 
 export class Sidebar implements UiComponent {
@@ -253,10 +254,13 @@ export class Sidebar implements UiComponent {
     const subsList = h('ul', { class: 'ui-subs__list' });
     const subsWrap = h('div', { class: 'ui-subs', hidden: true }, subsCaption, subsList);
     const li = h('li', { class: 'ui-node' }, row, subsWrap);
-    const subs = new KeyedList<AgentInfo>(subsList, {
-      key: (a) => a.id,
-      create: (a) => h('li', { class: 'ui-subs__item' }, createAgentRow(a, (id) => this.pick(id), 'sm')),
-      update: (li2, a) => this.updateRow(li2.firstElementChild as HTMLElement, a),
+    const subs = new KeyedList<ItemSubs>(subsList, {
+      key: itemKey,
+      create: (i) =>
+        i.tipo === 'grupo'
+          ? h('li', { class: 'ui-subs__grupo' }, createGrupoHead())
+          : h('li', { class: 'ui-subs__item' }, createAgentRow(i.agent, (id) => this.pick(id), 'sm')),
+      update: (li2, i) => (i.tipo === 'grupo' ? updateGrupoHead(li2.firstElementChild as HTMLElement, i) : this.updateRow(li2.firstElementChild as HTMLElement, i.agent)),
     });
     this.nodeRefs.set(li, { row, subsWrap, subsCaption, subs });
     return li;
@@ -271,7 +275,7 @@ export class Sidebar implements UiComponent {
       const shown = n.subs.length;
       setText(r.subsCaption, shown === n.subTotal ? plural(n.subTotal, 'subagente', 'subagentes') : `${shown} de ${plural(n.subTotal, 'subagente', 'subagentes')}`);
     }
-    r.subs.sync(n.subs);
+    r.subs.sync(itensDeSubs(n.subs, (id) => this.ctx.agent(id)?.name));
   }
 
   private updateRow(row: HTMLElement, a: AgentInfo): void {

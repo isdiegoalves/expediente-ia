@@ -1,7 +1,7 @@
 // Linha de agente (avatar, nome, conta, papel, status e atividade), usada na barra lateral e na gaveta.
 import type { AccountInfo, AgentInfo } from '../../../shared/types';
 import { createAvatar, updateAvatar, type AvatarSize } from './avatar';
-import { h, setAttr, setStyleVar, setText, setVariant } from './dom';
+import { h, setAttr, setHidden, setStyleVar, setText, setVariant } from './dom';
 import { formatDuration } from './format';
 import { activityFallback, shellLine, shellWaitIn, statusLabel } from './model';
 import {
@@ -21,6 +21,7 @@ interface RowRefs {
   name: HTMLElement;
   chip: HTMLElement;
   role: HTMLElement;
+  tag: HTMLElement;
   dot: HTMLElement;
   activity: HTMLElement;
   size: AvatarSize;
@@ -33,18 +34,19 @@ export function createAgentRow(agent: AgentInfo, onPick: (id: string) => void, s
   const name = h('span', { class: 'ui-agent__name' });
   const chip = createAccountChip('sm');
   const role = createRoleBadge();
+  const tag = h('span', { class: 'ui-agent__tag', text: 'parado por você', hidden: true });
   const dot = createStatusDot();
   const activity = createActivityLine();
   const row = h(
     'button',
     { class: 'ui-agent', type: 'button' },
     avatar,
-    h('span', { class: 'ui-agent__main' }, h('span', { class: 'ui-agent__top' }, name, chip, role), activity),
+    h('span', { class: 'ui-agent__main' }, h('span', { class: 'ui-agent__top' }, name, chip, role, tag), activity),
     dot,
   );
   row.dataset.id = agent.id;
   row.addEventListener('click', () => onPick(row.dataset.id!));
-  refs.set(row, { avatar, name, chip, role, dot, activity, size });
+  refs.set(row, { avatar, name, chip, role, tag, dot, activity, size });
   return row;
 }
 
@@ -68,6 +70,7 @@ export function updateAgentRow(
   setText(r.name, agent.name);
   updateAccountChip(r.chip, account, agent.account);
   updateRoleBadge(r.role, agent);
+  setHidden(r.tag, !agent.stoppedByUser);
   // Esperando um shell (ou parado num comando longo): ampulheta no ponto e o cronômetro na linha de atividade.
   const wait = shellWaitIn(agent, agents, now);
   const status = wait ? 'shell' : agent.status;
@@ -82,6 +85,6 @@ export function updateAgentRow(
   setAttr(
     row,
     'aria-label',
-    `${agent.name}, ${agent.kind === 'main' ? 'agente principal' : `subagente ${agent.role}`}, ${account?.name ?? agent.account}, ${statusLabel(status)}${doing ? `: ${doing}` : ''}`,
+    `${agent.name}, ${agent.kind === 'main' ? 'agente principal' : `subagente ${agent.role}`}, ${account?.name ?? agent.account}, ${statusLabel(status)}${agent.stoppedByUser ? ', parado por você' : ''}${doing ? `: ${doing}` : ''}`,
   );
 }

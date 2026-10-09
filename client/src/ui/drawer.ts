@@ -39,6 +39,7 @@ import {
   taskProgress,
   visibleShells,
 } from './model';
+import { createGrupoHead, itemKey, itensDeSubs, soSubs, updateGrupoHead, type ItemSubs } from './equipes';
 import { avisoProcesso, linhasParado, textoEspera } from './parado';
 import { isLocalHostname, PermissionCard } from './permission';
 import { compactionDetail, compactionText, contextText, costText } from './stats-text';
@@ -222,7 +223,7 @@ class AgentView {
   private tasksBar: HTMLElement;
   private tasks: KeyedList<TaskItem>;
   private teamSec: ReturnType<typeof section>;
-  private team: KeyedList<AgentInfo>;
+  private team: KeyedList<ItemSubs>;
   private teamEmpty: HTMLElement;
   private timeline: KeyedList<Activity>;
   private timelineSec: ReturnType<typeof section>;
@@ -351,10 +352,11 @@ class AgentView {
     const teamList = h('div', { class: 'ui-team' });
     this.teamEmpty = h('p', { class: 'ui-muted ui-small', text: 'Nenhum subagente no momento.' });
     this.teamSec = section('Subagentes', teamList, this.teamEmpty);
-    this.team = new KeyedList<AgentInfo>(teamList, {
-      key: (a) => a.id,
-      create: (a) => createAgentRow(a, (id) => ctx.select({ type: 'agent', id }, { focus: true }), 'sm'),
-      update: (row, a) => updateAgentRow(row, a, ctx.account(a.account), false, ctx.now(), ctx.store.snapshot?.agents),
+    this.team = new KeyedList<ItemSubs>(teamList, {
+      key: itemKey,
+      create: (i) => (i.tipo === 'grupo' ? createGrupoHead() : createAgentRow(i.agent, (id) => ctx.select({ type: 'agent', id }, { focus: true }), 'sm')),
+      update: (el, i) =>
+        i.tipo === 'grupo' ? updateGrupoHead(el, i) : updateAgentRow(el, i.agent, ctx.account(i.agent.account), false, ctx.now(), ctx.store.snapshot?.agents),
     });
 
     const tl = h('ol', { class: 'ui-timeline' });
@@ -569,14 +571,14 @@ class AgentView {
       setText(this.teamSec.extra, subs.length ? String(subs.length) : '');
       setText(this.teamEmpty, a.stats.subagents ? `Nenhum ativo agora (${plural(a.stats.subagents, 'disparado', 'disparados')} nesta sessão).` : 'Nenhum subagente disparado ainda.');
       setHidden(this.teamEmpty, subs.length > 0);
-      this.team.sync(subs);
+      this.team.sync(itensDeSubs(subs, (id) => this.ctx.agent(id)?.name));
     } else {
       const parent = a.parentId ? this.ctx.agent(a.parentId) : undefined;
       setText(this.teamSec.title, 'Responsável');
       setText(this.teamSec.extra, '');
       setText(this.teamEmpty, 'O agente principal já não está no escritório.');
       setHidden(this.teamEmpty, !!parent);
-      this.team.sync(parent ? [parent] : []);
+      this.team.sync(soSubs(parent ? [parent] : []));
     }
 
     // Linha do tempo (mais recente primeiro).

@@ -78,4 +78,20 @@ describe('DemoSimulator', () => {
       if (seed === 1) expect(seen.ok + seen.failed).toBeGreaterThan(3);
     }
   });
+
+  it('fan-out de três ou mais gera subagentes com time, nome com prefixo de rodada e um parado pelo usuário', () => {
+    const vistos = new Map<string, { teamName?: string; agentName?: string; rodada?: number; stoppedByUser?: boolean }>();
+    for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
+      const sim = new DemoSimulator({ seed, idPrefix: `s${seed}:`, sessions: 10, speed: 20 }, 1_000);
+      for (let t = 1_000; t < 400_000; t += 500) {
+        sim.tick(t);
+        for (const a of sim.snapshot(t).agents) if (a.kind === 'sub') vistos.set(a.id, a);
+      }
+    }
+    const comTime = [...vistos.values()].filter((a) => a.teamName);
+    expect(comTime.length).toBeGreaterThan(0);
+    for (const a of comTime) expect(a.agentName).toMatch(new RegExp(`^r${a.rodada}-`));
+    expect(comTime.some((a) => a.stoppedByUser)).toBe(true);
+    expect([...vistos.values()].some((a) => !a.teamName)).toBe(true);
+  });
 });
