@@ -136,8 +136,17 @@ const CHAMADAS_DE_REDE: [string, RegExp][] = [
   ['dgram', /\bdgram\b/],
   ['dns', /\bdns\.|node:dns/],
   ['WebSocket', /\bWebSocket\s*\(/],
-  ['módulo de rede de saída', /from\s+['"]node:(tls|dgram|dns|https|http2)['"]/],
 ];
+
+const MODULO_DE_REDE = /['"](?:node:)?(http|https|http2|net|tls|dns|dgram)(?:\/promises)?['"]/g;
+const SO_TIPO = /\b(?:import|export)\s+type\b[\s\S]*?from\s*['"][^'"]+['"]/g;
+
+// Servidor que só escuta (index.ts) e função pura de endereço (isIP em config.ts e guard.ts).
+const MODULOS_PERMITIDOS: Record<string, string[]> = {
+  'server/index.ts': ['http'],
+  'server/config.ts': ['net'],
+  'server/http/guard.ts': ['net'],
+};
 
 function fontesDeRuntime(): string[] {
   const achados: string[] = [];
@@ -155,9 +164,12 @@ function fontesDeRuntime(): string[] {
   return achados;
 }
 
-function chamadasDeRede(codigo: string): string[] {
+function chamadasDeRede(codigo: string, permitidos: string[] = []): string[] {
   const sem = codigo.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-  return CHAMADAS_DE_REDE.filter(([, re]) => re.test(sem)).map(([nome]) => nome);
+  const achadas = CHAMADAS_DE_REDE.filter(([, re]) => re.test(sem)).map(([nome]) => nome);
+  const modulos = [...sem.replace(SO_TIPO, '').matchAll(MODULO_DE_REDE)].map((m) => m[1]!);
+  if (modulos.some((m) => !permitidos.includes(m))) achadas.push('módulo de rede de saída');
+  return achadas;
 }
 
 describe('código do servidor não faz chamada de rede de saída', () => {
@@ -166,7 +178,7 @@ describe('código do servidor não faz chamada de rede de saída', () => {
   });
 
   it('nenhum arquivo de server/ e shared/ (fora testes e shared/demo) chama a rede', () => {
-    const achados = fontesDeRuntime().flatMap((p) => chamadasDeRede(readFileSync(p, 'utf8')).map((c) => `${relative(ROOT, p)}: ${c}`));
+    const achados = fontesDeRuntime().flatMap((p) => chamadasDeRede(readFileSync(p, 'utf8'), MODULOS_PERMITIDOS[relative(ROOT, p)]).map((c) => `${relative(ROOT, p)}: ${c}`));
     expect(achados).toEqual([]);
   });
 
@@ -179,6 +191,25 @@ describe('código do servidor não faz chamada de rede de saída', () => {
     expect(chamadasDeRede("import dgram from 'node:dgram'")).toContain('dgram');
     expect(chamadasDeRede("dns.lookup('x', cb)")).toEqual(['dns']);
     expect(chamadasDeRede("new WebSocket('wss://x')")).toEqual(['WebSocket']);
+    for (const forma of [
+      "import { get } from 'node:http';",
+      "import { get as obter } from 'http';",
+      "import {\n  request,\n} from 'node:https';",
+      "import * as h from 'node:http';",
+      "const { connect } = require('node:net');",
+      "const h = await import('node:http');",
+      "import { createConnection } from 'net';",
+      "import { lookup } from 'node:dns/promises';",
+      "import { connect } from 'node:tls';",
+      "import { createSocket } from 'node:dgram';",
+      "import { type Server, get } from 'node:http';",
+      "export { get } from 'node:http';",
+      "import 'node:http';",
+    ]) expect(chamadasDeRede(forma), forma).toContain('módulo de rede de saída');
+    expect(chamadasDeRede("import type { IncomingMessage } from 'node:http';")).toEqual([]);
+    expect(chamadasDeRede("import type {\n  AddressInfo,\n} from 'node:net';")).toEqual([]);
+    expect(chamadasDeRede("import http from 'node:http';", ['http'])).toEqual([]);
+    expect(chamadasDeRede("import http from 'node:http'; import { get } from 'node:net';", ['http'])).toContain('módulo de rede de saída');
     expect(chamadasDeRede("// fetch('x')\n/* http.get(u) */ const a = 1;")).toEqual([]);
     expect(chamadasDeRede("res.fetchedAt = 1; refetch(); isIP('::1');")).toEqual([]);
   });
