@@ -341,6 +341,23 @@ Perguntas do agente (`AskUserQuestion`) continuam só no terminal.
   computador e aberto por `http://localhost`. Confira com `npm run instalar:status`.
 - No modo demonstração, os agentes fictícios também pedem permissão (de mentira), para experimentar.
 
+### Editar o personagem
+
+Cada sessão chega com um nome e uma aparência sorteados. Para fixar o personagem de um projeto, abra os detalhes do
+agente principal e clique no lápis ao lado do nome (**Editar personagem**). No editor:
+
+- **Nome:** até 24 caracteres. Não pode repetir o de alguém que está no escritório nem o escolhido para outro
+  projeto.
+- **Sortear:** traz outra aparência.
+- **Peças:** pele, cabelo, barba, olhos, parte de cima, parte de baixo, sapatos e acessório, com a prévia ao lado.
+- **Salvar:** vale para o projeto (a sala). A próxima sessão aberta nele chega com esse personagem. Com duas sessões
+  ao mesmo tempo na mesma sala, a segunda recebe um personagem sorteado.
+- **Voltar ao sorteio:** desfaz a escolha.
+
+A escolha fica em `~/.expediente/names.json` e some depois de 60 dias sem uso do projeto. O editor tem a mesma trava do
+terminal somente leitura: só funciona com o Expediente acessível apenas pelo próprio computador e aberto por
+`http://localhost`.
+
 ### GitHub no escritório
 
 O que os agentes fazem no GitHub anima a sala do projeto, sem token e sem acessar a internet: o Expediente lê nos

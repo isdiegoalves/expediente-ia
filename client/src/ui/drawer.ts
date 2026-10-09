@@ -3,6 +3,7 @@ import { contextView, costView } from '../../../shared/stats';
 import type { Activity, AgentInfo, FeedItem, RoomInfo, ShellJob, TaskItem } from '../../../shared/types';
 import { roomTheme } from '../art';
 import { createAvatarPlaceholder, updateAvatar } from './avatar';
+import { CharacterEditor } from './character-editor';
 import type { UiComponent, UiContext } from './context';
 import { copyText, h, iconButton, KeyedList, setAttr, setHidden, setStyleVar, setText, setTitle, setVariant } from './dom';
 import {
@@ -229,6 +230,7 @@ class AgentView {
   private timelineSec: ReturnType<typeof section>;
   private stats: KvList<StatKey>;
   private social: SocialSection;
+  private character: CharacterEditor;
   private sessionValue: HTMLElement;
   private linesPlus: HTMLElement;
   private linesMinus: HTMLElement;
@@ -257,10 +259,11 @@ class AgentView {
     this.accEmail = h('span', { class: 'ui-hero__acc-email' });
     this.roomName = h('span');
     this.roomBtn = h('button', { class: 'ui-room-link', type: 'button', on: { click: () => this.last && ctx.select({ type: 'room', id: this.last.roomId }, { focus: true }) } }, this.roomName);
+    this.character = new CharacterEditor(ctx);
     const heroText = h(
       'div',
       { class: 'ui-hero__text' },
-      h('div', { class: 'ui-hero__line' }, this.name, this.role, this.origin),
+      h('div', { class: 'ui-hero__line' }, this.name, this.character.button, this.role, this.origin),
       h('div', { class: 'ui-hero__acc' }, this.accChip, this.accName, this.accEmail),
       h('div', { class: 'ui-hero__where' }, h('span', { class: 'ui-muted', text: 'Sala' }), this.roomBtn),
       this.appRow,
@@ -392,6 +395,7 @@ class AgentView {
       'div',
       { class: 'ui-drawer__view ui-agent-view' },
       h('div', { class: 'ui-hero' }, this.avatar, heroText),
+      this.character.el,
       this.title,
       this.gone,
       statusRow,
@@ -418,6 +422,7 @@ class AgentView {
 
   open(id: string): void {
     if (this.id === id) return;
+    this.character.open(id);
     this.id = id;
     this.last = null;
     this.history = [];
@@ -465,6 +470,7 @@ class AgentView {
     updateAvatar(this.avatar, a, 'lg');
     setStyleVar(this.avatar, '--acc', account?.color ?? '#8b98b3');
     setText(this.name, a.name);
+    this.character.render(a, !!live);
     setText(this.role, roleLabel(a));
     setVariant(this.role, 'ui-role--', a.kind);
     const origin = originBadge(a);
