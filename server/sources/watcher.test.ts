@@ -939,3 +939,52 @@ describe('ClaudeWatcher — custo de subagente ativo', () => {
     }
   });
 });
+
+describe('time, nome, rodada e parada pelo usuário do subagente', () => {
+  it('expõe teamName, nome, rodada e o pai; sem time e sem prefixo fica só o pai', () => {
+    const c = setup();
+    try {
+      writeLines(c.transcript('sess-t'), [L.prompt('oi')]);
+      c.openSession(800, 'sess-t');
+      c.watcher.boot();
+      const linhas = (id: string) => [L.prompt('Faça', { agentId: id, at: c.now() }), L.assistant([L.tool(`t-${id}`, 'Grep', { pattern: 'x' })], { agentId: id, at: c.now(), stop: 'tool_use' })];
+      c.subFile('sess-t', 'a1', { agentType: 'general-purpose', description: 'um', teamName: 'gauntlet', name: 'r2-e1-avaliador-opus' }, linhas('a1'));
+      c.subFile('sess-t', 'a2', { agentType: 'general-purpose', description: 'dois', name: 'f2-b14-espera' }, linhas('a2'));
+      c.subFile('sess-t', 'a3', { agentType: 'general-purpose', description: 'tres' }, linhas('a3'));
+      c.poll();
+      expect(c.agent('sess-t:a1')).toMatchObject({ parentId: '.claude:800', teamName: 'gauntlet', agentName: 'r2-e1-avaliador-opus', rodada: 2 });
+      const b = c.agent('sess-t:a2')!;
+      expect(b.agentName).toBe('f2-b14-espera');
+      expect(b.teamName).toBeUndefined();
+      expect(b.rodada).toBeUndefined();
+      const d = c.agent('sess-t:a3')!;
+      expect(d.agentName).toBeUndefined();
+      expect(d.stoppedByUser).toBeUndefined();
+    } finally {
+      c.watcher.stop();
+      c.tmp.cleanup();
+    }
+  });
+
+  it('stoppedByUser que aparece depois no .meta.json chega ao agente', () => {
+    const c = setup();
+    try {
+      writeLines(c.transcript('sess-u'), [L.prompt('oi')]);
+      c.openSession(801, 'sess-u');
+      c.watcher.boot();
+      const jsonl = c.subFile('sess-u', 'u1', { agentType: 'Explore', description: 'parar' }, [
+        L.prompt('Faça', { agentId: 'u1', at: c.now() }),
+        L.assistant([L.tool('tu1', 'Bash', { command: 'sleep 9' })], { agentId: 'u1', at: c.now(), stop: 'tool_use' }),
+      ]);
+      c.poll();
+      expect(c.agent('sess-u:u1')!.stoppedByUser).toBeUndefined();
+      writeFileSync(jsonl.replace(/\.jsonl$/, '.meta.json'), JSON.stringify({ agentType: 'Explore', description: 'parar', stoppedByUser: true }));
+      c.advance(1_000);
+      c.poll();
+      expect(c.agent('sess-u:u1')!.stoppedByUser).toBe(true);
+    } finally {
+      c.watcher.stop();
+      c.tmp.cleanup();
+    }
+  });
+});

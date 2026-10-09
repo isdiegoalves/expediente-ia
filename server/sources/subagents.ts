@@ -19,6 +19,10 @@ export interface SubagentMeta {
   spawnDepth?: number;
   requestShape?: string;
   workflowPhase?: string;
+  teamName?: string;
+  /** Parâmetro `name` passado ao Agent. */
+  name?: string;
+  stoppedByUser?: boolean;
 }
 
 /** Sem escrita há 5 s depois de um end_turn: concluiu. */
@@ -84,10 +88,21 @@ export function parseSubagentMeta(raw: string): SubagentMeta | undefined {
     if (typeof j.spawnDepth === 'number') meta.spawnDepth = j.spawnDepth;
     if (requestShape) meta.requestShape = requestShape;
     if (workflowPhase) meta.workflowPhase = workflowPhase;
+    const teamName = str(j.teamName);
+    const name = str(j.name);
+    if (teamName) meta.teamName = teamName;
+    if (name) meta.name = name;
+    if (j.stoppedByUser === true) meta.stoppedByUser = true;
     return meta;
   } catch {
     return undefined;
   }
+}
+
+/** Rodada do gauntlet: prefixo `rN-` (1 ou 2 dígitos) no nome do subagente. */
+export function rodadaDoNome(name: string | undefined): number | undefined {
+  const m = name ? /^r(\d{1,2})-/.exec(name) : null;
+  return m ? Number(m[1]) : undefined;
 }
 
 export function readSubagentMeta(metaPath: string): SubagentMeta | undefined {

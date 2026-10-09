@@ -106,6 +106,10 @@ export interface SubInput {
   title?: string;
   background: boolean;
   startedAt: number;
+  teamName?: string;
+  agentName?: string;
+  rodada?: number;
+  stoppedByUser?: boolean;
 }
 
 interface AgentRecord {
@@ -567,6 +571,10 @@ export class Office {
     };
     if (p.title) info.title = p.title;
     if (p.background) info.background = true;
+    if (p.teamName) info.teamName = p.teamName;
+    if (p.agentName) info.agentName = p.agentName;
+    if (p.rodada !== undefined) info.rodada = p.rodada;
+    if (p.stoppedByUser) info.stoppedByUser = true;
     this.agents.set(p.id, { info, history: [], turnStart: now });
     this.markDirty();
     return true;
@@ -611,6 +619,13 @@ export class Office {
     if (!info || info.kind !== 'sub' || info.status === 'done' || info.status === 'offline') return;
     if (JSON.stringify(info.parado) === JSON.stringify(parado)) return;
     info.parado = parado;
+    this.markDirty();
+  }
+
+  markStoppedByUser(id: string): void {
+    const info = this.agents.get(id)?.info;
+    if (!info || info.kind !== 'sub' || info.stoppedByUser) return;
+    info.stoppedByUser = true;
     this.markDirty();
   }
 

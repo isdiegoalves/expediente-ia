@@ -22,6 +22,7 @@ import {
   listSubagentFiles,
   parseJournal,
   readSubagentMeta,
+  rodadaDoNome,
   sessionDirOf,
   subagentRole,
   type JournalAgent,
@@ -786,6 +787,10 @@ export class ClaudeWatcher {
       title,
       background,
       startedAt: state.firstAt ?? now,
+      teamName: meta?.teamName,
+      agentName: meta?.name,
+      rodada: rodadaDoNome(meta?.name),
+      stoppedByUser: meta?.stoppedByUser,
     });
     if (!added) return;
     t.known.delete(file.path);
@@ -846,7 +851,10 @@ export class ClaudeWatcher {
         t.known.set(sub.file.path, sub.tail.size);
         continue;
       }
-      sub.meta ??= readSubagentMeta(sub.file.metaPath);
+      if (!sub.meta?.stoppedByUser) {
+        sub.meta = readSubagentMeta(sub.file.metaPath) ?? sub.meta;
+        if (sub.meta?.stoppedByUser) office.markStoppedByUser(sub.id);
+      }
       let fresh = 0;
       for (let i = 0; i < 4; i++) {
         let r;

@@ -216,6 +216,14 @@ export interface AgentInfo {
   permission?: PermissionRequestInfo;
   /** Subagente parado (ver ParadoInfo); o status continua 'working'. */
   parado?: ParadoInfo;
+  /** Subagente: `teamName` do .meta.json (agrupa o fan-out). */
+  teamName?: string;
+  /** Subagente: `name` dado ao disparar. */
+  agentName?: string;
+  /** Subagente: rodada do gauntlet, do prefixo `rN-` em `agentName`. */
+  rodada?: number;
+  /** Subagente interrompido pelo usuário. */
+  stoppedByUser?: boolean;
 }
 
 export interface RoomInfo {
