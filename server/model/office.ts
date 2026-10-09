@@ -6,6 +6,7 @@ import type {
   Activity,
   AgentDetail,
   AgentInfo,
+  AgentOrigin,
   AgentStats,
   AgentStatus,
   FeedItem,
@@ -242,6 +243,25 @@ export class Office {
     const demo = rec ? undefined : this.demoSnap?.agents.find((a) => a.id === id);
     if (rec) return this.out({ agent: this.withOrigin(cloneAgent(rec.info), rec), history: rec.history.slice() });
     return demo ? this.out({ agent: cloneAgent(demo), history: demo.recent.slice() }) : undefined;
+  }
+
+  /**
+   * Dados crus do agente principal para o `/ir` (http/ir.ts): caminho completo e `kind` do registro, que não
+   * passam pela saída do escritório. Quem chama mascara. Undefined para subagente, demo ou id desconhecido.
+   */
+  irSource(id: string): { cwd: string; sessionId: string; kind?: string; vivo: boolean; origin?: AgentOrigin; appSessionId?: string } | undefined {
+    const rec = this.agents.get(id);
+    const room = rec && this.rooms.get(rec.info.roomId);
+    if (!rec || !room || rec.info.kind !== 'main') return undefined;
+    const info = this.withOrigin(cloneAgent(rec.info), rec);
+    return {
+      cwd: room.path,
+      sessionId: info.sessionId,
+      kind: rec.registro?.kind,
+      vivo: info.status !== 'offline',
+      origin: info.origin,
+      appSessionId: info.appSessionId,
+    };
   }
 
   recentFeed(n: number): FeedItem[] {

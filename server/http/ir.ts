@@ -1,0 +1,98 @@
+// "Ir para a sessão": o comando seguro e os links vêm do servidor, montados dos próprios dados do agente
+// (nunca de argv ou caminho vindos do cliente), e o 302 para o app só sai com nonce de uso único.
+import { randomBytes } from 'node:crypto';
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import { maskSecrets } from '../../shared/activity';
+import type { IrInfo } from '../../shared/types';
+import type { Office } from '../model/office';
+import { sendJson } from './app';
+import { isLoopbackHost } from './guard';
+
+export const NONCE_VALIDADE_MS = 60_000;
+const NONCE_MAX = 256;
+const ID_SESSAO = /^[A-Za-z0-9-]{1,64}$/;
+const ID_APP = /^local_[A-Za-z0-9-]{1,64}$/;
+const AVISO_FORK = 'cria uma cópia, não responde à sessão original';
+
+const LISTA_PERMITIDA = [
+  /^claude:\/\/code\/(?:continue|needs-input)\?session=local_[A-Za-z0-9-]{1,64}$/,
+  /^claude:\/\/resume\?session=[A-Za-z0-9-]{1,64}$/,
+];
+
+/** Só estas URLs saem num redirecionamento que faz o sistema abrir o app. */
+export function urlPermitida(url: string): boolean {
+  return LISTA_PERMITIDA.some((re) => re.test(url));
+}
+
+export class NonceStore {
+  private readonly itens = new Map<string, { agentId: string; venceEm: number }>();
+
+  constructor(private readonly now: () => number) {}
+
+  emitir(agentId: string): string {
+    const nonce = randomBytes(16).toString('hex');
+    this.itens.set(nonce, { agentId, venceEm: this.now() + NONCE_VALIDADE_MS });
+    while (this.itens.size > NONCE_MAX) this.itens.delete(this.itens.keys().next().value as string);
+    return nonce;
+  }
+
+  /** Uso único: o nonce some ao ser conferido, valendo ou não. */
+  consumir(nonce: string, agentId: string): boolean {
+    const item = this.itens.get(nonce);
+    if (!item) return false;
+    this.itens.delete(nonce);
+    return item.agentId === agentId && this.now() <= item.venceEm;
+  }
+}
+
+function entreAspas(s: string): string {
+  return /^[A-Za-z0-9_\/.@:+=,-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
+function montar(src: NonNullable<ReturnType<Office['irSource']>>): Omit<IrInfo, 'nonce'> | undefined {
+  if (!ID_SESSAO.test(src.sessionId)) return undefined;
+  const { sessionId, vivo, origin } = src;
+  const cwd = maskSecrets(src.cwd);
+  const noApp = origin === 'app desktop';
+  const links = [
+    noApp
+      ? { rotulo: 'Abrir o projeto no app', href: `claude://code/new?folder=${encodeURIComponent(cwd)}` }
+      : { rotulo: 'Abrir o projeto no terminal', href: `claude-cli://open?cwd=${encodeURIComponent(cwd)}` },
+  ];
+  const base = { estado: vivo ? ('vivo' as const) : ('encerrado' as const), ...(origin ? { origin } : {}) };
+  if (!vivo) {
+    if (origin === 'terminal') links.push({ rotulo: 'Retomar no app', href: `claude://resume?session=${sessionId}` });
+    return { ...base, comando: `cd ${entreAspas(cwd)} && claude --resume ${sessionId}`, links };
+  }
+  if (!noApp && (src.kind === 'bg' || src.kind === 'background')) return { ...base, comando: `claude attach ${sessionId}`, links };
+  return { ...base, comando: `claude --resume ${sessionId} --fork-session`, aviso: AVISO_FORK, links };
+}
+
+export interface IrDeps {
+  office: Office;
+  nonces: NonceStore;
+}
+
+/** `GET /api/agentes/:id/ir` (JSON) e `?abrir=1&n=<nonce>` (302). */
+export function handleIrRoute(req: IncomingMessage, res: ServerResponse, url: URL, id: string, { office, nonces }: IrDeps): void {
+  if (req.method !== 'GET') {
+    res.setHeader('Allow', 'GET');
+    return sendJson(res, 405, { error: 'método não permitido' });
+  }
+  if (!isLoopbackHost(req.headers.host)) {
+    return sendJson(res, 403, { error: 'o atalho para a sessão só abre pelo próprio computador (http://localhost ou http://127.0.0.1)' });
+  }
+  const src = office.irSource(id);
+  const ir = src && montar(src);
+  if (!src || !ir) return sendJson(res, 404, { error: 'agente não encontrado' });
+
+  if (url.searchParams.get('abrir') !== '1') return sendJson(res, 200, { ...ir, nonce: nonces.emitir(id) });
+
+  const site = req.headers['sec-fetch-site'];
+  if (site !== undefined && site !== 'none' && site !== 'same-origin') return sendJson(res, 403, { error: 'pedido de outra origem' });
+  if (!nonces.consumir(url.searchParams.get('n') ?? '', id)) return sendJson(res, 403, { error: 'nonce ausente, vencido ou já usado' });
+  const destino = src.appSessionId && ID_APP.test(src.appSessionId) ? `claude://code/continue?session=${src.appSessionId}` : undefined;
+  if (!destino || !urlPermitida(destino)) return sendJson(res, 409, { error: 'esta sessão não tem link direto para o app' });
+  res.writeHead(302, { Location: destino, 'Cache-Control': 'no-store', 'Content-Length': 0 });
+  res.end();
+}

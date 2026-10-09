@@ -103,6 +103,20 @@ export interface AgentStats {
 /** De onde a sessão do agente principal veio, pelo `entrypoint` e `kind` do registro de sessões. */
 export type AgentOrigin = 'app desktop' | 'terminal' | 'sdk' | 'segundo plano';
 
+/** Resposta de `GET /api/agentes/:id/ir`: o que o clique em "Ir para a sessão" oferece. Só existe nessa rota, nunca no snapshot. */
+export interface IrInfo {
+  estado: 'vivo' | 'encerrado';
+  origin?: AgentOrigin;
+  /** Comando seguro, já montado pelo servidor, que vai para a área de transferência. */
+  comando: string;
+  /** Presente quando o comando não leva à própria sessão (cópia por fork). */
+  aviso?: string;
+  /** Links `<a href>` que abrem o projeto (e retomam a sessão de CLI encerrada). */
+  links: { rotulo: string; href: string }[];
+  /** Uso único, 60 s: autoriza `?abrir=1&n=` para este agente. */
+  nonce: string;
+}
+
 export interface AgentInfo {
   /** Estável enquanto o agente existir. Principal: "<conta>:<pid>". Sub: "<sessionId>:<agentId>". */
   id: string;

@@ -6,6 +6,7 @@ import type { DayStatsService } from '../history/daystats';
 import type { Office } from '../model/office';
 import type { SessionHistory } from '../sources/history';
 import { isJsonContentType, isLoopbackHost } from './guard';
+import { handleIrRoute, NonceStore } from './ir';
 import { handleSessionsRoute } from './sessions';
 import type { Hub } from './sse';
 import { handleStatsRoute } from './stats';
@@ -35,10 +36,15 @@ export interface ApiDeps {
   stats?: DayStatsService;
   /** Tema ativo: GET /api/tema e /temas/<id>/<arquivo> (http/tema.ts); devolve false para o resto. */
   tema?: (req: IncomingMessage, res: ServerResponse, url: URL) => boolean;
+  /** Relógio dos nonces do /ir (testes). */
+  now?: () => number;
 }
 
 /** GET /api/agents/:id/terminal (ids nunca contêm '/'). */
 const TERMINAL_ROUTE = /^\/api\/agents\/([^/]+)\/terminal$/;
+
+/** GET /api/agentes/:id/ir. */
+const IR_ROUTE = /^\/api\/agentes\/([^/]+)\/ir$/;
 
 const MAX_BODY = 256 * 1024;
 
@@ -139,6 +145,7 @@ export function modSummary(
 /** Devolve um handler que trata /api/* e responde false para o resto. */
 export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: ServerResponse, url: URL) => boolean {
   const { office, hub, accounts } = deps;
+  const nonces = new NonceStore(deps.now ?? Date.now);
   const terminalOn = () => (typeof deps.terminal === 'function' ? deps.terminal() : deps.terminal === true);
 
   const methodNotAllowed = (res: ServerResponse, allow: string) => {
@@ -234,6 +241,18 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
       } else {
         deps.permissions(req, res, path);
       }
+      return true;
+    }
+    const irMatch = IR_ROUTE.exec(path);
+    if (irMatch) {
+      let id: string;
+      try {
+        id = decodeURIComponent(irMatch[1]);
+      } catch {
+        sendJson(res, 400, { error: 'id inválido' });
+        return true;
+      }
+      handleIrRoute(req, res, url, id, { office, nonces });
       return true;
     }
     if (path.startsWith('/api/agents/')) {
