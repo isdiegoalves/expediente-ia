@@ -155,3 +155,17 @@ describe('rotas', () => {
     expect(waitMs(new URL('http://x/?timeout=abc'))).toBe(25_000);
   });
 });
+
+describe('detalhe do pedido', () => {
+  it('GET /api/permissions/:id sai com segredo mascarado em todo campo string', async () => {
+    srv = await servePermissions();
+    const ghp = 'ghp_aB3dE6gH9jK2mN5pQ8sT1vW4yZ7cF0hJ3kL6';
+    const reg = await register(srv, { tool_name: `mcp-${ghp}`, tool_input: { command: `curl -H "Authorization: Bearer fictici0TokenValue1234567890" https://x.invalid/${ghp}`, description: `usa ${ghp}` } });
+    const { id } = reg.json as { id: string };
+    const r = await request(srv.base, `/api/permissions/${id}`);
+    expect(r.status).toBe(200);
+    expect(r.text).toContain('curl');
+    expect(r.text).not.toContain('ghp_aB3');
+    expect(r.text).not.toContain('fictici0Token');
+  });
+});

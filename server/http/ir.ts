@@ -5,6 +5,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { maskSecrets } from '../../shared/activity';
 import type { IrInfo } from '../../shared/types';
 import type { Office } from '../model/office';
+import { sanitizeOutput } from '../model/saida';
 import { sendJson } from './app';
 import { isLoopbackHost } from './guard';
 
@@ -93,7 +94,8 @@ export function handleIrRoute(req: IncomingMessage, res: ServerResponse, url: UR
 
   const site = req.headers['sec-fetch-site'];
   const deDentro = site === undefined || site === 'none' || site === 'same-origin';
-  if (url.searchParams.get('abrir') !== '1') return sendJson(res, 200, deDentro ? { ...ir, nonce: nonces.emitir(id) } : ir);
+  // O comando seguro vai direto para a área de transferência: segredo sai mascarado, o caminho fica.
+  if (url.searchParams.get('abrir') !== '1') return sendJson(res, 200, sanitizeOutput(deDentro ? { ...ir, nonce: nonces.emitir(id) } : ir, new Map(), { trocarCaminhos: false }));
   if (!deDentro) return sendJson(res, 403, { error: 'pedido de outra origem' });
   if (!nonces.consumir(url.searchParams.get('n') ?? '', id)) return sendJson(res, 403, { error: 'nonce ausente, vencido ou já usado' });
   const destino = src.appSessionId && ID_APP.test(src.appSessionId) ? `claude://code/continue?session=${src.appSessionId}` : undefined;

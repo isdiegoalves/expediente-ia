@@ -6,6 +6,7 @@
 //   GET  /api/permissions/:id             (página)  detalhe com os argumentos (comando, diff...)
 //   POST /api/permissions/:id/decision    (página)  {behavior: allow | deny | terminal, message?, ...}
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { sanitizeOutput } from '../model/saida';
 import { HttpError, readJson, sendJson } from '../http/app';
 import { InvalidRequest, parseDecision, WAIT_MAX_MS, type PermissionRegistry } from './registry';
 
@@ -95,7 +96,7 @@ export function createPermissionRoutes(registry: PermissionRegistry): (req: Inco
     }
     if (method !== 'GET' && method !== 'HEAD') return methodNotAllowed(res, 'GET');
     const detail = registry.detail(id);
-    if (detail) sendJson(res, 200, detail);
+    if (detail) sendJson(res, 200, sanitizeOutput(detail, new Map(), { trocarCaminhos: false }));
     else sendJson(res, 404, { error: 'pedido desconhecido' });
   };
 }

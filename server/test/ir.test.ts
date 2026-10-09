@@ -95,6 +95,17 @@ afterEach(async () => {
   cleanup();
 });
 
+describe('GET /api/agentes/:id/ir: segredos', () => {
+  it('todo campo string da resposta sai mascarado e o comando seguro mantém o caminho', async () => {
+    const cwd = `/Users/ficticio/projetos/loja-${GHP}`;
+    agente('a:9', { entrypoint: 'cli', kind: 'interactive', encerrado: true, cwd });
+    const res = await pedir('/api/agentes/a%3A9/ir');
+    expect(res.body).not.toContain('ghp_aB3');
+    expect(res.body).not.toContain(encodeURIComponent(GHP));
+    expect((JSON.parse(res.body) as IrInfo).comando).toContain("cd '/Users/ficticio/projetos/loja-gh*_***'");
+  });
+});
+
 describe('GET /api/agentes/:id/ir', () => {
   it('agente vivo do app: cópia com fork rotulada e o botão que abre o projeto', async () => {
     agente('a:1', { entrypoint: 'claude-desktop' });
