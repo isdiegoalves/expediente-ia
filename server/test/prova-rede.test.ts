@@ -128,7 +128,7 @@ describe('prova de rede: execução', () => {
       const alvo = join(dir, 'rede.txt');
       writeFileSync(alvo, 'prova anterior\n');
       const roda = (...extra: string[]) =>
-        spawnSync(process.execPath, [join(ROOT, 'scripts/prova-rede.mjs'), '--pid', String(process.pid), '--duracao', '1', '--intervalo', '1', ...extra], { encoding: 'utf8' });
+        spawnSync(process.execPath, [join(ROOT, 'scripts/prova-rede.mjs'), '--pid', String(process.pid), '--duracao', '1', '--intervalo', '2', ...extra], { encoding: 'utf8' });
       const recusa = roda('--saida', alvo);
       expect(recusa.status).toBe(2);
       expect(recusa.stderr).toContain('--sobrescrever');
