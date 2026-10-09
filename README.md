@@ -216,9 +216,9 @@ estiver instalado). Para não consultar o GitHub, use `EXPEDIENTE_UPDATE_CHECK=0
 ```bash
 npm run desinstalar                         # tira o mod, o plugin de permissões e o marketplace das contas
 npm run docker:down                         # para o container
-docker volume rm expediente_expediente-data     # apaga os dados do container (nomes, linha do tempo e estatísticas)
+docker volume rm expediente_expediente-data     # apaga os dados do container (nomes, salas, linha do tempo e estatísticas)
 docker image rm expediente:local              # apaga a imagem
-rm -rf ~/.expediente                          # apaga os dados locais (uso capturado, nomes, linha do tempo e estatísticas)
+rm -rf ~/.expediente                          # apaga os dados locais (uso capturado, nomes, salas, linha do tempo e estatísticas)
 ```
 
 Depois é só apagar a pasta do projeto — rode o `desinstalar` **antes**, senão o Claude Code das contas passa a
@@ -452,7 +452,7 @@ Tudo funciona sem configurar nada. Se precisar ajustar, use variáveis de ambien
 | --- | --- | --- |
 | `EXPEDIENTE_PORT` | `4848` | Porta HTTP no modo Node. No Docker a porta é fixa: `127.0.0.1:4848`. |
 | `EXPEDIENTE_CLAUDE_DIRS` | detecção automática | Pastas das contas, separadas por vírgula (ex.: `/caminho/conta1,/caminho/conta2`). |
-| `EXPEDIENTE_DATA_DIR` | `~/.expediente` | Onde o Expediente guarda os próprios dados (nomes dos personagens, linha do tempo do timelapse e estatísticas do Meu dia). |
+| `EXPEDIENTE_DATA_DIR` | `~/.expediente` | Onde o Expediente guarda os próprios dados (nomes dos personagens e das salas, linha do tempo do timelapse e estatísticas do Meu dia). |
 | `EXPEDIENTE_TIMELINE` | ligado | `0` desliga a gravação da linha do tempo (os dias já gravados continuam no timelapse). No Docker fica sempre ligado. |
 | `EXPEDIENTE_USAGE_DIR` | `~/.expediente/host/uso` | Onde o mod (ou o tap de statusline) grava o uso. |
 | `EXPEDIENTE_DEMO` | desligado | `1` liga o modo demonstração ao iniciar. |
@@ -518,6 +518,7 @@ mod/      o mod do Expediente e o plugin de permissões (plugins do Claude Code;
 | `GET /api/timeline/:dia` | Linha do tempo de um dia (`AAAA-MM-DD`), em JSONL (com gzip). |
 | `GET /api/health` | Saúde: versão, demonstração, Docker, terminal, responder pelo escritório, fontes e status de uso de cada conta. |
 | `POST /api/demo` | `{"enabled": true \| false}` liga ou desliga os agentes simulados. |
+| `POST /api/rooms/rename` | `{"id": sala, "name": nome}` renomeia a sala (vazio volta ao nome da pasta); o nome fica em `rooms.json`, na pasta de dados. Só com acesso local. |
 | `GET /api/mod/summary` | Para o mod do Claude Code: versão, quantos agentes, quantos trabalham e quem precisa de você (sem o demo e, com `?account=&session=`, sem a própria sessão). |
 | `/api/permissions…` | Responder pelo escritório: o hook de permissão registra o pedido e espera; a página busca o detalhe e decide. Só com acesso local. |
 

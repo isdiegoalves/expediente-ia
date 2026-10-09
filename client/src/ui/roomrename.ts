@@ -1,10 +1,20 @@
 // Renomear uma sala (botão direito na sala, na lista lateral ou no escritório): um campo flutuante perto do clique.
 // O nome fica no servidor (POST /api/rooms/rename, model/room-aliases.ts) e vale para todas as abas; vazio volta ao
-// nome da pasta. Enter salva, Esc cancela, clicar fora salva.
+// nome da pasta. Enter salva, Esc cancela, clicar fora salva. A gaveta da sala tem também um lápis ao lado do nome.
+import { isDemoId } from '../../../shared/timeline';
 import type { UiContext } from './context';
 import { h, setText } from './dom';
+import { isLocalHostname } from './permission';
 
 const NAME_MAX = 40;
+
+/**
+ * Dá para renomear esta sala daqui? O servidor recusa as de demonstração e quem não abriu o Expediente pelo próprio
+ * computador; no modo mock e no timelapse não há servidor para gravar.
+ */
+export function canRenameRoom(ctx: UiContext, roomId: string): boolean {
+  return !!ctx.renameRoom && !isDemoId(roomId) && !ctx.store.mock && !ctx.store.replaying && isLocalHostname(location.hostname);
+}
 
 async function renameRequest(id: string, name: string): Promise<void> {
   let res: Response;

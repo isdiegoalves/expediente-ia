@@ -2319,6 +2319,22 @@ a.ui-btn {
     0 0 0 1px color-mix(in srgb, var(--ui-text) 8%, transparent);
 }
 
+/* Nome da sala com o lápis de renomear ao lado. */
+.ui-room-hero__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ui-room-hero__title > .ui-hero__name {
+  min-width: 0;
+}
+
+.ui-room-hero__rename {
+  flex: none;
+}
+
 .ui-room-hero__path {
   font: 11.5px var(--font-mono);
   color: var(--ui-muted);
