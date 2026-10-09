@@ -196,11 +196,6 @@ export interface AgentInfo {
   permission?: PermissionRequestInfo;
   /** Subagente parado (ver ParadoInfo); o status continua 'working'. */
   parado?: ParadoInfo;
-  /**
-   * Dá para mandar mensagem a este agente pelo Expediente (só principais): a sessão tem o plugin expediente-mensagens
-   * e perguntou pela caixa de entrada há pouco. Ver POST /api/messages.
-   */
-  canMessage?: boolean;
 }
 
 export interface RoomInfo {
@@ -563,31 +558,4 @@ export interface PermissionDecision {
   suggestion?: number;
   /** Resposta (`answer`): uma por pergunta do pedido. */
   answers?: PermissionAnswer[];
-}
-
-// ------------------------------------------------------------------ mensagens pelo escritório
-
-/**
- * Situação de uma mensagem mandada pela página a um agente (GET /api/messages/:id):
- * queued = esperando a sessão buscar; sent = a sessão buscou e está entregando; delivered = entrou na sessão (ou
- * na fila dela, se o agente estava ocupado); failed = não entrou (`error` diz por quê).
- */
-export type OutboxStatus = 'queued' | 'sent' | 'delivered' | 'failed';
-
-export interface OutboxMessage {
-  id: string;
-  /** AgentInfo.id do destinatário (sempre um principal). */
-  agentId: string;
-  status: OutboxStatus;
-  error?: string;
-  createdAt: number;
-  /** Última mudança de status. */
-  updatedAt: number;
-}
-
-/** Mensagem entregue ao plugin expediente-mensagens (POST /api/mod/inbox). */
-export interface InboxMessage {
-  id: string;
-  /** O texto como foi digitado: o plugin o manda à sessão como se você o tivesse digitado. */
-  text: string;
 }
