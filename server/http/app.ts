@@ -1,6 +1,7 @@
 // Rotas da API (/api/*). Respostas JSON; rotas desconhecidas -> 404 JSON.
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { contextView, costView } from '../../shared/stats';
+import { NAME_MAX, parseAppearanceParts, parseCharacterName, parseSeed } from '../../shared/appearance';
 import type { AgentInfo, ModAgentUsage, ModSummary, OfficeSnapshot, SourceInfo } from '../../shared/types';
 import type { AccountsService } from '../accounts/service';
 import type { DayStatsService } from '../history/daystats';
@@ -46,6 +47,10 @@ const TERMINAL_ROUTE = /^\/api\/agents\/([^/]+)\/terminal$/;
 
 /** GET /api/agentes/:id/ir. */
 const IR_ROUTE = /^\/api\/agentes\/([^/]+)\/ir$/;
+
+/** PUT|DELETE /api/agents/:id/character: personagem do projeto (ver Office.setCharacter). */
+const CHARACTER_ROUTE = /^\/api\/agents\/([^/]+)\/character$/;
+const NOT_EDITABLE = 'agente não encontrado: só o agente principal de uma sessão aberta tem personagem editável';
 
 const MAX_BODY = 256 * 1024;
 
@@ -182,6 +187,25 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
     sendJson(res, 200, { ok: true, demo: office.isDemo() });
   };
 
+  const handleCharacter = async (req: IncomingMessage, res: ServerResponse, id: string, method: string) => {
+    if (method === 'DELETE') {
+      req.resume();
+      if (office.resetCharacter(id) === 'not-found') return sendJson(res, 404, { error: NOT_EDITABLE });
+      return sendJson(res, 200, { ok: true });
+    }
+    const body = (await readJson(req)) as { name?: unknown; seed?: unknown; parts?: unknown } | null;
+    const name = parseCharacterName(body?.name);
+    const seed = parseSeed(body?.seed);
+    const parts = parseAppearanceParts(body?.parts ?? {});
+    if (!name || seed === null || !parts) {
+      throw new HttpError(400, `esperado {name: texto de 1 a ${NAME_MAX} caracteres, seed: inteiro de 0 a 4294967295, parts: peças da aparência}`);
+    }
+    const r = office.setCharacter(id, { name, seed, parts });
+    if (r.result === 'not-found') return sendJson(res, 404, { error: NOT_EDITABLE });
+    if (r.result === 'conflict') return sendJson(res, 409, { error: r.message });
+    sendJson(res, 200, { ok: true });
+  };
+
   const fail = (res: ServerResponse, err: unknown) => {
     if (res.headersSent) return void res.destroy();
     if (err instanceof HttpError) sendJson(res, err.status, { error: err.message });
@@ -275,6 +299,26 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
         return true;
       }
       handleIrRoute(req, res, url, id, { office, nonces });
+      return true;
+    }
+    const characterMatch = CHARACTER_ROUTE.exec(path);
+    if (characterMatch) {
+      // Mudar o personagem age sobre o escritório: a mesma trava do terminal (bind local + Host local).
+      if (method !== 'PUT' && method !== 'DELETE') methodNotAllowed(res, 'PUT, DELETE');
+      else if (!terminalOn()) {
+        sendJson(res, 403, { error: 'editar o personagem desligado: só funciona com o Expediente acessível apenas pelo próprio computador' });
+      } else if (!isLoopbackHost(req.headers.host)) {
+        sendJson(res, 403, { error: 'o personagem só é editado pelo próprio computador (http://localhost ou http://127.0.0.1)' });
+      } else {
+        let id: string;
+        try {
+          id = decodeURIComponent(characterMatch[1]);
+        } catch {
+          sendJson(res, 400, { error: 'id inválido' });
+          return true;
+        }
+        handleCharacter(req, res, id, method).catch((err) => fail(res, err));
+      }
       return true;
     }
     if (path.startsWith('/api/agents/')) {

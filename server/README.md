@@ -69,6 +69,8 @@ festa) ou 10 min. Push só avisa. O mesmo CI visto de novo em 2 min não repete 
 | `GET /api/snapshot` | `OfficeSnapshot` atual |
 | `GET /api/agents/:id` | `AgentDetail` (histórico de até 200 atividades) |
 | `GET /api/agents/:id/terminal` | SSE do terminal somente leitura: eventos `init` e `append` (`TerminalMessage`); só com bind local (ver abaixo) |
+| `PUT /api/agents/:id/character` | personagem do projeto: `{name, seed, parts}` (ver abaixo); `200 {ok}`, `400`, `404` (não é o principal de uma sessão aberta), `409` (nome em uso); só com acesso local |
+| `DELETE /api/agents/:id/character` | "Voltar ao sorteio": apaga o personagem da sala; `200 {ok}` ou `404`; só com acesso local |
 | `GET /api/sessions/recent` | `RecentSessionsResponse`: sessões dos últimos 7 dias de todas as contas (até 150); mesma trava do terminal |
 | `GET /api/sessions/:conta/:sessionId/terminal` | SSE da conversa de uma sessão do histórico (mesmo protocolo do terminal); mesma trava |
 | `GET /api/stats?day=AAAA-MM-DD&tz=<IANA>&source=real\|demo` | `DayStatsResponse` do "Meu dia" (ver abaixo); padrões: hoje, fuso do servidor, demo se ligado e o dia é hoje |
@@ -223,6 +225,32 @@ As rotas (`permissions/http.ts`) seguem a trava do terminal somente leitura: sem
 todas; `Host` que não é local → 403. O guard já exige JSON e `Origin` local nos `POST`. Erros: 400 (corpo ou
 sugestão inválidos), 404 (pedido desconhecido, já entregue ou expirado), 405, 409 (já respondido).
 
+## Personagem do projeto
+
+`PUT /api/agents/:id/character` (`http/app.ts`, regras em `Office.setCharacter`) escolhe o nome e a aparência do agente
+principal `:id` e grava como o personagem da sala dele (o cwd normalizado), em `names.json` › `rooms`:
+`{name, look, seed, parts?, at}`.
+
+O corpo tem três campos:
+
+- `name`: de 1 a 24 caracteres, em NFC, com os espaços repetidos juntados e sem caracteres de controle;
+- `seed`: inteiro de 0 a 4294967295;
+- `parts`: peças de `shared/appearance.ts`, com os estilos dos enums e as cores em `#rrggbb`. O cliente aplica as peças
+  por cima de `appearanceFromSeed(seed, {look})`.
+
+Regras:
+
+- Quando um principal chega a uma sala que tem personagem, e o nome está livre, ele nasce com `name`, `look`, `seed`,
+  `parts` e `custom: true`. Quem está saindo não conta, porque costuma ser a mesma sessão reaberta. Se o nome não
+  estiver livre, vale o sorteio de sempre.
+- Os nomes escolhidos ficam reservados: o sorteio não os entrega, sem diferenciar maiúsculas. O `PUT` responde `409`
+  para o nome de alguém presente (inclusive do demo) ou o de outra sala.
+- O `/clear` mantém o personagem e não grava o nome escolhido como o nome sorteado da sessão nova.
+- O `DELETE` apaga o personagem da sala, e o agente volta ao nome sorteado da sessão e à seed do id.
+- Trava: a mesma do terminal (bind local e `Host` local). Sem ela, `403`. Subagente, demo ou agente desconhecido dão
+  `404`.
+- Personagem sem uso há 60 dias some, como os nomes.
+
 ## Variáveis de ambiente
 
 | Variável | Padrão | Uso |
@@ -230,7 +258,7 @@ sugestão inválidos), 404 (pedido desconhecido, já entregue ou expirado), 405,
 | `EXPEDIENTE_PORT` | `4848` | porta HTTP no modo Node (o Docker publica sempre `127.0.0.1:4848`) |
 | `EXPEDIENTE_TERMINAL` | — | `0` desliga o terminal somente leitura |
 | `EXPEDIENTE_CLAUDE_DIRS` | — | config dirs separados por vírgula; substitui a detecção (`~/.claude*` com `projects/` ou `sessions/` + `CLAUDE_CONFIG_DIR`) |
-| `EXPEDIENTE_DATA_DIR` | `~/.expediente` (Docker: `/data`) | estado do Expediente (nomes persistidos em `names.json`, linha do tempo em `timeline/`, estatísticas do Meu dia em `stats/`, última verificação de versão em `updates.json`) |
+| `EXPEDIENTE_DATA_DIR` | `~/.expediente` (Docker: `/data`) | estado do Expediente (nomes e personagens dos projetos persistidos em `names.json`, linha do tempo em `timeline/`, estatísticas do Meu dia em `stats/`, última verificação de versão em `updates.json`) |
 | `EXPEDIENTE_TIMELINE` | ligado | `0` desliga a gravação da linha do tempo do timelapse |
 | `EXPEDIENTE_DEMO` | desligado | `1` liga o modo demonstração ao iniciar |
 | `EXPEDIENTE_ACCOUNTS` | — | JSON com metadados das contas vindos do host (Docker): `[{id, configDir, mountDir, short, name, email, organization, plan, color, cachedUsage}]`, casados por `id`, `mountDir` ou `configDir` |
