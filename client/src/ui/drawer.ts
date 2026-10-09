@@ -48,6 +48,7 @@ import { canRenameRoom } from './roomrename';
 import { createAgentRow, updateAgentRow } from './rows';
 import { SocialSection } from './social';
 import { TERMINAL_UNAVAILABLE_HINT, type TerminalControl } from './terminal';
+import { Movable } from './movable';
 import { createAccountChip, createProgress, createStatusDot, updateAccountChip, updateProgress, updateStatusDot } from './widgets';
 
 /** Itens da linha do tempo mostrados de início; "Mostrar mais" acrescenta outro tanto. */
@@ -882,6 +883,9 @@ export class Drawer implements UiComponent {
   private roomView: RoomView;
   private mode: 'agent' | 'room' | null = null;
   private heading: HTMLElement;
+  private movable: Movable;
+  /** Avisado quando a gaveta é solta ou volta ao lugar (a área livre do escritório muda). */
+  onLayoutChange: (() => void) | null = null;
 
   constructor(
     private ctx: UiContext,
@@ -892,17 +896,25 @@ export class Drawer implements UiComponent {
     this.heading = h('span', { class: 'ui-drawer__kind' });
     const close = iconButton(ICONS.close, 'Fechar detalhes (Esc)', () => ctx.select(null));
     this.body = h('div', { class: 'ui-drawer__body' });
+    const bar = h('div', { class: 'ui-drawer__bar' }, this.heading, close);
     this.el = h(
       'aside',
       { class: 'ui-panel ui-drawer', attrs: { 'aria-label': 'Detalhes', id: 'ui-drawer', 'aria-hidden': 'true' } },
-      h('div', { class: 'ui-drawer__bar' }, this.heading, close),
+      bar,
       this.body,
     );
+    // Arrastar pela barra solta a gaveta: flutuante, ela não cobre mais a lateral do escritório.
+    this.movable = new Movable(this.el, bar, { key: 'habblaud.move.drawer', enabled: () => !ctx.isNarrow(), onChange: () => this.onLayoutChange?.() });
     this.el.inert = true;
   }
 
   get isOpen(): boolean {
     return this.mode !== null;
+  }
+
+  /** Solta do lugar (arrastada pela barra). */
+  get floating(): boolean {
+    return this.movable.floating;
   }
 
   toggleFollow(): void {

@@ -176,9 +176,10 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi,
   area = new FreeArea(world, { root, topbar: topbar.el, sidebar: sidebar.el, drawer: drawer.el, feed: feed.el }, () => ({
     sidebar: panels.sidebar,
     feed: panels.feed,
-    drawer: selection !== null,
+    drawer: selection !== null && !drawer.floating,
     narrow: ctx.isNarrow(),
   }));
+  drawer.onLayoutChange = () => applyLayout();
 
   const components: UiComponent[] = [topbar, sidebar, drawer, terminal, history, feed, toasts, settings, empty, banner, tip, notifier, splash, timelapse, sound, day];
 
@@ -214,7 +215,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi,
   function applyLayout(opts: { refocus?: boolean } = {}): void {
     root.classList.toggle('has-sidebar', panels.sidebar);
     root.classList.toggle('has-feed', panels.feed);
-    root.classList.toggle('has-drawer', selection !== null);
+    root.classList.toggle('has-drawer', selection !== null && !drawer.floating);
     root.classList.toggle('is-narrow', ctx.isNarrow());
     area.sync(opts);
   }

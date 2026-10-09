@@ -7329,3 +7329,136 @@ html.is-replay #world {
 .ui-timeline__more:not(:has(> :not([hidden]))) {
   display: none;
 }
+
+/* ------------------------------------------------------------------ janelas móveis (ui/movable.ts) */
+
+.ui-move-handle {
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.is-dragging,
+.is-dragging .ui-move-handle {
+  cursor: grabbing;
+}
+
+.ui-term.is-floating,
+.ui-drawer.is-floating {
+  right: auto;
+  bottom: auto;
+  overflow: hidden;
+  transition: none;
+  animation: none;
+}
+
+.ui-drawer.is-floating {
+  z-index: 25;
+  transform: none;
+  box-shadow: 0 24px 60px rgba(5, 7, 12, 0.55);
+}
+
+.ui-drawer.is-floating:not(.is-open) {
+  visibility: hidden;
+}
+
+.is-dragging {
+  opacity: 0.94;
+}
+
+/* Terminal expandido na tela toda do Habblaud (botão ao lado do fechar). */
+.ui-term.is-max {
+  z-index: 46;
+  inset: calc(var(--top-h) + var(--gap)) var(--gap) var(--gap) !important;
+  width: auto !important;
+  height: auto !important;
+  resize: none;
+  transition: none;
+  animation: none;
+}
+
+.ui-term.is-max .ui-move-handle {
+  cursor: default;
+}
+
+/* Alças de redimensionar nas bordas e quinas das janelas móveis (ui/movable.ts). */
+.ui-resize {
+  position: absolute;
+  z-index: 5;
+  touch-action: none;
+}
+
+.ui-resize--n,
+.ui-resize--s {
+  left: 10px;
+  right: 10px;
+  height: 6px;
+  cursor: ns-resize;
+}
+
+.ui-resize--n {
+  top: -2px;
+}
+
+.ui-resize--s {
+  bottom: -2px;
+}
+
+.ui-resize--e,
+.ui-resize--w {
+  top: 10px;
+  bottom: 10px;
+  width: 6px;
+  cursor: ew-resize;
+}
+
+.ui-resize--e {
+  right: -2px;
+}
+
+.ui-resize--w {
+  left: -2px;
+}
+
+.ui-resize--ne,
+.ui-resize--nw,
+.ui-resize--se,
+.ui-resize--sw {
+  width: 14px;
+  height: 14px;
+}
+
+.ui-resize--ne {
+  top: -2px;
+  right: -2px;
+  cursor: nesw-resize;
+}
+
+.ui-resize--sw {
+  bottom: -2px;
+  left: -2px;
+  cursor: nesw-resize;
+}
+
+.ui-resize--nw {
+  top: -2px;
+  left: -2px;
+  cursor: nwse-resize;
+}
+
+.ui-resize--se {
+  bottom: -2px;
+  right: -2px;
+  cursor: nwse-resize;
+}
+
+/* Expandida, em tela estreita ou fechada: sem alças. */
+.is-max > .ui-resize,
+.is-narrow .ui-resize {
+  display: none;
+}
+
+.is-resizing,
+.is-resizing * {
+  user-select: none;
+}
