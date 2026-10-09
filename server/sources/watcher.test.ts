@@ -1,7 +1,7 @@
 // Integração: registro + transcript + subagentes em um config dir temporário.
 import { mkdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentInfo, Notice } from '../../shared/types';
 import { AccountsService } from '../accounts/service';
 import { setQuiet } from '../log';
@@ -864,6 +864,75 @@ describe('no Docker', () => {
       c.poll();
       expect(c.agent('.claude:600')!.status).toBe('idle');
       expect(c.watcher.sources()[0].processoConfirmado).toBe(false);
+    } finally {
+      c.watcher.stop();
+      c.tmp.cleanup();
+    }
+  });
+});
+
+describe('ClaudeWatcher — contexto e custo calculado', () => {
+  const uso = (o: Record<string, number>) => ({ input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, ...o });
+
+  it('uma mensagem nova muda o contexto no próximo ciclo do relógio (1 s), e o agente carrega a janela do modelo', () => {
+    vi.useFakeTimers();
+    const c = setup();
+    try {
+      writeLines(c.transcript('sess-x'), [L.assistant([L.text('oi')], { msgId: 'm1', model: 'claude-opus-5', usage: uso({ input_tokens: 4000, output_tokens: 100 }) })]);
+      c.openSession(700, 'sess-x');
+      c.watcher.start();
+      expect(c.agent('.claude:700')!.stats).toMatchObject({ contextTokens: 4100, contextWindow: 1_000_000 });
+      appendLines(c.transcript('sess-x'), [L.assistant([L.text('mais')], { msgId: 'm2', model: 'claude-opus-5', usage: uso({ input_tokens: 9000, output_tokens: 300 }) })]);
+      vi.advanceTimersByTime(1_000);
+      expect(c.agent('.claude:700')!.stats.contextTokens).toBe(9300);
+    } finally {
+      c.watcher.stop();
+      c.tmp.cleanup();
+      vi.useRealTimers();
+    }
+  });
+
+  it('sem cost-state, o custo estimado do principal inclui o de subagente que já tinha terminado antes de o servidor abrir a sessão', async () => {
+    const c = setup();
+    try {
+      writeLines(c.transcript('sess-y'), [L.assistant([L.text('oi')], { msgId: 'm1', model: 'claude-opus-5', usage: uso({ input_tokens: 1_000_000 }) })]);
+      const sub = c.subFile('sess-y', 'velho', { agentType: 'Explore', description: 'Mapear', requestShape: 'foreground' }, [
+        L.assistant([L.text('feito')], { msgId: 's1', model: 'claude-opus-5', usage: uso({ input_tokens: 200_000 }), agentId: 'velho', stop: 'end_turn' }),
+      ]);
+      const antigo = new Date(c.now() - 3_600_000);
+      utimesSync(sub, antigo, antigo);
+      c.openSession(701, 'sess-y');
+      c.watcher.boot();
+      expect(c.agent('sess-y:velho')).toBeUndefined();
+      await c.watcher.idle();
+      c.poll();
+      const stats = c.agent('.claude:701')!.stats;
+      expect(stats.costEstimatedUSD).toBeCloseTo(5 + 1, 4);
+      expect(stats.costUSD).toBeUndefined();
+    } finally {
+      c.watcher.stop();
+      c.tmp.cleanup();
+    }
+  });
+});
+
+describe('ClaudeWatcher — custo de subagente ativo', () => {
+  it('o custo estimado do principal acompanha o subagente que ainda trabalha', () => {
+    const c = setup();
+    try {
+      const uso = (n: number) => ({ input_tokens: n, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 });
+      writeLines(c.transcript('sess-z'), [L.assistant([L.text('oi')], { msgId: 'm1', model: 'claude-opus-5', usage: uso(1_000_000) })]);
+      c.openSession(702, 'sess-z');
+      c.watcher.boot();
+      const sub = c.subFile('sess-z', 'vivo', { agentType: 'Explore', description: 'Mapear', requestShape: 'foreground' }, [
+        L.assistant([L.tool('g1', 'Grep', { pattern: 'x' })], { msgId: 's1', model: 'claude-opus-5', usage: uso(200_000), agentId: 'vivo' }),
+      ]);
+      c.poll();
+      expect(c.agent('sess-z:vivo')).toBeDefined();
+      expect(c.agent('.claude:702')!.stats.costEstimatedUSD).toBeCloseTo(5 + 1, 4);
+      appendLines(sub, [L.assistant([L.tool('g2', 'Grep', { pattern: 'y' })], { msgId: 's2', model: 'claude-opus-5', usage: uso(200_000), agentId: 'vivo' })]);
+      c.poll();
+      expect(c.agent('.claude:702')!.stats.costEstimatedUSD).toBeCloseTo(5 + 2, 4);
     } finally {
       c.watcher.stop();
       c.tmp.cleanup();

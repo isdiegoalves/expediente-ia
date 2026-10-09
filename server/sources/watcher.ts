@@ -8,7 +8,7 @@
 import { existsSync, readdirSync, readFileSync, statSync, watch, type FSWatcher } from 'node:fs';
 import { join } from 'node:path';
 import { SPECIAL } from '../../shared/activity';
-import type { Activity, AgentStatus, ParadoInfo, SourceInfo } from '../../shared/types';
+import type { Activity, AgentStats, AgentStatus, ParadoInfo, SourceInfo } from '../../shared/types';
 import type { AccountsService } from '../accounts/service';
 import { errMsg, log } from '../log';
 import type { Office, TranscriptSummary } from '../model/office';
@@ -108,6 +108,8 @@ interface SessionTracker {
   state: TranscriptState;
   customTitleFile?: string;
   subs: Map<string, SubTracker>;
+  /** Custo calculado de cada subagente da sessão (também dos que já saíram do escritório): o `cost-state` do principal os inclui. */
+  subCost: Map<string, { usd: number; unpriced: string[] }>;
   /** Arquivos de subagentes já vistos e fora do escritório: tamanho conhecido. */
   known: Map<string, number>;
   spawns: Map<string, SpawnInfo & { owner: string }>;
@@ -394,6 +396,7 @@ export class ClaudeWatcher {
       nextResolveAt: 0,
       state: createTranscriptState(),
       subs: new Map(),
+      subCost: new Map(),
       known: new Map(),
       spawns: new Map(),
       launched: new Map(),
@@ -513,6 +516,7 @@ export class ClaudeWatcher {
       tasks: s.tasks,
       stats: { ...s.stats, subagents: s.stats.subagents + t.workflowAgents },
     };
+    this.somarCustoDosSubagentes(t, summary.stats);
     const title = titleOf(s);
     if (title) summary.title = title;
     if (s.model) summary.model = s.model;
@@ -520,6 +524,32 @@ export class ClaudeWatcher {
     if (s.permissionMode) summary.permissionMode = s.permissionMode;
     if (s.lastAt !== undefined) summary.lastAt = s.lastAt;
     this.opts.office.applyTranscript(t.key, summary);
+  }
+
+  private somarCustoDosSubagentes(t: SessionTracker, stats: AgentStats): void {
+    if (!t.subCost.size) return;
+    let usd = stats.costEstimatedUSD ?? 0;
+    const unpriced = new Set(stats.unpricedModels);
+    for (const c of t.subCost.values()) {
+      usd += c.usd;
+      for (const m of c.unpriced) unpriced.add(m);
+    }
+    stats.costEstimatedUSD = Math.round(usd * 10_000) / 10_000;
+    if (unpriced.size) stats.unpricedModels = [...unpriced];
+  }
+
+  /** Custo de um subagente que já terminou (ou que a sessão não reabriu): lido do arquivo inteiro, em segundo plano. */
+  private queueSubCost(t: SessionTracker, file: SubagentFile): void {
+    t.subCost.set(file.agentId, { usd: 0, unpriced: [] });
+    this.prefixChain = this.prefixChain
+      .then(async () => {
+        if (this.stopped) return;
+        const { state } = await scanPrefix(file.path, statSync(file.path).size, new Set());
+        if (t.subs.has(file.agentId)) return;
+        t.subCost.set(file.agentId, { usd: state.estimatedCost, unpriced: [...state.unpriced] });
+        this.applyMainSummary(t);
+      })
+      .catch((err) => log.warnOnce(`subcost:${file.path}`, `Não foi possível calcular o custo de um subagente (${errMsg(err)}).`));
   }
 
   private queuePrefix(
@@ -685,6 +715,7 @@ export class ClaudeWatcher {
       }
     }
     t.scanned = true;
+    if (!t.state.costSeen) for (const file of files) if (!t.subs.has(file.agentId) && !t.subCost.has(file.agentId)) this.queueSubCost(t, file);
   }
 
   /**
@@ -761,11 +792,11 @@ export class ClaudeWatcher {
     const sub: SubTracker = { agentId: file.agentId, id, file, meta, tail, state };
     t.subs.set(file.agentId, sub);
     for (const r of results) this.applyResult(t, id, r, mode === 'new');
-    this.applySubSummary(sub);
+    this.applySubSummary(sub, t);
     this.syncStalled(sub, idleVerdict(this.idleCheck(sub, now)) === 'stalled');
     if (start > 0) this.queuePrefix(file.path, start, state, (_signals, _older, shellEvents) => {
       if (t.subs.get(file.agentId) !== sub) return;
-      this.applySubSummary(sub);
+      this.applySubSummary(sub, t);
       this.mergeOlderShells(t, id, shellEvents);
     });
   }
@@ -789,8 +820,13 @@ export class ClaudeWatcher {
     this.opts.office.markStalled(sub.id, parado);
   }
 
-  private applySubSummary(sub: SubTracker): void {
+  private applySubSummary(sub: SubTracker, t: SessionTracker): void {
     const s = sub.state;
+    const antes = t.subCost.get(sub.agentId);
+    if (antes?.usd !== s.estimatedCost || antes.unpriced.length !== s.unpriced.size) {
+      t.subCost.set(sub.agentId, { usd: s.estimatedCost, unpriced: [...s.unpriced] });
+      this.applyMainSummary(t);
+    }
     const summary: TranscriptSummary = { tasks: s.tasks, stats: { ...s.stats } };
     if (s.firstAt !== undefined) summary.firstAt = s.firstAt;
     if (s.model) summary.model = s.model;
@@ -825,7 +861,7 @@ export class ClaudeWatcher {
           fresh += res.activities.length;
           this.applyResult(t, sub.id, res, true);
         }
-        if (r.lines.length) this.applySubSummary(sub);
+        if (r.lines.length) this.applySubSummary(sub, t);
         if (!r.more) break;
       }
       if (office.isSubDone(sub.id)) {

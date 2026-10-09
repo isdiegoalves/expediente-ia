@@ -77,7 +77,7 @@ festa) ou 10 min. Push só avisa. O mesmo CI visto de novo em 2 min não repete 
 | `GET /api/timeline/:dia` | o arquivo do dia (`AAAA-MM-DD`) em JSONL (`application/x-ndjson`, gzip se aceito); 400 para dia inválido, 404 sem gravação |
 | `GET /api/health` | `{ok, version, demo, docker, terminal, permissions, sources, accounts:[{id, usageStatus}]}` |
 | `POST /api/demo` | `{enabled: boolean}` liga/desliga agentes simulados (misturados aos reais) |
-| `GET /api/mod/summary?account=&session=` | `ModSummary` para o mod do Claude Code: `{version, agents, working, waiting:[{id, name, room, account, waitingFor, since, answerable}]}`, sem o demo e sem a sessão de quem pergunta (ver abaixo) |
+| `GET /api/mod/summary?account=&session=` | `ModSummary` para o mod do Claude Code: `{version, agents, working, waiting:[{id, name, room, account, waitingFor, since, answerable}], usage:[{id, name, context?, compactions, lastCompaction?, cost?}], self?}`, sem o demo e sem a sessão de quem pergunta (ver abaixo) |
 | `POST /api/permissions` | (hook) registra um pedido de permissão: `201 {id, expiresAt}` ou `200 {skip}`; só com bind local (ver abaixo) |
 | `GET /api/permissions/:id/wait` | (hook) long-poll de até 25 s (`?timeout=` em segundos): `{status: 'pending' \| 'decided' \| 'released', ...}` |
 | `GET /api/permissions/:id` | (página) detalhe do pedido com os argumentos (`PermissionRequestInfo` com `input`) |
@@ -274,11 +274,33 @@ O repositório é também um marketplace de plugins do Claude Code (`.claude-plu
   `answerable` = há pedido de permissão para responder pelo escritório (`AgentInfo.permission`). Sem parâmetros,
   nada é excluído (é o que o `/escritorio` usa, para os números baterem com a tela). Só `GET`/`HEAD` (senão 405).
 
+## Contexto e custo por agente
+
+O contexto de um agente é o tamanho da última mensagem do assistente com `usage`: entrada + cache lido + cache
+criado + saída (a mesma soma do Claude Code). A janela vem de `custo/modelos.json`, que também guarda o preço por
+modelo (USD por milhão de tokens); os dois saem do catálogo de modelos embutido no Claude Code. O nome do modelo no
+transcript não traz o sufixo `[1m]`: contexto acima da janela da tabela passa para `janelaEstendida`.
+
+O custo exato é o `totalCostUSD` da linha `cost-state`. Sem ela (a regra no app desktop), o custo é calculado dos
+`usage` com a tabela e aparece como "estimado"; o do principal inclui os subagentes, como o `cost-state`. Modelo sem
+preço na tabela aparece como "sem preço para <modelo>", nunca como zero. A estimativa só enxerga o que está no
+transcript: chamadas auxiliares do Claude Code e sessões retomadas de outro arquivo ficam de fora.
+
+Para trocar um preço ou acrescentar um modelo, crie `~/.expediente/host/precos.json` (no container, `/host/precos.json`,
+somente leitura) com o mesmo formato de `custo/modelos.json`, só com o que muda:
+
+```json
+{ "modelos": { "meu-modelo": { "janela": 32000, "entrada": 1, "saida": 2, "escritaCache5m": 1.25, "escritaCache1h": 2, "leituraCache": 0.1, "busca": 0.01 } } }
+```
+
+O arquivo é relido quando muda; sessões já lidas mantêm o custo calculado com o preço antigo até o servidor reiniciar.
+
 ## Estrutura
 
 - `config.ts`, `log.ts`, `index.ts` — configuração, logs curtos (nunca conteúdo de conversas) e entrada.
 - `accounts/` — detecção de contas (`detect.ts`, também usado pelo `docker-up`), uso (`usage.ts`), tap de statusline (`statusline.ts`), serviço (`service.ts`).
 - `sources/` — registro de sessões, leitura incremental (`tail.ts`), parser de transcripts (atividades em `transcript.ts`; conversa do terminal em `terminal.ts`; eventos do GitHub em `github.ts`), subagentes, o histórico de sessões (`history.ts`) e o orquestrador (`watcher.ts`).
+- `custo/` — tabela de preços e janelas por modelo (`modelos.json`, `precos.ts`).
 - `model/` — escritório (`office.ts`), salas/slots (`rooms.ts`), nomes persistidos (`names.ts`).
 - `http/` — proteções de borda (`guard.ts`), rotas (`app.ts`), SSE (`sse.ts`), terminal somente leitura (`terminal.ts`) e o histórico dele (`sessions.ts`), timelapse (`timeline.ts`), Meu dia (`stats.ts`), estáticos (`static.ts`).
 - `history/` — gravador da linha do tempo do timelapse (`timeline.ts`) e as estatísticas do Meu dia: amostragem, persistência e retenção (`daystats.ts`; o acumulador puro fica em `shared/daystats.ts`).

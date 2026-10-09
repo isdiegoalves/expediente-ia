@@ -114,6 +114,26 @@ export interface AgentStats {
   linesRemoved?: number;
   /** Total de subagentes disparados por este agente. */
   subagents: number;
+  /** Tamanho do contexto agora: entrada, caches e saída da última mensagem do assistente com uso. */
+  contextTokens?: number;
+  /** Janela do modelo em tokens; falta quando o modelo não é conhecido. */
+  contextWindow?: number;
+  /** Quantas vezes o transcript registra compactação. */
+  compactionCount?: number;
+  /** As últimas compactações (a mais antiga primeiro), com os tokens de `compactMetadata`. */
+  compactions?: CompactionInfo[];
+  /** Custo calculado dos `usage` e da tabela de preços; só vale quando falta `costUSD` (linha `cost-state`). */
+  costEstimatedUSD?: number;
+  /** Modelos que apareceram sem preço na tabela: o custo estimado não os inclui. */
+  unpricedModels?: string[];
+}
+
+export interface CompactionInfo {
+  /** Epoch ms da linha de compactação. */
+  at: number;
+  preTokens: number;
+  postTokens: number;
+  trigger?: string;
 }
 
 /** De onde a sessão do agente principal veio, pelo `entrypoint` e `kind` do registro de sessões. */
@@ -383,6 +403,21 @@ export interface ModSummary {
   working: number;
   /** Quem precisa de você, de quem espera há mais tempo para quem espera há menos. */
   waiting: ModWaitingAgent[];
+  /** Contexto, compactações e custo de cada agente presente (os mesmos números da gaveta). */
+  usage: ModAgentUsage[];
+  /** O mesmo para o agente principal da sessão de quem pergunta (`?session=`), que não entra em `usage`. */
+  self?: ModAgentUsage;
+}
+
+export interface ModAgentUsage {
+  /** = AgentInfo.id. */
+  id: string;
+  name: string;
+  context?: { tokens: number; window?: number; percent?: number };
+  compactions: number;
+  /** A compactação mais recente, com os tokens de `compactMetadata`. */
+  lastCompaction?: { preTokens: number; postTokens: number };
+  cost?: { usd?: number; estimated: boolean; unpriced: string[] };
 }
 
 export interface ModWaitingAgent {

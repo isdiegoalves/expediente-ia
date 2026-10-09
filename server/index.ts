@@ -6,6 +6,7 @@ import http from 'node:http';
 import { join } from 'node:path';
 import { AccountsService } from './accounts/service';
 import { loadConfig, terminalOffReason } from './config';
+import { usarArquivoDoDono } from './custo/precos';
 import { createApiHandler, sendJson } from './http/app';
 import { createRequestGuard } from './http/guard';
 import { createTerminalGate, PUBLICACAO_ARQUIVO } from './publicacao';
@@ -28,6 +29,7 @@ import { createBuildReader } from './build';
 import { carregarTema } from './tema/carregar';
 
 const config = loadConfig();
+usarArquivoDoDono(join(config.hostDir, 'precos.json'));
 // Terminal, histórico e permissões: no container só com a publicação da porta confirmada pelo docker-up.
 const gate = createTerminalGate({ terminal: config.terminal, inDocker: config.inDocker, file: join(config.dataDir, PUBLICACAO_ARQUIVO) });
 const startedAt = Date.now();

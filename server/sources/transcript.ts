@@ -3,9 +3,10 @@
 // atividades (o que o personagem está fazendo) e sinais (ciclo de vida de subagentes).
 // Tipos de linha desconhecidos são ignorados; uma linha inválida nunca derruba a leitura.
 import { createReadStream } from 'node:fs';
-import type { Activity, AgentStats, TaskItem, TaskStatus } from '../../shared/types';
+import type { Activity, AgentStats, CompactionInfo, TaskItem, TaskStatus } from '../../shared/types';
 import { basename, describePrompt, describeShellJob, describeTool, maskSecrets, SPECIAL, truncate, type ActivityDescription } from '../../shared/activity';
 import type { GitHubEvent } from '../../shared/github';
+import { custoDaMensagem, janelaDoModelo, type UsoBruto } from '../custo/precos';
 import { trocadorDeCaminhos } from '../model/saida';
 import { detectGitHubNotification, detectGitHubResult, githubCallOf, type GitHubCall } from './github';
 import type { ShellStart } from './shells';
@@ -141,7 +142,11 @@ export interface TranscriptState {
   /** Chamadas que podem virar evento do GitHub (gh/git push, MCP do GitHub), até o resultado. */
   github: Map<string, GitHubCall>;
   /** Uso de tokens já contado por mensagem (as linhas de uma mensagem trazem o uso parcial). */
-  usageByMsg: Map<string, { tin: number; tout: number }>;
+  usageByMsg: Map<string, { tin: number; tout: number; raw: UsoBruto; cost: number }>;
+  /** Soma do custo calculado dos `usage`, sem arredondar (as parciais de uma mensagem entram só pelo acréscimo). */
+  estimatedCost: number;
+  /** Modelos vistos sem preço na tabela. */
+  unpriced: Set<string>;
   /** Ids das primeiras mensagens da janela lida (para não contar duas vezes ao mesclar o prefixo). */
   firstMsgIds: Set<string> | null;
   /** Mensagens cujo uso não deve ser contado (pertencem à janela já lida). */
@@ -173,6 +178,8 @@ export function createTranscriptState(opts: { trackPrefix?: boolean } = {}): Tra
     stopRequests: new Map(),
     github: new Map(),
     usageByMsg: new Map(),
+    estimatedCost: 0,
+    unpriced: new Set(),
     firstMsgIds: opts.trackPrefix ? new Set() : null,
     seq: 0,
   };
@@ -199,6 +206,26 @@ export interface LineResult {
 
 const MAX_TRACKED = 512;
 const FIRST_MSG_IDS = 48;
+const MAX_COMPACTIONS = 10;
+
+const SEM_USO: UsoBruto = { entrada: 0, saida: 0, leituraCache: 0, escritaCache: 0, escritaCache1h: 0, buscas: 0 };
+
+/** Junta as linhas de uma mesma mensagem: cada contagem fica com o maior valor visto. */
+function somarUso(prev: UsoBruto, r: Record<string, unknown>): UsoBruto {
+  const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0);
+  const cache = r.cache_creation as Record<string, unknown> | undefined;
+  const tool = r.server_tool_use as Record<string, unknown> | undefined;
+  const geo = str(r.inference_geo) ?? prev.geo;
+  return {
+    entrada: Math.max(prev.entrada, n(r.input_tokens)),
+    saida: Math.max(prev.saida, n(r.output_tokens)),
+    leituraCache: Math.max(prev.leituraCache, n(r.cache_read_input_tokens)),
+    escritaCache: Math.max(prev.escritaCache, n(r.cache_creation_input_tokens)),
+    escritaCache1h: Math.max(prev.escritaCache1h, n(cache?.ephemeral_1h_input_tokens)),
+    buscas: Math.max(prev.buscas, n(tool?.web_search_requests)),
+    ...(geo ? { geo } : {}),
+  };
+}
 
 function str(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim() ? v : undefined;
@@ -385,7 +412,7 @@ class LineParser {
     this.changed();
   }
 
-  private usage(msgId: string, u: unknown): void {
+  private usage(msgId: string, u: unknown, model: string | undefined): void {
     if (!u || typeof u !== 'object') return;
     const r = u as Record<string, unknown>;
     const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
@@ -395,13 +422,34 @@ class LineParser {
     if (s.skipUsage?.has(msgId)) return;
     if (s.firstMsgIds && s.firstMsgIds.size < FIRST_MSG_IDS && !s.usageByMsg.has(msgId)) s.firstMsgIds.add(msgId);
     // Linhas da mesma mensagem repetem o uso (às vezes parcial): conta só o acréscimo.
-    const prev = s.usageByMsg.get(msgId) ?? { tin: 0, tout: 0 };
+    const prev = s.usageByMsg.get(msgId) ?? { tin: 0, tout: 0, raw: SEM_USO, cost: 0 };
     const dIn = Math.max(0, tin - prev.tin);
     const dOut = Math.max(0, tout - prev.tout);
-    remember(s.usageByMsg, msgId, { tin: Math.max(tin, prev.tin), tout: Math.max(tout, prev.tout) }, 256);
+    const cur = { tin: Math.max(tin, prev.tin), tout: Math.max(tout, prev.tout) };
+    const raw = somarUso(prev.raw, r);
+    let cost = prev.cost;
+    if (model) {
+      const c = custoDaMensagem(model, raw);
+      if (c === undefined) s.unpriced.add(model);
+      else {
+        cost = c;
+        s.estimatedCost += c - prev.cost;
+        s.stats.costEstimatedUSD = Math.round(s.estimatedCost * 10_000) / 10_000;
+      }
+      if (s.unpriced.size) s.stats.unpricedModels = [...s.unpriced];
+    }
+    remember(s.usageByMsg, msgId, { ...cur, raw, cost }, 256);
     if (dIn || dOut) {
       s.stats.tokensIn += dIn;
       s.stats.tokensOut += dOut;
+      this.changed();
+    }
+    if (model && cur.tin > 0) {
+      const tokens = cur.tin + cur.tout;
+      s.stats.contextTokens = tokens;
+      const janela = janelaDoModelo(model, tokens);
+      if (janela !== undefined) s.stats.contextWindow = janela;
+      else delete s.stats.contextWindow;
       this.changed();
     }
   }
@@ -431,7 +479,7 @@ class LineParser {
       this.changed();
     }
     const msgId = str(m.id) ?? str(j.requestId) ?? str(j.uuid) ?? `x${++s.seq}`;
-    this.usage(msgId, m.usage);
+    this.usage(msgId, m.usage, model && model !== '<synthetic>' ? model : undefined);
     s.lastStopReason = typeof m.stop_reason === 'string' ? m.stop_reason : null;
     s.ended = m.stop_reason === 'end_turn' && s.pendingTools.size === 0;
     if (model !== '<synthetic>') delete s.apiError;
@@ -691,9 +739,20 @@ class LineParser {
         this.push(SPECIAL.turnDone(ms), ms !== undefined ? { durationMs: ms } : {});
         return;
       }
-      case 'compact_boundary':
+      case 'compact_boundary': {
+        const meta = j.compactMetadata as Record<string, unknown> | undefined;
+        const stats = this.s.stats;
+        stats.compactionCount = (stats.compactionCount ?? 0) + 1;
+        if (typeof meta?.preTokens === 'number' && typeof meta.postTokens === 'number') {
+          const c: CompactionInfo = { at: this.at, preTokens: meta.preTokens, postTokens: meta.postTokens };
+          const trigger = str(meta.trigger);
+          if (trigger) c.trigger = trigger;
+          stats.compactions = [...(stats.compactions ?? []), c].slice(-MAX_COMPACTIONS);
+        }
+        this.changed();
         this.push(SPECIAL.compact());
         return;
+      }
       case 'api_error':
         this.s.apiError = apiErrorOf(j, this.at);
         if (this.s.current?.kind === 'wait' && this.at - this.s.current.at < 60_000) return;
@@ -771,6 +830,7 @@ const PREFIX_MARKERS = [
   '"type":"ai-title"',
   '"type":"last-prompt"',
   '"type":"cost-state"',
+  '"compact_boundary"',
   '"type":"permission-mode"',
   // Início de um fork: a cópia da chamada Agent do pai que vem logo depois não é dele.
   '"type":"fork-context-ref"',
@@ -864,6 +924,7 @@ export function mergePrefix(state: TranscriptState, prefix: TranscriptState): vo
   state.stats.tokensIn += prefix.stats.tokensIn;
   state.stats.tokensOut += prefix.stats.tokensOut;
   state.stats.subagents += prefix.stats.subagents;
+  mesclarCustoEContexto(state, prefix);
   if (!state.costSeen && prefix.costSeen) {
     state.costSeen = true;
     if (prefix.stats.costUSD !== undefined) state.stats.costUSD = prefix.stats.costUSD;
@@ -871,4 +932,20 @@ export function mergePrefix(state: TranscriptState, prefix: TranscriptState): vo
     if (prefix.stats.linesRemoved !== undefined) state.stats.linesRemoved = prefix.stats.linesRemoved;
   }
   state.firstMsgIds = null;
+}
+
+function mesclarCustoEContexto(state: TranscriptState, prefix: TranscriptState): void {
+  const stats = state.stats;
+  state.estimatedCost += prefix.estimatedCost;
+  for (const m of prefix.unpriced) state.unpriced.add(m);
+  if (prefix.stats.costEstimatedUSD !== undefined || stats.costEstimatedUSD !== undefined) {
+    stats.costEstimatedUSD = Math.round(state.estimatedCost * 10_000) / 10_000;
+  }
+  if (state.unpriced.size) stats.unpricedModels = [...state.unpriced];
+  if (prefix.stats.compactionCount) stats.compactionCount = (stats.compactionCount ?? 0) + prefix.stats.compactionCount;
+  if (prefix.stats.compactions) stats.compactions = [...prefix.stats.compactions, ...(stats.compactions ?? [])].slice(-MAX_COMPACTIONS);
+  if (stats.contextTokens === undefined && prefix.stats.contextTokens !== undefined) {
+    stats.contextTokens = prefix.stats.contextTokens;
+    if (prefix.stats.contextWindow !== undefined) stats.contextWindow = prefix.stats.contextWindow;
+  }
 }
