@@ -1,0 +1,11 @@
+Expediente
+Copyright (c) 2026 Diego Silva
+
+O Expediente deriva do Habblaud 0.4.0 (commit cb0c0bb),
+https://github.com/marmottajr/habblaud, licenciado sob a licença MIT,
+Copyright (c) 2026 Márcio Junior.
+
+Os arquivos herdados do Habblaud foram modificados no Expediente.
+
+O aviso de copyright e o texto da licença MIT (arquivo LICENSE) acompanham
+toda cópia ou parte substancial deste software.

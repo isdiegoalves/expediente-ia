@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
-// Cliente do Habblaud. Em `npm run dev` o servidor usa este config em middleware mode;
+// Cliente do Expediente. Em `npm run dev` o servidor usa este config em middleware mode;
 // `npm run dev:client` sobe só o Vite (use ?mock=1 para dados simulados no navegador).
 export default defineConfig({
   root: r('./client'),
@@ -18,9 +18,9 @@ export default defineConfig({
     rollupOptions: { input: { main: r('./client/index.html') } },
   },
   server: {
-    port: Number(process.env.VITE_PORT ?? 5173),
+    port: Number(process.env.VITE_PORT ?? 5848),
     proxy: {
-      '/api': { target: `http://127.0.0.1:${process.env.HABBLAUD_PORT ?? 4747}` },
+      '/api': { target: `http://127.0.0.1:${process.env.EXPEDIENTE_PORT ?? 4848}` },
     },
   },
 });

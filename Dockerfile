@@ -1,10 +1,10 @@
 # syntax=docker/dockerfile:1
 #
-# Habblaud em container: escritório virtual dos agentes do Claude Code.
+# Expediente em container: escritório virtual dos agentes do Claude Code.
 #
 # Use `npm run docker:up` (scripts/docker-up.ts): ele detecta as contas do Claude Code no host,
 # gera o docker-compose.override.yml com as montagens SOMENTE LEITURA de <conta>/projects,
-# <conta>/sessions e ~/.habblaud/usage e sobe o serviço. Este Dockerfile sozinho não monta nada do host.
+# <conta>/sessions e ~/.expediente/usage e sobe o serviço. Este Dockerfile sozinho não monta nada do host.
 
 # ---------------------------------------------------------------------------------------------
 # Estágio 1: compila o cliente (Vite) e empacota o servidor (esbuild) em dist/.
@@ -25,30 +25,30 @@ RUN npm run build
 # ---------------------------------------------------------------------------------------------
 FROM node:24-alpine AS runtime
 
-# HABBLAUD_USAGE_DIR: onde o docker-up monta (somente leitura) o uso capturado pelo tap de statusline.
+# EXPEDIENTE_USAGE_DIR: onde o docker-up monta (somente leitura) o uso capturado pelo tap de statusline.
 ENV NODE_ENV=production \
-    HABBLAUD_HOST=0.0.0.0 \
-    HABBLAUD_PORT=4747 \
-    HABBLAUD_IN_DOCKER=1 \
-    HABBLAUD_DATA_DIR=/data \
-    HABBLAUD_USAGE_DIR=/usage
+    EXPEDIENTE_HOST=0.0.0.0 \
+    EXPEDIENTE_PORT=4848 \
+    EXPEDIENTE_IN_DOCKER=1 \
+    EXPEDIENTE_DATA_DIR=/data \
+    EXPEDIENTE_USAGE_DIR=/usage
 
 WORKDIR /app
 
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/dist ./dist
 
-# Estado do Habblaud (nomes persistidos). O volume nomeado herda este dono na primeira montagem.
+# Estado do Expediente (nomes persistidos). O volume nomeado herda este dono na primeira montagem.
 RUN mkdir -p /data && chown node:node /data
 
 # Usuário sem privilégios (já existe na imagem oficial do Node). O código fica com dono root,
 # então o processo não consegue alterá-lo; só /data é gravável.
 USER node
 
-EXPOSE 4747
+EXPOSE 4848
 VOLUME ["/data"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD ["node", "-e", "fetch('http://127.0.0.1:4747/api/health',{signal:AbortSignal.timeout(4000)}).then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+  CMD ["node", "-e", "fetch('http://127.0.0.1:4848/api/health',{signal:AbortSignal.timeout(4000)}).then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
 
 CMD ["node", "dist/server/index.js"]

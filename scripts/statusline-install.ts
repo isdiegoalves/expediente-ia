@@ -1,4 +1,4 @@
-// Instala (ou remove) o tap de statusline do Habblaud em cada conta do Claude Code. Roda no HOST, com tsx:
+// Instala (ou remove) o tap de statusline do Expediente em cada conta do Claude Code. Roda no HOST, com tsx:
 //
 //   npm run usage:install     # envolve o statusLine.command de cada conta com o tap (backup antes)
 //   npm run usage:uninstall   # devolve o comando original
@@ -6,13 +6,13 @@
 //   (opções: --dry-run mostra o que mudaria sem gravar nada; --node <caminho> escolhe o node)
 //
 // O tap (scripts/statusline-tap.mjs) recebe do Claude Code o mesmo JSON que o statusline já recebe
-// e guarda só os percentuais de uso de 5h/semana em ~/.habblaud/usage/<conta>.json, repassando tudo
-// ao statusline original. Assim o Habblaud mostra o uso ao vivo sem ler credenciais.
+// e guarda só os percentuais de uso de 5h/semana em ~/.expediente/usage/<conta>.json, repassando tudo
+// ao statusline original. Assim o Expediente mostra o uso ao vivo sem ler credenciais.
 //
 // Em <conta>/settings.json só o campo statusLine.command muda (os demais campos e chaves ficam como
-// estão); antes de gravar, uma cópia vai para settings.json.habblaud-backup-<data>.
+// estão); antes de gravar, uma cópia vai para settings.json.expediente-backup-<data>.
 //
-// Nome antigo (CodeTown, até a 0.3.2): o install leva ~/.codetown para ~/.habblaud antes de tudo, para o uso
+// Nome antigo (CodeTown, até a 0.3.2): o install leva ~/.codetown para ~/.expediente antes de tudo, para o uso
 // já capturado seguir valendo.
 import { accessSync, chmodSync, constants, existsSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -27,7 +27,7 @@ const TAP_NAME = 'statusline-tap.mjs';
 
 const USAGE = `Uso: npm run usage:<install|uninstall|status> [-- opções]
 
-  install     envolve o statusline de cada conta com o tap do Habblaud (faz backup do settings.json)
+  install     envolve o statusline de cada conta com o tap do Expediente (faz backup do settings.json)
   uninstall   restaura o statusline original de cada conta
   status      mostra se o tap está instalado e quando chegou o último uso de cada conta
 
@@ -37,7 +37,7 @@ Opções:
   -h, --help       mostra esta ajuda
 
 Contas: as mesmas do servidor (~/.claude* com projects/ ou sessions/, CLAUDE_CONFIG_DIR ou
-HABBLAUD_CLAUDE_DIRS). Uso capturado em HABBLAUD_USAGE_DIR (padrão ~/.habblaud/usage).`;
+EXPEDIENTE_CLAUDE_DIRS). Uso capturado em EXPEDIENTE_USAGE_DIR (padrão ~/.expediente/usage).`;
 
 // ---------------------------------------------------------------------------------------------
 // Funções puras (testadas em server/test/statusline-install.test.ts)
@@ -135,7 +135,7 @@ export function planInstall(settings: Settings, nodeCmd: string, tapPath: string
     if (!cur) return { action: 'skip', message: 'o comando já menciona o tap, mas não no formato esperado; confira à mão' };
     const next = wrapCommand(nodeCmd, tapPath, cur.original);
     if (next === sl.command) return { action: 'none', message: 'já instalado' };
-    return { action: 'install', settings: { ...settings, statusLine: { ...sl, command: next } }, message: 'atualizado (novo caminho do Habblaud ou do node)' };
+    return { action: 'install', settings: { ...settings, statusLine: { ...sl, command: next } }, message: 'atualizado (novo caminho do Expediente ou do node)' };
   }
   return {
     action: 'install',
@@ -153,7 +153,7 @@ export function planUninstall(settings: Settings): PlanAction {
   if (!cur.original) {
     const rest = { ...settings };
     delete rest.statusLine;
-    return { action: 'uninstall', settings: rest, message: 'statusline criado pelo Habblaud removido' };
+    return { action: 'uninstall', settings: rest, message: 'statusline criado pelo Expediente removido' };
   }
   return { action: 'uninstall', settings: { ...settings, statusLine: { ...sl, command: cur.original } }, message: `restaurado: ${cur.original}` };
 }
@@ -270,26 +270,26 @@ export function writeSettings(file: string, settings: Settings, raw: string | un
   let backup: string | undefined;
   if (raw !== undefined) {
     mode = statSync(file).mode & 0o777;
-    backup = `${file}.habblaud-backup-${stamp(now)}`;
-    for (let i = 2; existsSync(backup); i++) backup = `${file}.habblaud-backup-${stamp(now)}-${i}`;
+    backup = `${file}.expediente-backup-${stamp(now)}`;
+    for (let i = 2; existsSync(backup); i++) backup = `${file}.expediente-backup-${stamp(now)}-${i}`;
     writeFileSync(backup, raw, { mode: 0o600 });
   }
-  const tmp = `${file}.habblaud-tmp-${process.pid}`;
+  const tmp = `${file}.expediente-tmp-${process.pid}`;
   writeFileSync(tmp, `${JSON.stringify(settings, null, 2)}\n`, { mode });
   chmodSync(tmp, mode);
   renameSync(tmp, file);
   return backup;
 }
 
-/** Pasta do uso capturado (HABBLAUD_USAGE_DIR ou ~/.habblaud/usage); também usada pelo mod-install. */
+/** Pasta do uso capturado (EXPEDIENTE_USAGE_DIR ou ~/.expediente/usage); também usada pelo mod-install. */
 export function usageDirOf(env: NodeJS.ProcessEnv, home: string): string {
-  const d = env.HABBLAUD_USAGE_DIR?.trim();
-  return d ? resolve(d.replace(/^~(?=\/|$)/, home)) : join(home, '.habblaud', 'usage');
+  const d = env.EXPEDIENTE_USAGE_DIR?.trim();
+  return d ? resolve(d.replace(/^~(?=\/|$)/, home)) : join(home, '.expediente', 'usage');
 }
 
 /**
- * Leva ~/.codetown (nome antigo) para ~/.habblaud antes de criar ou usar a pasta do uso; também usada pelo
- * mod-install. Vale mesmo com HABBLAUD_USAGE_DIR em outro lugar (lá também ficam nomes e estatísticas, fora do
+ * Leva ~/.codetown (nome antigo) para ~/.expediente antes de criar ou usar a pasta do uso; também usada pelo
+ * mod-install. Vale mesmo com EXPEDIENTE_USAGE_DIR em outro lugar (lá também ficam nomes e estatísticas, fora do
  * Docker). Devolve a linha para a saída (undefined = nada a fazer); na simulação, só diz o que faria.
  */
 export function migrateLegacyState(home: string, dryRun: boolean): string | undefined {
@@ -300,7 +300,7 @@ export function migrateLegacyState(home: string, dryRun: boolean): string | unde
     } catch {
       legacy = false;
     }
-    return legacy ? `~ ~/.${LEGACY_NAME} (nome antigo) vai para ~/.habblaud (simulação: nada movido)` : undefined;
+    return legacy ? `~ ~/.${LEGACY_NAME} (nome antigo) vai para ~/.expediente (simulação: nada movido)` : undefined;
   }
   const r = migrateLegacyStateDir(home);
   const msg = describeStateMigration(r);
@@ -325,11 +325,11 @@ export function run(opts: RunOptions, ctx: RunContext): number {
   const { env, home, out } = ctx;
   const dirs = discoverClaudeDirs(env, home);
   if (!dirs.length) {
-    out('Nenhuma conta do Claude Code encontrada (~/.claude* com projects/ ou sessions/). Use HABBLAUD_CLAUDE_DIRS se estiverem em outro lugar.');
+    out('Nenhuma conta do Claude Code encontrada (~/.claude* com projects/ ou sessions/). Use EXPEDIENTE_CLAUDE_DIRS se estiverem em outro lugar.');
     return 1;
   }
   const nodeCmd = opts.nodeCmd ?? detectNodeCommand(env, home);
-  // Nome antigo: o tap agora grava em ~/.habblaud/usage; o que estava em ~/.codetown vai junto.
+  // Nome antigo: o tap agora grava em ~/.expediente/usage; o que estava em ~/.codetown vai junto.
   if (opts.command === 'install') {
     const moved = migrateLegacyState(home, opts.dryRun);
     if (moved) out(moved);
@@ -389,7 +389,7 @@ export function run(opts: RunOptions, ctx: RunContext): number {
   }
   if (opts.command === 'install' && changed) {
     out('');
-    out('Pronto. Os números aparecem no Habblaud depois da próxima resposta de cada sessão. Sessões já');
+    out('Pronto. Os números aparecem no Expediente depois da próxima resposta de cada sessão. Sessões já');
     out('abertas costumam recarregar o settings.json sozinhas; se o uso não aparecer, reabra a sessão.');
     out(`Uso capturado em ${tildify(usageDirOf(env, home), home)}. Para desfazer: npm run usage:uninstall`);
   }

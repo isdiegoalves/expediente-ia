@@ -1,0 +1,4 @@
+{
+  "description": "Módulo de hooks do mod do Expediente (uso do plano, aviso embaixo do prompt e /escritorio)",
+  "modules": ["./register.ts"]
+}

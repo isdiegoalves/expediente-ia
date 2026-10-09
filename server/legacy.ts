@@ -1,4 +1,4 @@
-// Migração do nome antigo do projeto (CodeTown, até a 0.3.2) para Habblaud. O que ainda precisa conhecer o
+// Migração do nome antigo do projeto (CodeTown, até a 0.3.2) para Expediente. O que ainda precisa conhecer o
 // nome antigo fica aqui, para sair de uma vez quando ninguém mais vier de uma instalação da 0.3.
 import { existsSync, readdirSync, renameSync, rmdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -6,7 +6,7 @@ import { join } from 'node:path';
 /** Nome antigo em minúsculas: pasta de estado, plugins, marketplace, projeto e volume do Docker. */
 export const LEGACY_NAME = 'codetown';
 const LEGACY_ENV_PREFIX = 'CODETOWN_';
-const ENV_PREFIX = 'HABBLAUD_';
+const ENV_PREFIX = 'EXPEDIENTE_';
 
 /** Variáveis do nome antigo (CODETOWN_*) presentes em `keys`, com o nome novo de cada uma. */
 export function legacyEnvVars(keys: Iterable<string>): Array<{ from: string; to: string }> {
@@ -63,13 +63,13 @@ function mergeInto(from: string, to: string, moved: string[], rel: string): void
 }
 
 /**
- * Leva o estado de ~/.codetown para ~/.habblaud (uso capturado pelo mod/tap e, fora do Docker, nomes, linha do
+ * Leva o estado de ~/.codetown para ~/.expediente (uso capturado pelo mod/tap e, fora do Docker, nomes, linha do
  * tempo e estatísticas). Sem a pasta nova, é um rename; se ela já existe (o mod gravou o uso antes), move o que
  * falta lá e o que for mais recente. Devolve o que foi movido (vazio = nada a fazer) e nunca lança.
  */
 export function migrateLegacyStateDir(home: string): { moved: string[]; error?: string } {
   const from = join(home, `.${LEGACY_NAME}`);
-  const to = join(home, '.habblaud');
+  const to = join(home, '.expediente');
   const moved: string[] = [];
   if (!isDir(from)) return { moved };
   try {
@@ -86,7 +86,7 @@ export function migrateLegacyStateDir(home: string): { moved: string[]; error?: 
 
 /** Frase curta para o log de quem migrou (undefined se nada mudou). */
 export function describeStateMigration(r: { moved: string[]; error?: string }): string | undefined {
-  if (r.error) return `não consegui levar ~/.${LEGACY_NAME} para ~/.habblaud (${r.error}); mova a pasta à mão.`;
+  if (r.error) return `não consegui levar ~/.${LEGACY_NAME} para ~/.expediente (${r.error}); mova a pasta à mão.`;
   if (!r.moved.length) return undefined;
-  return r.moved[0] === '.' ? `~/.${LEGACY_NAME} (nome antigo) agora é ~/.habblaud.` : `de ~/.${LEGACY_NAME} (nome antigo) para ~/.habblaud: ${r.moved.join(', ')}.`;
+  return r.moved[0] === '.' ? `~/.${LEGACY_NAME} (nome antigo) agora é ~/.expediente.` : `de ~/.${LEGACY_NAME} (nome antigo) para ~/.expediente: ${r.moved.join(', ')}.`;
 }

@@ -171,8 +171,8 @@ const snap = (rev: number, build?: string): OfficeSnapshot => ({
 
 describe('detecção de versão nova', () => {
   it('lê o build da URL do bundle e ignora o código-fonte do modo dev', () => {
-    expect(pageBuild('http://localhost:4747/bundle/main-BFqheOCa.js')).toBe('main-BFqheOCa');
-    expect(pageBuild('http://192.168.0.10:4747/bundle/main-a_b-C1.js')).toBe('main-a_b-C1');
+    expect(pageBuild('http://localhost:4848/bundle/main-BFqheOCa.js')).toBe('main-BFqheOCa');
+    expect(pageBuild('http://192.168.0.10:4848/bundle/main-a_b-C1.js')).toBe('main-a_b-C1');
     expect(pageBuild('http://localhost:5173/src/net/store.ts')).toBeUndefined();
     expect(pageBuild('não é url')).toBeUndefined();
   });

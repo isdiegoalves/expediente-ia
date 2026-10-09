@@ -14,4 +14,4 @@ createUI(document.getElementById('ui') as HTMLElement, store, world);
 store.connect();
 
 // Facilita a depuração pelo console do navegador.
-Object.assign(window, { habblaud: { store, world } });
+Object.assign(window, { expediente: { store, world } });

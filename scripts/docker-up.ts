@@ -1,4 +1,4 @@
-// Sobe (ou derruba) o Habblaud no Docker local. Roda no HOST, com tsx:
+// Sobe (ou derruba) o Expediente no Docker local. Roda no HOST, com tsx:
 //
 //   npm run docker:up                 # detecta as contas, gera o override, constrói e sobe
 //   npm run docker:up -- --no-build   # sobe sem reconstruir a imagem
@@ -6,22 +6,22 @@
 //
 // O que ele faz ao subir:
 // 1. Descobre os config dirs do Claude Code no host (mesma regra do servidor: ~/.claude*,
-//    CLAUDE_CONFIG_DIR ou HABBLAUD_CLAUDE_DIRS) e lê os metadados das contas com detectAccounts.
+//    CLAUDE_CONFIG_DIR ou EXPEDIENTE_CLAUDE_DIRS) e lê os metadados das contas com detectAccounts.
 // 2. Gera o docker-compose.override.yml montando SOMENTE <conta>/projects e <conta>/sessions,
 //    somente leitura, em /claude/<conta>/... — nunca a pasta inteira da conta, onde ficam
 //    credenciais e configurações — e a pasta do uso capturado pelo statusline
-//    (~/.habblaud/usage, criada se faltar) em /usage, também somente leitura. Passa
-//    HABBLAUD_CLAUDE_DIRS, HABBLAUD_ACCOUNTS, HABBLAUD_USAGE_DIR e o fuso do host (TZ) ao container.
-// 3. Migra o que sobrou do nome antigo (CodeTown, até a 0.3.2): ~/.codetown vira ~/.habblaud, o container
+//    (~/.expediente/usage, criada se faltar) em /usage, também somente leitura. Passa
+//    EXPEDIENTE_CLAUDE_DIRS, EXPEDIENTE_ACCOUNTS, EXPEDIENTE_USAGE_DIR e o fuso do host (TZ) ao container.
+// 3. Migra o que sobrou do nome antigo (CodeTown, até a 0.3.2): ~/.codetown vira ~/.expediente, o container
 //    `codetown` e a rede codetown_default saem e, se o volume novo ainda não existe, os dados de
 //    codetown_codetown-data são copiados para ele (o antigo fica, para apagar à mão). Avisa de CODETOWN_*
 //    no ambiente e no .env, que não valem mais.
 // 4. Roda `docker compose up -d --build`, espera o /api/health e mostra a URL.
-// 5. Atualiza o mod do Habblaud nas contas onde ele JÁ está instalado com outra versão (depois de
-//    atualizar o Habblaud): relê o marketplace desta pasta e roda `claude plugin update` com o
+// 5. Atualiza o mod do Expediente nas contas onde ele JÁ está instalado com outra versão (depois de
+//    atualizar o Expediente): relê o marketplace desta pasta e roda `claude plugin update` com o
 //    CLAUDE_CONFIG_DIR de cada conta. Nunca instala sozinho; se o `claude` faltar ou falhar, é só um aviso.
 //
-// Uso de 5h/semanal ao vivo: o mod do Habblaud (npm run mod:install; Claude Code 2.1.287+) ou, em
+// Uso de 5h/semanal ao vivo: o mod do Expediente (npm run mod:install; Claude Code 2.1.287+) ou, em
 // versões anteriores, o tap de statusline (npm run usage:install). Os dois gravam os números na pasta
 // montada em /usage. Sem eles, vale o cache do /usage lido das contas ao subir.
 import { spawnSync } from 'node:child_process';
@@ -36,24 +36,24 @@ import { makeClaudeRunner, MIN_CLAUDE_VERSION, readPackageVersion, updateInstall
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const HOME = process.env.HOME || homedir();
-const STATE_DIR = join(HOME, '.habblaud');
+const STATE_DIR = join(HOME, '.expediente');
 const OVERRIDE_FILE = join(ROOT, 'docker-compose.override.yml');
 /** O .env desta pasta, que o Compose lê sozinho. */
 const ENV_FILE = join(ROOT, '.env');
-/** Uso capturado no host pelo mod do Habblaud ou pelo tap de statusline (scripts/statusline-tap.mjs). */
-const USAGE_DIR = process.env.HABBLAUD_USAGE_DIR?.trim() ? resolve(process.env.HABBLAUD_USAGE_DIR.trim()) : join(STATE_DIR, 'usage');
+/** Uso capturado no host pelo mod do Expediente ou pelo tap de statusline (scripts/statusline-tap.mjs). */
+const USAGE_DIR = process.env.EXPEDIENTE_USAGE_DIR?.trim() ? resolve(process.env.EXPEDIENTE_USAGE_DIR.trim()) : join(STATE_DIR, 'usage');
 /** Onde essa pasta aparece no container. */
 const CONTAINER_USAGE_DIR = '/usage';
-const SERVICE = 'habblaud';
+const SERVICE = 'expediente';
 /** Raiz das montagens dentro do container: /claude/<conta>/{projects,sessions}. */
 const CONTAINER_ROOT = '/claude';
 /** Somente estas subpastas de cada conta entram no container. */
 const MOUNTED_SUBDIRS = ['projects', 'sessions'] as const;
-const DEFAULT_PORT = 4747;
+const DEFAULT_PORT = 4848;
 const HEALTH_TIMEOUT_MS = 120_000;
-/** Imagem e volume de dados como o Compose os nomeia (`name: habblaud` no docker-compose.yml). */
-const IMAGE = 'habblaud:local';
-const DATA_VOLUME = 'habblaud_habblaud-data';
+/** Imagem e volume de dados como o Compose os nomeia (`name: expediente` no docker-compose.yml). */
+const IMAGE = 'expediente:local';
+const DATA_VOLUME = 'expediente_expediente-data';
 /** O mesmo no CodeTown (até a 0.3.2), só para a migração: container_name fixo, rede padrão, volume e imagem. */
 const LEGACY_DOCKER = {
   container: LEGACY_NAME,
@@ -69,7 +69,7 @@ Opções:
   --down       derruba o container (o mesmo que npm run docker:down)
   -h, --help   mostra esta ajuda
 
-Variáveis: HABBLAUD_PORT (porta no host, padrão ${DEFAULT_PORT}) e HABBLAUD_CLAUDE_DIRS
+Variáveis: EXPEDIENTE_PORT (porta no host, padrão ${DEFAULT_PORT}) e EXPEDIENTE_CLAUDE_DIRS
 (config dirs separados por vírgula, se as contas não estiverem em ~/.claude*).`;
 
 // ---------------------------------------------------------------------------------------------
@@ -117,10 +117,10 @@ export function parseArgs(argv: string[]): Options {
 }
 
 export function hostPort(env: NodeJS.ProcessEnv): number {
-  const raw = env.HABBLAUD_PORT?.trim();
+  const raw = env.EXPEDIENTE_PORT?.trim();
   if (!raw) return DEFAULT_PORT;
   const port = Number(raw);
-  if (!Number.isInteger(port) || port <= 0 || port >= 65536) fail(`HABBLAUD_PORT inválida: "${raw}" (use um número de 1 a 65535).`);
+  if (!Number.isInteger(port) || port <= 0 || port >= 65536) fail(`EXPEDIENTE_PORT inválida: "${raw}" (use um número de 1 a 65535).`);
   return port;
 }
 
@@ -215,7 +215,7 @@ export function sanitizeCachedUsage(raw: unknown): CachedUsage | undefined {
   return Object.keys(out.utilization).length ? out : undefined;
 }
 
-/** Metadados das contas para HABBLAUD_ACCOUNTS (o container não enxerga o .claude.json do host). */
+/** Metadados das contas para EXPEDIENTE_ACCOUNTS (o container não enxerga o .claude.json do host). */
 export function accountsPayload(mounts: AccountMount[]): AccountPayload[] {
   return mounts.map(({ account: a, mountDir }) => {
     const p: AccountPayload = { id: a.id, configDir: a.configDir, mountDir, short: a.short, name: a.name, color: a.color };
@@ -258,10 +258,10 @@ export function hostTimeZone(env: NodeJS.ProcessEnv = process.env): string | und
  */
 export function renderOverride(mounts: AccountMount[], generatedAt: Date = new Date(), usageDir?: string, timeZone?: string): string {
   const env: Array<[string, string]> = [
-    ['HABBLAUD_CLAUDE_DIRS', mounts.map((m) => m.mountDir).join(',')],
-    ['HABBLAUD_ACCOUNTS', JSON.stringify(accountsPayload(mounts))],
+    ['EXPEDIENTE_CLAUDE_DIRS', mounts.map((m) => m.mountDir).join(',')],
+    ['EXPEDIENTE_ACCOUNTS', JSON.stringify(accountsPayload(mounts))],
   ];
-  if (usageDir) env.push(['HABBLAUD_USAGE_DIR', CONTAINER_USAGE_DIR]);
+  if (usageDir) env.push(['EXPEDIENTE_USAGE_DIR', CONTAINER_USAGE_DIR]);
   if (timeZone) env.push(['TZ', timeZone]);
   const lines = [
     `# Gerado por scripts/docker-up.ts em ${generatedAt.toISOString()} — não edite: é recriado a cada \`npm run docker:up\`.`,
@@ -316,7 +316,7 @@ export interface DockerState {
   legacyVolume: boolean;
   /** Imagem codetown:local. */
   legacyImage: boolean;
-  /** Volume de dados do Habblaud (habblaud_habblaud-data). */
+  /** Volume de dados do Expediente (expediente_expediente-data). */
   dataVolume: boolean;
 }
 
@@ -333,7 +333,7 @@ export interface UpPlan {
 }
 
 /**
- * Passos para subir o Habblaud. Antes, tira do caminho o container do CodeTown e a rede dele. Se o volume antigo
+ * Passos para subir o Expediente. Antes, tira do caminho o container do CodeTown e a rede dele. Se o volume antigo
  * existe e o novo ainda não, os dados são copiados: o Compose cria o volume (com os labels dele; um volume criado
  * à mão gera aviso e pedido para recriar) e o container, ainda parado; a cópia entra e só então ele sobe. O volume
  * antigo nunca é apagado aqui.
@@ -361,7 +361,7 @@ export function planUp(state: DockerState, build: boolean): UpPlan {
 
 /**
  * `docker run` descartável que copia o volume `from` (somente leitura) para `to` com a própria imagem do
- * Habblaud, como root (ela roda como `node`) e sem rede; a raiz de `to` fica com o dono e as permissões da de
+ * Expediente, como root (ela roda como `node`) e sem rede; a raiz de `to` fica com o dono e as permissões da de
  * `from`. O --rm leva junto o volume anônimo do VOLUME /data da imagem.
  */
 export function copyVolumeArgs(from: string, to: string, image: string = IMAGE): string[] {
@@ -381,7 +381,7 @@ export function envFileKeys(text: string): string[] {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Estado no host (~/.habblaud)
+// Estado no host (~/.expediente)
 // ---------------------------------------------------------------------------------------------
 
 /** Avisa das variáveis CODETOWN_* (nome antigo, ignoradas) no ambiente e no .env desta pasta. */
@@ -397,7 +397,7 @@ function warnLegacyEnv(): void {
   }
 }
 
-/** Leva ~/.codetown (nome antigo) para ~/.habblaud; roda antes de criar a pasta do uso, para ser um rename. */
+/** Leva ~/.codetown (nome antigo) para ~/.expediente; roda antes de criar a pasta do uso, para ser um rename. */
 function migrateStateDir(): void {
   const result = migrateLegacyStateDir(HOME);
   const msg = describeStateMigration(result);
@@ -432,8 +432,8 @@ function checkDocker(): void {
 }
 
 function compose(args: string[], port: number): void {
-  // HABBLAUD_PORT explícito: vale sobre um eventual .env na pasta do projeto.
-  const res = spawnSync('docker', ['compose', ...args], { cwd: ROOT, stdio: 'inherit', env: { ...process.env, HABBLAUD_PORT: String(port) } });
+  // EXPEDIENTE_PORT explícito: vale sobre um eventual .env na pasta do projeto.
+  const res = spawnSync('docker', ['compose', ...args], { cwd: ROOT, stdio: 'inherit', env: { ...process.env, EXPEDIENTE_PORT: String(port) } });
   if (res.error) fail(`não consegui rodar "docker compose ${args.join(' ')}": ${res.error.message}`);
   if (res.status !== 0) fail(`"docker compose ${args.join(' ')}" falhou (código ${res.status ?? res.signal}).`);
 }
@@ -447,7 +447,7 @@ function dockerQuiet(args: string[]): { ok: boolean; out: string; error: string 
   return { ok: res.status === 0, out: res.stdout ?? '', error };
 }
 
-/** O que já existe no Docker do CodeTown e do Habblaud (entrada de planUp). */
+/** O que já existe no Docker do CodeTown e do Expediente (entrada de planUp). */
 function inspectDocker(): DockerState {
   const exists = (kind: 'network' | 'volume' | 'image', name: string) => dockerQuiet([kind, 'inspect', name]).ok;
   // Só sai o container `codetown` que é mesmo do CodeTown: da imagem antiga ou do projeto antigo do Compose.
@@ -465,7 +465,7 @@ function inspectDocker(): DockerState {
   };
 }
 
-/** Copia os dados do volume do CodeTown para o do Habblaud. Falha é só um aviso: o escritório sobe sem eles. */
+/** Copia os dados do volume do CodeTown para o do Expediente. Falha é só um aviso: o escritório sobe sem eles. */
 function copyVolume(from: string, to: string): boolean {
   // O volume novo tem de vir do Compose: o `docker run -v` criaria um sem os labels dele.
   if (!dockerQuiet(['volume', 'inspect', to]).ok) {
@@ -558,7 +558,7 @@ function down(port: number): void {
   checkDocker();
   say('Derrubando o container…');
   compose(['down'], port);
-  say('Pronto. Os nomes dos personagens continuam guardados no volume habblaud-data.');
+  say('Pronto. Os nomes dos personagens continuam guardados no volume expediente-data.');
 }
 
 async function up(opts: Options, port: number): Promise<void> {
@@ -567,12 +567,12 @@ async function up(opts: Options, port: number): Promise<void> {
   const baseUrl = `http://127.0.0.1:${port}`;
   const publicUrl = `http://localhost:${port}`;
 
-  // Porta ocupada por um Habblaud fora do Docker (npm run dev / npm start)?
+  // Porta ocupada por um Expediente fora do Docker (npm run dev / npm start)?
   const existing = await fetchHealth(baseUrl, 1_500);
   if (existing && !existing.docker) {
     fail(
-      `já existe um Habblaud rodando fora do Docker em ${publicUrl} (npm run dev ou npm start?).\n` +
-        `Pare-o antes, ou use outra porta: HABBLAUD_PORT=4848 npm run docker:up`,
+      `já existe um Expediente rodando fora do Docker em ${publicUrl} (npm run dev ou npm start?).\n` +
+        `Pare-o antes, ou use outra porta: EXPEDIENTE_PORT=4848 npm run docker:up`,
     );
   }
 
@@ -583,7 +583,7 @@ async function up(opts: Options, port: number): Promise<void> {
     warn(
       'nenhuma pasta do Claude Code (com projects/ ou sessions/) foi encontrada em ~/.claude*.\n' +
         '  O escritório vai abrir vazio (dá para ligar o modo demonstração na interface).\n' +
-        '  Se as contas estiverem em outro lugar: HABBLAUD_CLAUDE_DIRS=/caminho/conta1,/caminho/conta2 npm run docker:up',
+        '  Se as contas estiverem em outro lugar: EXPEDIENTE_CLAUDE_DIRS=/caminho/conta1,/caminho/conta2 npm run docker:up',
     );
   }
   for (const m of mounts) {
@@ -606,12 +606,12 @@ async function up(opts: Options, port: number): Promise<void> {
   const plan = planUp(inspectDocker(), opts.build);
   const { copyFailed } = runPlan(plan, port, opts.build);
 
-  say(`Aguardando o Habblaud responder em ${publicUrl}…`);
+  say(`Aguardando o Expediente responder em ${publicUrl}…`);
   const health = await waitHealthy(baseUrl);
-  if (!health) fail(`o Habblaud não respondeu em ${HEALTH_TIMEOUT_MS / 1000} s. Veja o que aconteceu com: npm run docker:logs`);
+  if (!health) fail(`o Expediente não respondeu em ${HEALTH_TIMEOUT_MS / 1000} s. Veja o que aconteceu com: npm run docker:logs`);
 
   console.log('');
-  say(`Habblaud${health.version ? ` ${health.version}` : ''} no ar: ${publicUrl}`);
+  say(`Expediente${health.version ? ` ${health.version}` : ''} no ar: ${publicUrl}`);
   for (const acc of accounts) {
     const src = health.sources?.find((s) => s.label === acc.id);
     if (!src) continue;
@@ -636,7 +636,7 @@ function updateMods(dirs: string[], accounts: DetectedAccount[]): Pick<ModUpdate
     }
     return mod;
   } catch (err) {
-    warn(`não consegui conferir o mod do Habblaud (${(err as Error).message}).`);
+    warn(`não consegui conferir o mod do Expediente (${(err as Error).message}).`);
     return { installed: false, unavailable: true };
   }
 }

@@ -6,13 +6,13 @@ const T0 = 1_700_000_000_000;
 
 describe('textos', () => {
   it('avisos no formato do escritório', () => {
-    expect(describeGitHubEvent({ kind: 'pr_opened', number: 12 }, 'Danilo', 'habblaud').notice).toBe('🎉 Danilo abriu o PR #12 em habblaud');
-    expect(describeGitHubEvent({ kind: 'pr_merged', number: 12 }, 'Danilo', 'habblaud').notice).toBe('🎉 Danilo mergeou o PR #12 em habblaud');
-    expect(describeGitHubEvent({ kind: 'pr_merged' }, 'Danilo', 'habblaud').notice).toBe('🎉 Danilo mergeou um PR em habblaud');
-    expect(describeGitHubEvent({ kind: 'ci_failed', branch: 'feat/x' }, 'Danilo', 'habblaud')).toMatchObject({ notice: '🚨 CI falhou em habblaud (feat/x)', level: 'warn' });
-    expect(describeGitHubEvent({ kind: 'ci_passed', number: 4 }, 'Danilo', 'habblaud').notice).toBe('✅ CI passou em habblaud (PR #4)');
-    expect(describeGitHubEvent({ kind: 'push', branch: 'main' }, 'Danilo', 'habblaud').notice).toBe('🚀 Danilo enviou commits para main em habblaud');
-    expect(describeGitHubEvent({ kind: 'release', tag: 'v1.2.0' }, 'Danilo', 'habblaud').notice).toBe('🎉 Danilo publicou a release v1.2.0 em habblaud');
+    expect(describeGitHubEvent({ kind: 'pr_opened', number: 12 }, 'Danilo', 'expediente').notice).toBe('🎉 Danilo abriu o PR #12 em expediente');
+    expect(describeGitHubEvent({ kind: 'pr_merged', number: 12 }, 'Danilo', 'expediente').notice).toBe('🎉 Danilo mergeou o PR #12 em expediente');
+    expect(describeGitHubEvent({ kind: 'pr_merged' }, 'Danilo', 'expediente').notice).toBe('🎉 Danilo mergeou um PR em expediente');
+    expect(describeGitHubEvent({ kind: 'ci_failed', branch: 'feat/x' }, 'Danilo', 'expediente')).toMatchObject({ notice: '🚨 CI falhou em expediente (feat/x)', level: 'warn' });
+    expect(describeGitHubEvent({ kind: 'ci_passed', number: 4 }, 'Danilo', 'expediente').notice).toBe('✅ CI passou em expediente (PR #4)');
+    expect(describeGitHubEvent({ kind: 'push', branch: 'main' }, 'Danilo', 'expediente').notice).toBe('🚀 Danilo enviou commits para main em expediente');
+    expect(describeGitHubEvent({ kind: 'release', tag: 'v1.2.0' }, 'Danilo', 'expediente').notice).toBe('🎉 Danilo publicou a release v1.2.0 em expediente');
   });
 
   it('atividade com o marcador, curta e mascarada; CI vermelho com error', () => {

@@ -29,7 +29,7 @@ async function start(extra: Partial<ApiDeps> = {}, officeExtra: Partial<OfficeDe
   const dist = join(tmp.dir, 'dist');
   mkdirSync(join(dist, 'assets', 'brand'), { recursive: true });
   mkdirSync(join(dist, 'bundle'), { recursive: true });
-  writeFileSync(join(dist, 'index.html'), '<!doctype html><title>Habblaud</title>');
+  writeFileSync(join(dist, 'index.html'), '<!doctype html><title>Expediente</title>');
   writeFileSync(join(dist, 'bundle', 'main-abc12345.js'), 'console.log(1)');
   writeFileSync(join(dist, 'assets', 'brand', 'logo-mark.png'), 'png');
   writeFileSync(join(dist, 'assets', 'manifest.json'), '{}');
@@ -49,7 +49,7 @@ async function start(extra: Partial<ApiDeps> = {}, officeExtra: Partial<OfficeDe
   hub.start();
   const api = createApiHandler({ office, hub, accounts, sources: () => [], version: '9.9.9', inDocker: false, ...extra });
   const serveStatic = createStaticHandler(dist);
-  const guard = createRequestGuard({ allowedHosts: new Set(['habblaud.lan']) });
+  const guard = createRequestGuard({ allowedHosts: new Set(['expediente.lan']) });
   const server = http.createServer((req, res) => {
     if (guard(req, res)) return;
     const url = new URL(req.url ?? '/', 'http://x');
@@ -190,7 +190,7 @@ describe('API HTTP', () => {
     expect((await raw(env.base, '/api/health', { headers: { Host: `localhost:${port}` } })).status).toBe(200);
     expect((await raw(env.base, '/api/health', { headers: { Host: `[::1]:${port}` } })).status).toBe(200);
     expect((await raw(env.base, '/api/health', { headers: { Host: `192.168.0.10:${port}` } })).status).toBe(200);
-    expect((await raw(env.base, '/api/health', { headers: { Host: `habblaud.lan:${port}` } })).status).toBe(200);
+    expect((await raw(env.base, '/api/health', { headers: { Host: `expediente.lan:${port}` } })).status).toBe(200);
   });
 
   it('CSRF: POST exige JSON e origem local', async () => {
@@ -226,7 +226,7 @@ describe('API HTTP', () => {
   it('estáticos: SPA fallback, immutable só no /bundle (hash) e revalidação no resto', async () => {
     const page = await fetch(`${env.base}/sala/qualquer`);
     expect(page.status).toBe(200);
-    expect(await page.text()).toContain('<title>Habblaud</title>');
+    expect(await page.text()).toContain('<title>Expediente</title>');
     expect(page.headers.get('cache-control')).toBe(REVALIDATE);
     expect(page.headers.get('x-frame-options')).toBe('DENY');
     const bundle = await fetch(`${env.base}/bundle/main-abc12345.js`);
@@ -251,7 +251,7 @@ describe('API HTTP', () => {
     expect((await fetch(`${env.base}/bundle/nao-existe.js`)).status).toBe(404);
     // Tentativa de sair da pasta cai no index.html, nunca em arquivos de fora.
     const escape = await fetch(`${env.base}/..%2F..%2Fetc%2Fpasswd`);
-    expect(await escape.text()).toContain('<title>Habblaud</title>');
+    expect(await escape.text()).toContain('<title>Expediente</title>');
   });
 });
 
@@ -321,37 +321,37 @@ describe('GET /api/mod/summary (mod do Claude Code)', () => {
 });
 
 describe('guarda de Host/Origin', () => {
-  const allowed = parseAllowedHosts(' Meu-Mac.local:4747 , habblaud.lan ');
+  const allowed = parseAllowedHosts(' Meu-Mac.local:4848 , expediente.lan ');
 
-  it('hostnameOf e HABBLAUD_ALLOWED_HOSTS', () => {
-    expect([...allowed]).toEqual(['meu-mac.local', 'habblaud.lan']);
-    expect(hostnameOf('LocalHost:4747')).toBe('localhost');
-    expect(hostnameOf('[::1]:4747')).toBe('::1');
+  it('hostnameOf e EXPEDIENTE_ALLOWED_HOSTS', () => {
+    expect([...allowed]).toEqual(['meu-mac.local', 'expediente.lan']);
+    expect(hostnameOf('LocalHost:4848')).toBe('localhost');
+    expect(hostnameOf('[::1]:4848')).toBe('::1');
     expect(hostnameOf('a b')).toBeUndefined();
     expect(hostnameOf('[::1]lixo')).toBeUndefined();
   });
 
   it('Host: IPs, localhost e liberados sim; domínios de fora não', () => {
     expect(hostAllowed(undefined, allowed)).toBe(true);
-    for (const h of ['localhost:4747', 'app.localhost', '127.0.0.1:4747', '[::1]:1', '10.0.0.5:4747', 'meu-mac.local:4747']) expect(hostAllowed(h, allowed)).toBe(true);
-    for (const h of ['attacker.example:4747', 'localhost.attacker.example', '127.0.0.1.nip.io', '', 'x y']) expect(hostAllowed(h, allowed)).toBe(false);
+    for (const h of ['localhost:4848', 'app.localhost', '127.0.0.1:4848', '[::1]:1', '10.0.0.5:4848', 'meu-mac.local:4848']) expect(hostAllowed(h, allowed)).toBe(true);
+    for (const h of ['attacker.example:4848', 'localhost.attacker.example', '127.0.0.1.nip.io', '', 'x y']) expect(hostAllowed(h, allowed)).toBe(false);
   });
 
   it('isLoopbackHost: só localhost, *.localhost, 127.x e ::1 (terminal somente leitura)', () => {
-    for (const h of ['localhost:4747', 'LOCALHOST', 'app.localhost:1', '127.0.0.1:4747', '127.8.9.10', '[::1]:4747']) expect(isLoopbackHost(h)).toBe(true);
-    for (const h of [undefined, '', '10.0.0.5:4747', '192.168.0.10', '0.0.0.0:4747', 'habblaud.lan', 'meu-mac.local:4747', '[::]:4747', 'localhost.attacker.example', '127.0.0.1.nip.io', 'x y']) {
+    for (const h of ['localhost:4848', 'LOCALHOST', 'app.localhost:1', '127.0.0.1:4848', '127.8.9.10', '[::1]:4848']) expect(isLoopbackHost(h)).toBe(true);
+    for (const h of [undefined, '', '10.0.0.5:4848', '192.168.0.10', '0.0.0.0:4848', 'expediente.lan', 'meu-mac.local:4848', '[::]:4848', 'localhost.attacker.example', '127.0.0.1.nip.io', 'x y']) {
       expect(isLoopbackHost(h)).toBe(false);
     }
   });
 
   it('Origin: ausente, mesma origem ou local', () => {
-    expect(originAllowed(undefined, 'localhost:4747', allowed)).toBe(true);
-    expect(originAllowed('http://localhost:4747', 'localhost:4747', allowed)).toBe(true);
-    expect(originAllowed('http://localhost:5173', '127.0.0.1:4747', allowed)).toBe(true); // Vite dev com proxy
-    expect(originAllowed('http://192.168.0.10:4747', '192.168.0.10:4747', allowed)).toBe(true);
-    expect(originAllowed('http://attacker.example', 'localhost:4747', allowed)).toBe(false);
-    expect(originAllowed('http://1.2.3.4', 'localhost:4747', allowed)).toBe(false);
-    expect(originAllowed('null', 'localhost:4747', allowed)).toBe(false);
-    expect(originAllowed('file://', 'localhost:4747', allowed)).toBe(false);
+    expect(originAllowed(undefined, 'localhost:4848', allowed)).toBe(true);
+    expect(originAllowed('http://localhost:4848', 'localhost:4848', allowed)).toBe(true);
+    expect(originAllowed('http://localhost:5173', '127.0.0.1:4848', allowed)).toBe(true); // Vite dev com proxy
+    expect(originAllowed('http://192.168.0.10:4848', '192.168.0.10:4848', allowed)).toBe(true);
+    expect(originAllowed('http://attacker.example', 'localhost:4848', allowed)).toBe(false);
+    expect(originAllowed('http://1.2.3.4', 'localhost:4848', allowed)).toBe(false);
+    expect(originAllowed('null', 'localhost:4848', allowed)).toBe(false);
+    expect(originAllowed('file://', 'localhost:4848', allowed)).toBe(false);
   });
 });

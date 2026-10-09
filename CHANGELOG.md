@@ -1,7 +1,7 @@
 # Novidades
 
-O que entrou em cada versão do Habblaud. Cada versão tem a sua seção aqui, e o texto dela vira as notas da
-[release no GitHub](https://github.com/marmottajr/habblaud/releases) (`npm run release`), que o Habblaud abre em
+O que entrou em cada versão do Expediente. Cada versão tem a sua seção aqui, e o texto dela vira as notas da
+[release no GitHub](https://github.com/marmottajr/habblaud/releases) (`npm run release`), que o Expediente abre em
 **Configurações › Sobre › Ver o que mudou**.
 
 O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/), e os números seguem o
@@ -14,15 +14,15 @@ do meio (0.**3**.0).
 
 ### Alterado
 
-- **O CodeTown agora se chama Habblaud.** O nome muda em toda parte: interface, logotipo, placa da recepção, totem da
+- **O CodeTown agora se chama Expediente.** O nome muda em toda parte: interface, logotipo, placa da recepção, totem da
   entrada, prévia de link, repositório (`github.com/marmottajr/habblaud`), marketplace e plugins do Claude Code
-  (`habblaud` e `habblaud-permissoes`, com o comando `/habblaud`), variáveis de ambiente (`HABBLAUD_*`), pasta de
-  estado (`~/.habblaud`) e Docker (container e imagem `habblaud`, volume `habblaud-data`).
+  (`expediente` e `expediente-permissoes`, com o comando `/escritorio`), variáveis de ambiente (`EXPEDIENTE_*`), pasta de
+  estado (`~/.expediente`) e Docker (container e imagem `expediente`, volume `expediente-data`).
 - Para quem vem do CodeTown: rode `npm run mod:install` uma vez (troca o marketplace e os plugins antigos pelos novos
   em cada conta) e `npm run docker:up` (tira o container antigo e copia os nomes, a linha do tempo e as estatísticas
   do volume `codetown_codetown-data` para o novo, sem apagar o antigo). A pasta `~/.codetown` e as preferências e
   moedinhas guardadas no navegador passam para os nomes novos sozinhas. As variáveis `CODETOWN_*` não valem mais:
-  renomeie para `HABBLAUD_*` no `.env` (o servidor e o `docker:up` avisam). Detalhes no README, em
+  renomeie para `EXPEDIENTE_*` no `.env` (o servidor e o `docker:up` avisam). Detalhes no README, em
   "Vindo do CodeTown".
 
 ## [0.3.2] - 2026-10-08
@@ -47,9 +47,9 @@ do meio (0.**3**.0).
 
 ### Adicionado
 
-- **Mod do Habblaud para o Claude Code** (2.1.287 ou mais novo): `npm run mod:install` instala, em cada conta, o
-  marketplace desta pasta com o mod `habblaud` (uso de 5 horas e semanal ao vivo, uma linha no terminal quando outra
-  sessão precisa de você e o comando `/habblaud`) e o plugin `habblaud-permissoes` (responder permissões pelo
+- **Mod do Expediente para o Claude Code** (2.1.287 ou mais novo): `npm run mod:install` instala, em cada conta, o
+  marketplace desta pasta com o mod `expediente` (uso de 5 horas e semanal ao vivo, uma linha no terminal quando outra
+  sessão precisa de você e o comando `/escritorio`) e o plugin `expediente-permissoes` (responder permissões pelo
   escritório; `-- --sem-permissoes` deixa de fora). `npm run mod:status` mostra o que cada conta tem e
   `npm run mod:uninstall` tira tudo. O `npm run docker:up` atualiza o mod de quem já instalou.
 
@@ -58,9 +58,9 @@ do meio (0.**3**.0).
 - O tap de statusline (`npm run usage:install`) e o hook de permissão (`npm run hooks:install`) viram o jeito antigo,
   para o Claude Code anterior ao 2.1.287. O `npm run mod:install` tira os dois da conta (com backup), porque o mod faz
   o mesmo. A interface e o README passam a ensinar o `npm run mod:install`.
-- O script do hook de permissão mudou para `mod/habblaud-permissoes/hooks/permission-hook.mjs`. O caminho antigo
+- O script do hook de permissão mudou para `mod/expediente-permissoes/hooks/permission-hook.mjs`. O caminho antigo
   (`scripts/permission-hook.mjs`) virou um atalho, então quem instalou o hook antes continua funcionando.
-- Em Contas e uso, a origem dos números diz quando vêm do mod ("ao vivo (mod do Habblaud)").
+- Em Contas e uso, a origem dos números diz quando vêm do mod ("ao vivo (mod do Expediente)").
 - O leitor do uso ao vivo ignora um arquivo lido pela metade e fica com o último número bom, em vez de esconder a
   conta por um ciclo.
 
@@ -71,8 +71,8 @@ Primeira versão publicada.
 ### Adicionado
 
 - **Versão e atualizações:** a versão em uso aparece na barra superior e em Configurações › Sobre. A cada 6 horas o
-  Habblaud confere as releases no GitHub; quando sai uma versão nova, aparece o selo **Nova versão**, com um aviso e o
-  link do que mudou. `HABBLAUD_UPDATE_CHECK=0` desliga a consulta.
+  Expediente confere as releases no GitHub; quando sai uma versão nova, aparece o selo **Nova versão**, com um aviso e o
+  link do que mudou. `EXPEDIENTE_UPDATE_CHECK=0` desliga a consulta.
 - **Meu dia** (tecla M): para onde foi o tempo dos agentes, quanto tempo esperaram você, tokens e custo, com 30 dias
   de histórico.
 - **GitHub no escritório:** PR aberto ou mergeado e release publicada viram festa na sala; CI vermelho liga o alarme,

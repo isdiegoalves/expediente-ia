@@ -34,7 +34,7 @@ describe('describeCommand em português (casos reais que caíam no inglês)', ()
 
   it('primeira linha com comando de verdade; prefixos e atribuições não contam', () => {
     expect(t('S=/tmp/x\nnode scripts/shot.mjs x $S/a.png', 'Screenshot real-data UI on port 4763')).toBe('Executando shot.mjs');
-    expect(t('HABBLAUD_PORT=1 nohup npx tsx server/index.ts --dev > /tmp/s.log 2>&1 &', 'Start real-data server')).toBe('Executando index.ts');
+    expect(t('EXPEDIENTE_PORT=1 nohup npx tsx server/index.ts --dev > /tmp/s.log 2>&1 &', 'Start real-data server')).toBe('Executando index.ts');
     expect(t('set -e\nexport A=1\n# comentário\nnpm test')).toBe('Rodando testes');
     expect(t('sleep 5 && curl -s localhost:4771/')).toBe('Testando o servidor local (:4771/)');
     expect(t('(cd client && npm test)')).toBe('Rodando testes');
@@ -60,7 +60,7 @@ describe('describeCommand em português (casos reais que caíam no inglês)', ()
     expect(t('ps aux | grep vite')).toBe('Conferindo processos');
     expect(t('lsof -i :4771')).toBe('Conferindo quem usa a porta 4771');
     expect(t('curl -s localhost:4763/api/snapshot | jq .rev')).toBe('Testando a API local (:4763/api/snapshot)');
-    expect(t('curl http://127.0.0.1:4747/api/health')).toBe('Testando a API local (:4747/api/health)');
+    expect(t('curl http://127.0.0.1:4848/api/health')).toBe('Testando a API local (:4848/api/health)');
     expect(t('curl -o out.png -sS https://www.example.com/x.png')).toBe('Chamando example.com');
     expect(t('grep "a\\|b" file.ts')).toBe('Buscando “a | b”');
     expect(t('sed -i "" "s/a/b/" src/x.ts')).toBe('Editando x.ts');
