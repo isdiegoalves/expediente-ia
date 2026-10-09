@@ -31,7 +31,8 @@ describe('parseCharacterName', () => {
   it('apara, junta espaços (inclusive quebra de linha) e normaliza para NFC', () => {
     expect(parseCharacterName('  Ana   Paula ')).toBe('Ana Paula');
     expect(parseCharacterName('Ana\nPaula')).toBe('Ana Paula');
-    expect(parseCharacterName('Júlia')).toBe('Júlia');
+    // Escapes de propósito: NFD (u + U+0301) na entrada e NFC (U+00FA) no esperado; um editor normalizaria o literal.
+    expect(parseCharacterName('Ju\u0301lia')).toBe('J\u00falia');
   });
 
   it(`1 a ${NAME_MAX} caracteres (emoji conta um), sem caracteres de controle`, () => {
@@ -45,7 +46,8 @@ describe('parseCharacterName', () => {
 
 describe('nameKey, parseSeed e partsKey', () => {
   it('nameKey ignora caixa e forma Unicode', () => {
-    expect(nameKey('JÚLIA')).toBe(nameKey('júlia'));
+    // NFD em maiúsculas contra NFC em minúsculas, em escapes (ver o teste de parseCharacterName).
+    expect(nameKey('JU\u0301LIA')).toBe(nameKey('j\u00falia'));
     expect(nameKey('Ana')).toBe(nameKey('ana'));
     expect(nameKey('Ana')).not.toBe(nameKey('Ána'));
   });
