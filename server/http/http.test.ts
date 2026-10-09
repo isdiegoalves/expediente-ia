@@ -288,6 +288,32 @@ describe('GET /api/mod/summary (mod do Claude Code)', () => {
     expect(s.waiting.every((w) => !w.id.startsWith('demo:'))).toBe(true);
   });
 
+  it('usage: contexto, compactações e custo de cada agente presente, os mesmos números do snapshot; self é o principal de quem pergunta', async () => {
+    const stats = { toolCalls: 0, tokensIn: 0, tokensOut: 0, subagents: 0 };
+    env.office.applyTranscript('.claude:1', {
+      tasks: [],
+      stats: { ...stats, contextTokens: 142_300, contextWindow: 1_000_000, compactionCount: 2, compactions: [{ at: 1, preTokens: 967_716, postTokens: 23_292 }], costEstimatedUSD: 4.5 },
+    });
+    env.office.applyTranscript('.claude:2', { tasks: [], stats: { ...stats, costUSD: 2 } });
+    const snap = await snapshotOf(env.base);
+    const doSnapshot = snap.agents.find((a) => a.id === '.claude:1')!.stats;
+
+    const s = await summary();
+    const u1 = s.usage.find((u) => u.id === '.claude:1')!;
+    expect(u1).toMatchObject({
+      context: { tokens: doSnapshot.contextTokens, window: doSnapshot.contextWindow, percent: 14 },
+      compactions: 2,
+      lastCompaction: { preTokens: 967_716, postTokens: 23_292 },
+      cost: { usd: 4.5, estimated: true, unpriced: [] },
+    });
+    expect(s.usage.find((u) => u.id === '.claude:2')).toMatchObject({ compactions: 0, cost: { usd: 2, estimated: false } });
+    expect(s.self).toBeUndefined();
+
+    const own = await summary('?account=.claude&session=s1');
+    expect(own.usage.some((u) => u.id === '.claude:1')).toBe(false);
+    expect(own.self).toEqual(u1);
+  });
+
   it('só GET/HEAD (405 com Allow)', async () => {
     const res = await fetch(`${env.base}/api/mod/summary`, { method: 'POST', headers: JSON_HEADERS, body: '{}' });
     expect(res.status).toBe(405);

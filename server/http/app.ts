@@ -1,6 +1,7 @@
 // Rotas da API (/api/*). Respostas JSON; rotas desconhecidas -> 404 JSON.
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { AgentInfo, ModSummary, OfficeSnapshot, SourceInfo } from '../../shared/types';
+import { contextView, costView } from '../../shared/stats';
+import type { AgentInfo, ModAgentUsage, ModSummary, OfficeSnapshot, SourceInfo } from '../../shared/types';
 import type { AccountsService } from '../accounts/service';
 import type { DayStatsService } from '../history/daystats';
 import type { Office } from '../model/office';
@@ -139,7 +140,26 @@ export function modSummary(
       since: a.statusSince,
       answerable: !!a.permission,
     }));
-  return { version, agents: present.length, working: present.filter((a) => a.status === 'working').length, waiting };
+  const self = own.session ? snap.agents.find((a) => a.kind === 'main' && isReal(a.id) && a.sessionId === own.session && (!own.account || a.account === own.account)) : undefined;
+  return {
+    version,
+    agents: present.length,
+    working: present.filter((a) => a.status === 'working').length,
+    waiting,
+    usage: present.map(usageOf),
+    ...(self ? { self: usageOf(self) } : {}),
+  };
+}
+
+function usageOf(a: AgentInfo): ModAgentUsage {
+  const out: ModAgentUsage = { id: a.id, name: a.name, compactions: a.stats.compactionCount ?? 0 };
+  const context = contextView(a.stats);
+  if (context) out.context = context;
+  const last = a.stats.compactions?.at(-1);
+  if (last) out.lastCompaction = { preTokens: last.preTokens, postTokens: last.postTokens };
+  const cost = costView(a.stats);
+  if (cost) out.cost = cost;
+  return out;
 }
 
 /** Devolve um handler que trata /api/* e responde false para o resto. */
