@@ -307,7 +307,7 @@ describe('personagem do projeto (PUT/DELETE /api/agents/:id/character)', () => {
       body: JSON.stringify({ name: 'Ana', seed: 1, parts: {} }),
     });
     expect(r.status).toBe(403);
-    expect(r.body).toMatch(/próprio computador/);
+    expect(r.body).toMatch(/Host não permitido/);
     const get = await fetch(url());
     expect(get.status).toBe(405);
     expect(get.headers.get('allow')).toBe('PUT, DELETE');
