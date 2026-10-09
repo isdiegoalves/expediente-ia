@@ -26,6 +26,23 @@ describe('changedParts', () => {
     expect(Object.keys(parts)).toEqual(['skin', 'topStyle']);
     expect(changedParts(base, { ...base })).toEqual({});
   });
+
+  it('a ordem vem de PART_KEYS, não da ordem das chaves da aparência editada', () => {
+    const base = appearanceFromSeed(3, { look: 'm' });
+    const shoes = base.shoes === '#101010' ? '#ffffff' : '#101010';
+    const bottomStyle = base.bottomStyle === 'skirt' ? 'pants' : 'skirt';
+    // No literal da aparência `shoes` vem antes de `bottomStyle`; em PART_KEYS é o contrário.
+    expect(Object.keys(base).indexOf('shoes')).toBeLessThan(Object.keys(base).indexOf('bottomStyle'));
+    expect(PART_KEYS.indexOf('bottomStyle')).toBeLessThan(PART_KEYS.indexOf('shoes'));
+    expect(Object.keys(changedParts(base, { ...base, shoes, bottomStyle }))).toEqual(['bottomStyle', 'shoes']);
+
+    // Mesmo com as chaves da editada em ordem invertida, o resultado segue a ordem de PART_KEYS.
+    const skin = base.skin === '#5a3623' ? '#ffe2cc' : '#5a3623';
+    const topStyle = base.topStyle === 'jacket' ? 'polo' : 'jacket';
+    const reversed = Object.fromEntries(Object.entries({ ...base, shoes, bottomStyle, topStyle, skin }).reverse()) as unknown as typeof base;
+    expect(Object.keys(reversed).indexOf('shoes')).toBeLessThan(Object.keys(reversed).indexOf('skin'));
+    expect(Object.keys(changedParts(base, reversed))).toEqual(['skin', 'topStyle', 'bottomStyle', 'shoes']);
+  });
 });
 
 describe('grupos e rótulos do editor', () => {
