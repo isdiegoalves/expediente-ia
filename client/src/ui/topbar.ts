@@ -98,7 +98,7 @@ export class TopBar implements UiComponent {
     this.timelapseBtn = iconButton(TIMELAPSE_ICONS.timelapse, 'Timelapse: reproduzir o dia (L)', () => ctx.toggleTimelapse(), 'ui-btn-timelapse');
     this.settingsBtn = iconButton(ICONS.settings, 'Configurações', () => ctx.toggleSettings());
     this.settingsBtn.setAttribute('aria-haspopup', 'dialog');
-    this.version = new VersionChip(ctx, this.settingsBtn);
+    this.version = new VersionChip(ctx);
     const viewGroup = h(
       'div',
       { class: 'ui-btn-group', role: 'group', attrs: { 'aria-label': 'Câmera' } },
