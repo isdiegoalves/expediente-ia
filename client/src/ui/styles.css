@@ -7281,7 +7281,7 @@ html.is-replay #world {
   border-radius: 10px;
   background: var(--ui-bg-solid);
   border: 1px solid var(--ui-line-strong);
-  box-shadow: 0 14px 40px rgba(5, 7, 12, 0.5);
+  box-shadow: 0 14px 40px color-mix(in srgb, var(--ink-dark) 50%, transparent);
   color: var(--ui-text);
   font: 13px/1.4 var(--font-ui);
 }
@@ -7316,5 +7316,5 @@ html.is-replay #world {
 }
 
 .ui-rename__hint.is-error {
-  color: #ff9a8a;
+  color: color-mix(in srgb, var(--lv-crit) 50%, var(--ui-text));
 }
