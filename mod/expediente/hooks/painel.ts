@@ -30,7 +30,7 @@ export function argvLeitorClienteWezTerm(pid: number): string[] {
 }
 
 const PANE_ID = /^\d{1,6}$/
-const SESSAO = /^[A-Za-z0-9._-]{1,64}$/
+const SESSAO = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
 const SOCKET = /^\/[A-Za-z0-9._\-/]{1,200}\/gui-sock-\d{1,10}$/
 
 function pares(texto: string): Map<string, string> {
@@ -59,6 +59,7 @@ export function lerClienteWezTerm(texto: string): ClienteWezTerm | undefined {
 }
 
 export function argvFocoZellij(p: PainelZellij): string[] {
+  if (!PANE_ID.test(p.ZELLIJ_PANE_ID) || !SESSAO.test(p.ZELLIJ_SESSION_NAME)) throw new Error('painel inválido')
   return ['zellij', '--session', p.ZELLIJ_SESSION_NAME, 'action', 'focus-pane-id', `terminal_${p.ZELLIJ_PANE_ID}`]
 }
 
@@ -67,6 +68,7 @@ export function argvTrazerWezTerm(): string[] {
 }
 
 export function argvAtivarPainelWezTerm(c: ClienteWezTerm): string[] {
+  if (!PANE_ID.test(c.WEZTERM_PANE) || !SOCKET.test(c.WEZTERM_UNIX_SOCKET)) throw new Error('cliente inválido')
   return ['env', `WEZTERM_UNIX_SOCKET=${c.WEZTERM_UNIX_SOCKET}`, 'wezterm', 'cli', 'activate-pane', '--pane-id', c.WEZTERM_PANE]
 }
 
