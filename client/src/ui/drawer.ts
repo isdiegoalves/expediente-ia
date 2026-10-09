@@ -50,7 +50,8 @@ import { SocialSection } from './social';
 import { TERMINAL_UNAVAILABLE_HINT, type TerminalControl } from './terminal';
 import { createAccountChip, createProgress, createStatusDot, updateAccountChip, updateProgress, updateStatusDot } from './widgets';
 
-const TIMELINE_LIMIT = 80;
+/** Itens da linha do tempo mostrados de início; "Mostrar mais" acrescenta outro tanto. */
+const TIMELINE_STEP = 15;
 const ROOM_FEED_LIMIT = 15;
 
 // ---------------------------------------------------------------- peças
@@ -229,6 +230,10 @@ class AgentView {
   private teamEmpty: HTMLElement;
   private timeline: KeyedList<Activity>;
   private timelineSec: ReturnType<typeof section>;
+  private timelineMore: HTMLButtonElement;
+  private timelineLess: HTMLButtonElement;
+  /** Quantos itens da linha do tempo aparecem agora. */
+  private timelineShown = TIMELINE_STEP;
   private stats: KvList<StatKey>;
   private social: SocialSection;
   readonly character: CharacterEditor;
@@ -364,7 +369,9 @@ class AgentView {
     });
 
     const tl = h('ol', { class: 'ui-timeline' });
-    this.timelineSec = section('Linha do tempo', tl);
+    this.timelineMore = h('button', { class: 'ui-btn ui-btn--sm', type: 'button', on: { click: () => this.showTimeline(this.timelineShown + TIMELINE_STEP) } });
+    this.timelineLess = h('button', { class: 'ui-btn ui-btn--sm', type: 'button', text: 'Mostrar menos', on: { click: () => this.showTimeline(TIMELINE_STEP) } });
+    this.timelineSec = section('Linha do tempo', tl, h('div', { class: 'ui-timeline__more' }, this.timelineMore, this.timelineLess));
     this.timeline = new KeyedList<Activity>(tl, { key: (a) => a.id, create: createTimelineItem, update: (li, a) => updateTimelineItem(li, a, ctx.now()) });
 
     this.sessionValue = h('span', { class: 'ui-mono-inline' });
@@ -427,6 +434,7 @@ class AgentView {
     this.id = id;
     this.last = null;
     this.history = [];
+    this.timelineShown = TIMELINE_STEP;
     this.timeline.clear();
     this.tasks.clear();
     this.team.clear();
@@ -449,6 +457,11 @@ class AgentView {
   toggleTerminal(): void {
     if (!this.id || this.termBtn.getAttribute('aria-disabled') === 'true') return;
     this.terminal.toggle(this.id, this.termBtn);
+  }
+
+  private showTimeline(n: number): void {
+    this.timelineShown = Math.max(TIMELINE_STEP, n);
+    this.ctx.invalidate();
   }
 
   toggleFollow(): void {
@@ -590,7 +603,11 @@ class AgentView {
 
     // Linha do tempo (mais recente primeiro).
     this.history = mergeHistory(this.history, a.recent);
-    const items = this.history.slice(-TIMELINE_LIMIT).reverse();
+    const items = this.history.slice(-this.timelineShown).reverse();
+    const hiddenCount = Math.max(0, this.history.length - this.timelineShown);
+    setHidden(this.timelineMore, hiddenCount === 0);
+    setText(this.timelineMore, `Mostrar mais ${Math.min(TIMELINE_STEP, hiddenCount)}`);
+    setHidden(this.timelineLess, this.timelineShown <= TIMELINE_STEP || this.history.length <= TIMELINE_STEP);
     this.timeline.sync(items);
     setText(this.timelineSec.extra, this.history.length ? String(this.history.length) : '');
 
