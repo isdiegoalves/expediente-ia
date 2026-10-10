@@ -147,6 +147,19 @@ describe('API HTTP', () => {
     expect((await snapshotOf(env.base)).meta.terminal).toBe(false);
   });
 
+  it('trava do terminal como função (gate.on): personagem e renomear sala recusam com 403 quando está desligada', async () => {
+    const e2 = await start({ terminal: () => false });
+    try {
+      const put = await fetch(`${e2.base}/api/agents/${encodeURIComponent('.claude:1')}/character`, { method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify({ name: 'Ana', seed: 1, parts: {} }) });
+      expect(put.status).toBe(403);
+      const ren = await fetch(`${e2.base}/api/rooms/rename`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ id: 'x', name: 'y' }) });
+      expect(ren.status).toBe(403);
+    } finally {
+      await e2.close();
+      e2.cleanup();
+    }
+  });
+
   it('personagem: PUT e DELETE desligados sem o terminal (403)', async () => {
     const res = await fetch(`${env.base}/api/agents/${encodeURIComponent('.claude:1')}/character`, {
       method: 'PUT',

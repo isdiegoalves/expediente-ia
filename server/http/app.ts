@@ -343,7 +343,7 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
     if (path === '/api/rooms/rename') {
       // Como o personagem: a mesma trava do terminal (bind local + Host local).
       if (method !== 'POST') methodNotAllowed(res, 'POST');
-      else if (!deps.terminal) sendJson(res, 403, { error: 'renomear salas desligado: só funciona com o Expediente acessível apenas pelo próprio computador' });
+      else if (!terminalOn()) sendJson(res, 403, { error: 'renomear salas desligado: só funciona com o Expediente acessível apenas pelo próprio computador' });
       else if (!isLoopbackHost(req.headers.host)) sendJson(res, 403, { error: 'renomear salas só pelo próprio computador (http://localhost)' });
       else
         readJson(req)
