@@ -7,7 +7,7 @@ import type { AgentInfo, Notice } from '../../shared/types';
 import { AccountsService } from '../accounts/service';
 import { setQuiet } from '../log';
 import { NameStore } from '../model/names';
-import { Office } from '../model/office';
+import { DONE_GRACE_MS, Office } from '../model/office';
 import { appendLines, L, tempDir, writeLines } from '../test/fixtures';
 import { ClaudeWatcher, encodeCwd } from './watcher';
 
@@ -286,7 +286,7 @@ describe('ClaudeWatcher', () => {
     expect(c.agent('sess-a:asonda-2')).toMatchObject({ status: 'working', parado: { pendente: 'Bash' } });
   });
 
-  it('teammate à toa não conta como parado e conta como concluído, assim como o subagente sem nome ao lado', () => {
+  it('teammate à toa não conta como parado nem como concluído; o subagente sem nome ao lado conclui', () => {
     bootWithSession();
     const t0 = c.now();
     const fim = (id: string) => [
@@ -304,11 +304,11 @@ describe('ClaudeWatcher', () => {
     expect(c.agent('sess-a:asonda-3')!.parado).toBeUndefined();
     expect(c.agent('sess-a:avulso')?.status).not.toBe('working');
     expect(c.office.commit().snapshot.equipes).toEqual([
-      { key: expect.stringContaining('time'), concluidos: 2, total: 2, paradosPorVoce: 0, rodadas: [{ n: 1, concluidos: 2, total: 2 }] },
+      { key: expect.stringContaining('time'), trabalhando: 0, aToa: 1, concluidos: 1, total: 2, paradosPorVoce: 0, rodadas: [{ n: 1, trabalhando: 0, aToa: 1, concluidos: 1, total: 2 }] },
     ]);
   });
 
-  it('time de teammates à toa chega a N/N; o que volta a trabalhar sai da conta', () => {
+  it('time de teammates à toa mostra os trabalhando e os à toa, sem concluídos; o que recebe mensagem volta a trabalhar', () => {
     bootWithSession();
     const t0 = c.now();
     const fim = (id: string) => [
@@ -316,19 +316,46 @@ describe('ClaudeWatcher', () => {
       L.assistant([L.text('Pronto.')], { agentId: id, at: t0, stop: 'end_turn' }),
     ];
     const meta = (name: string) => ({ agentType: 'sonda', description: name, name, teamName: 'time', taskKind: 'in_process_teammate' });
-    c.subFile('sess-a', 'ta-1', meta('um'), fim('ta-1'));
-    const path = c.subFile('sess-a', 'ta-2', meta('dois'), fim('ta-2'));
+    const ids = ['ta-1', 'ta-2', 'ta-3', 'ta-4', 'ta-5', 'ta-6'];
+    const paths = ids.map((id) => c.subFile('sess-a', id, meta(id), fim(id)));
+    c.subFile('sess-a', 'ta-7', meta('ta-7'), [L.prompt('<teammate-message teammate_id="team-lead">\nFaça\n</teammate-message>', { agentId: 'ta-7', at: t0 })]);
     c.poll();
     const resumo = () => c.office.commit().snapshot.equipes![0];
-    expect(resumo()).toMatchObject({ concluidos: 0, total: 2 });
+    expect(resumo()).toMatchObject({ trabalhando: 7, aToa: 0, concluidos: 0, total: 7 });
     c.advance(6_000);
+    appendLines(c.subFile('sess-a', 'ta-7', meta('ta-7'), []), [L.assistant([L.text('Ainda.')], { agentId: 'ta-7' })]);
     c.poll();
-    expect(c.agent('sess-a:ta-1')!.status).toBe('idle');
-    expect(resumo()).toMatchObject({ concluidos: 2, total: 2 });
-    appendLines(path, [L.prompt('<teammate-message teammate_id="team-lead">\nMais uma\n</teammate-message>', { agentId: 'ta-2' })]);
+    expect(resumo()).toMatchObject({ trabalhando: 1, aToa: 6, concluidos: 0, total: 7, rodadas: [] });
+    appendLines(paths[1], [L.prompt('<teammate-message teammate_id="team-lead">\nMais uma\n</teammate-message>', { agentId: 'ta-2' })]);
     c.poll();
     expect(c.agent('sess-a:ta-2')!.status).toBe('working');
-    expect(resumo()).toMatchObject({ concluidos: 1, total: 2 });
+    expect(resumo()).toMatchObject({ trabalhando: 2, aToa: 5, concluidos: 0, total: 7 });
+  });
+
+  it('concluído de verdade continua na conta depois de sair do escritório; o teammate à toa ao lado não entra nela', () => {
+    bootWithSession();
+    const t0 = c.now();
+    const meta = (name: string) => ({ agentType: 'sonda', description: name, name, teamName: 'time', taskKind: 'in_process_teammate' });
+    const fim = (id: string) => [
+      L.prompt('<teammate-message teammate_id="team-lead">\nFaça\n</teammate-message>', { agentId: id, at: t0 }),
+      L.assistant([L.text('Pronto.')], { agentId: id, at: t0, stop: 'end_turn' }),
+    ];
+    appendLines(c.transcript('sess-a'), [
+      L.assistant([L.tool('toolu_t', 'Agent', { description: 'um', subagent_type: 'qa', name: 'um', run_in_background: true })]),
+      L.result('toolu_t', 'Spawned successfully.', { toolUseResult: { status: 'teammate_spawned', agentId: 'tb-1', name: 'um' } }),
+    ]);
+    c.subFile('sess-a', 'tb-1', meta('um'), fim('tb-1'));
+    c.subFile('sess-a', 'tb-2', meta('dois'), fim('tb-2'));
+    c.poll();
+    c.advance(6_000);
+    c.poll();
+    appendLines(c.transcript('sess-a'), [L.assistant([L.tool('toolu_p', 'TaskStop', { task_id: 'tb-1' })]), L.result('toolu_p', 'parado')]);
+    c.poll();
+    expect(c.agent('sess-a:tb-1')!.status).toBe('done');
+    c.advance(DONE_GRACE_MS + 1_000);
+    c.poll();
+    expect(c.agent('sess-a:tb-1')).toBeUndefined();
+    expect(c.office.commit().snapshot.equipes).toMatchObject([{ trabalhando: 0, aToa: 1, concluidos: 1, total: 2 }]);
   });
 
   it('teammate: TaskStop com o id do agente também o encerra', () => {
@@ -1141,7 +1168,7 @@ describe('time, nome, rodada e parada pelo usuário do subagente', () => {
       c.watcher.boot();
       expect(c.agents().filter((a) => a.kind === 'sub').map((a) => a.id)).toEqual(['sess-v:v1']);
       expect(c.office.commit().snapshot.equipes).toEqual([
-        { key: 'sess-v|time:gauntlet', concluidos: 1, total: 2, paradosPorVoce: 1, rodadas: [{ n: 1, concluidos: 1, total: 2 }] },
+        { key: 'sess-v|time:gauntlet', trabalhando: 1, aToa: 0, concluidos: 1, total: 2, paradosPorVoce: 1, rodadas: [{ n: 1, trabalhando: 1, aToa: 0, concluidos: 1, total: 2 }] },
       ]);
     } finally {
       c.watcher.stop();
@@ -1161,7 +1188,7 @@ describe('time, nome, rodada e parada pelo usuário do subagente', () => {
       c.openSession(803, 'sess-w');
       c.watcher.boot();
       expect(c.agents().filter((a) => a.kind === 'sub')).toEqual([]);
-      expect(c.office.commit().snapshot.equipes).toMatchObject([{ concluidos: 1, total: 1, rodadas: [{ n: 3, concluidos: 1, total: 1 }] }]);
+      expect(c.office.commit().snapshot.equipes).toMatchObject([{ trabalhando: 0, aToa: 0, concluidos: 1, total: 1, rodadas: [{ n: 3, trabalhando: 0, aToa: 0, concluidos: 1, total: 1 }] }]);
     } finally {
       c.watcher.stop();
       c.tmp.cleanup();

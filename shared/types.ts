@@ -343,13 +343,19 @@ export interface AccountInfo {
 }
 
 /** Contagem de um time (ou, sem time, do pai) de subagentes: inclui quem já saiu do escritório. */
-export interface EquipeResumo {
-  /** Ver `chaveEquipe`. */
-  key: string;
+export interface ContagemEquipe {
+  trabalhando: number;
+  /** Teammate com o turno encerrado e em silêncio: pode voltar a trabalhar, então não conta como concluído. */
+  aToa: number;
   concluidos: number;
   total: number;
+}
+
+export interface EquipeResumo extends ContagemEquipe {
+  /** Ver `chaveEquipe`. */
+  key: string;
   paradosPorVoce: number;
-  rodadas: { n: number; concluidos: number; total: number }[];
+  rodadas: (ContagemEquipe & { n: number })[];
 }
 
 export interface OfficeSnapshot {

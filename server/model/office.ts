@@ -9,6 +9,7 @@ import type {
   AgentOrigin,
   AgentStats,
   AgentStatus,
+  ContagemEquipe,
   EquipeResumo,
   FeedItem,
   Notice,
@@ -209,7 +210,7 @@ interface SubVisto {
   parentId: string;
   teamName?: string;
   rodada?: number;
-  done: boolean;
+  estado: 'trabalhando' | 'aToa' | 'concluido';
   stoppedByUser: boolean;
 }
 
@@ -653,8 +654,8 @@ export class Office {
   noteSubEncerrado(p: Pick<SubInput, 'id' | 'parentId' | 'sessionId' | 'teamName' | 'rodada' | 'stoppedByUser'>): void {
     if (!this.agents.has(p.parentId) || this.agents.has(p.id)) return;
     const antes = this.vistos.get(p.id);
-    if (antes?.done) return;
-    this.vistos.set(p.id, { sessionId: p.sessionId, parentId: p.parentId, teamName: p.teamName, rodada: p.rodada, done: true, stoppedByUser: !!p.stoppedByUser });
+    if (antes?.estado === 'concluido') return;
+    this.vistos.set(p.id, { sessionId: p.sessionId, parentId: p.parentId, teamName: p.teamName, rodada: p.rodada, estado: 'concluido', stoppedByUser: !!p.stoppedByUser });
     this.markDirty();
   }
 
@@ -664,24 +665,28 @@ export class Office {
       parentId: info.parentId ?? '',
       teamName: info.teamName,
       rodada: info.rodada,
-      done: info.status === 'done' || info.status === 'offline' || info.status === 'idle',
+      estado: info.status === 'done' || info.status === 'offline' ? 'concluido' : info.status === 'idle' ? 'aToa' : 'trabalhando',
       stoppedByUser: !!info.stoppedByUser,
     });
   }
 
   private equipes(): EquipeResumo[] {
     const out = new Map<string, EquipeResumo>();
+    const soma = (c: ContagemEquipe, estado: SubVisto['estado']) => {
+      c.total++;
+      if (estado === 'concluido') c.concluidos++;
+      else if (estado === 'aToa') c.aToa++;
+      else c.trabalhando++;
+    };
     for (const v of this.vistos.values()) {
       const key = chaveEquipe(v);
-      const e = out.get(key) ?? { key, concluidos: 0, total: 0, paradosPorVoce: 0, rodadas: [] };
-      e.total++;
-      if (v.done) e.concluidos++;
+      const e = out.get(key) ?? { key, trabalhando: 0, aToa: 0, concluidos: 0, total: 0, paradosPorVoce: 0, rodadas: [] };
+      soma(e, v.estado);
       if (v.stoppedByUser) e.paradosPorVoce++;
       if (v.rodada !== undefined) {
         let r = e.rodadas.find((x) => x.n === v.rodada);
-        if (!r) e.rodadas.push((r = { n: v.rodada, concluidos: 0, total: 0 }));
-        r.total++;
-        if (v.done) r.concluidos++;
+        if (!r) e.rodadas.push((r = { n: v.rodada, trabalhando: 0, aToa: 0, concluidos: 0, total: 0 }));
+        soma(r, v.estado);
       }
       out.set(key, e);
     }

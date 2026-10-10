@@ -44,9 +44,9 @@ acessar a internet; e a documentação com a identidade do Expediente. Para atua
 - **Subagentes com nome (teammates) no escritório.** O subagente lançado com nome no Claude Code (que vira teammate)
   não aparecia, ou entrava e saía na hora com "Concluiu em 0s". Agora ele entra trabalhando, fica à toa no escritório
   entre um turno e outro, volta à mesa quando recebe mensagem e só vai embora quando é encerrado ou a sessão fecha. Se
-  calar no meio do trabalho, aparece como parado, como qualquer subagente. Na contagem "concluídos de total" do time e
-  da rodada, o teammate com o turno encerrado e 5 s de silêncio conta como concluído (continua à toa no escritório); se
-  receber mensagem e voltar a trabalhar, sai da conta.
+  calar no meio do trabalho, aparece como parado, como qualquer subagente. O resumo do time mostra "x trabalhando · y à
+  toa · z concluídos"; o teammate com o turno encerrado e 5 s de silêncio conta como à toa, não como concluído, porque
+  pode receber mensagem e voltar a trabalhar. A rodada mostra "z de t concluídos".
 - Nome de sala e de personagem recusa ou perde caractere invisível de formatação (espaço de largura zero, BOM, hífen
   suave, junção de palavra), que disfarçava o nome.
 
