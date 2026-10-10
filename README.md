@@ -169,7 +169,7 @@ npm run instalar -- --com-permissoes     # também o plugin de permissões (resp
 ```
 
 O Expediente traz um [mod](https://code.claude.com/docs/en/plugins/mods/overview) (um plugin que roda dentro do
-Claude Code) e o instala em cada conta **só pelo `claude plugin`**, a partir de uma **cópia fixa** do commit (`~/.expediente/mod-instalado`, um worktree destacado): o instalador nunca edita o
+Claude Code) e o instala em cada conta **só pelo `claude plugin`**, a partir de uma **cópia fixa** do commit (`~/.expediente/mod-instalado`, exportada sem `.git`, independente desta pasta): o instalador nunca edita o
 `settings.json` de ninguém, nunca desinstala o plugin do projeto de origem (o Habblaud) e recusa o `expediente-permissoes` na conta onde o
 `habblaud-permissoes` dele estiver ativo (os dois responderiam o mesmo pedido). Com o mod:
 
@@ -187,8 +187,14 @@ nada, `claude plugin validate mod/expediente` mostra os eventos que ele trata e 
 abertas carregam o mod com `/reload-plugins` (ou ao reabrir). Confira com `npm run instalar:status`; para desfazer:
 `npm run desinstalar`.
 
-> O Claude Code lê o mod da cópia fixa, não deste checkout: trocar de branch aqui não muda o que as sessões rodam.
-> Para atualizar o mod, rode `npm run instalar` de novo (de propósito); `npm run instalar:status` mostra o commit instalado.
+> O Claude Code lê o mod da cópia fixa, não deste checkout: trocar de branch aqui não muda o que as sessões rodam, e
+> **mover ou apagar a pasta do repositório não afeta o mod instalado** (a cópia não guarda o caminho do repositório).
+> Se você instalou antes de existir essa cópia independente (ela era um `git worktree` preso ao caminho do repositório),
+> rode `npm run instalar` uma vez, na pasta onde o repositório está agora: ele troca a cópia e poda o registro antigo.
+>
+> **Conta nova:** crie e abra a conta (`CLAUDE_CONFIG_DIR=~/.claude-nova claude`) e rode `npm run instalar`: toda
+> pasta `~/.claude*` com configuração do Claude Code (`settings.json`, `.claude.json`, `.credentials.json` ou `plugins/`)
+> é detectada, mesmo sem nenhuma sessão ainda. Para o mod chegar só a algumas contas, use `-- --conta <pasta>`.
 
 ### Atualizar
 
@@ -230,20 +236,23 @@ O servidor relê o arquivo sozinho, sem reiniciar (no Docker, o `~/.expediente/h
 
 Quando a última release é maior que a versão em uso, aparece o selo **Nova versão** no lugar do número e um aviso (uma vez por versão). Em **Configurações › Sobre**
 ficam a versão nova com a data, o link **Ver o que mudou**, como atualizar e há quanto tempo foi a última verificação
-(ou "Nunca verificado"). Para atualizar:
+(ou "Nunca verificado"). Para atualizar, um comando só:
 
 ```bash
-git pull
-npm install
-npm run docker:up        # ou: npm run build && npm start (e depois npm run instalar)
+npm run atualizar                         # git pull --ff-only, npm install e reinstala o mod em cada conta
+npm run atualizar -- --com-permissoes     # as opções vão para o npm run instalar
+npm run docker:up                         # depois, reinicie o servidor (ou: npm run build && npm start)
 ```
+
+O `atualizar` recusa um checkout com alterações nos arquivos versionados e para no primeiro passo que falhar. Ele não
+reinicia o servidor.
 
 > Se o `git pull` parar com "Your local changes to the following files would be overwritten by merge:
 > package-lock.json", rode `git checkout -- package-lock.json` e repita: até a 0.4.0, o `npm install` alterava esse
 > arquivo.
 
-O mod não é atualizado sozinho: rode `npm run instalar` depois de atualizar (o `docker:up` só lembra, se ele não
-estiver instalado).
+O mod não é atualizado sozinho: o `npm run atualizar` já o reinstala (se você atualizou na mão, com `git pull`, rode
+`npm run instalar`; o `docker:up` só lembra, se ele não estiver instalado).
 
 ### Desinstalar
 
@@ -644,6 +653,7 @@ das contas (letra, e-mail, organização) são lidos no host pelo `docker:up` e 
 | `claude plugin test mod/expediente` | Testes do mod (sem sessão, conta nem rede). |
 | `claude plugin validate .` | Valida o marketplace (`.claude-plugin/marketplace.json`); com `mod/expediente` ou `mod/expediente-permissoes`, valida o plugin e lista os eventos e as chamadas do mod. |
 | `claude --plugin-dir mod/expediente` | Abre uma sessão com o mod desta pasta, sem instalar (edite e rode `/reload-plugins`). |
+| `npm run atualizar` | Atualiza num comando: `git pull --ff-only`, `npm install` e reinstala o mod em cada conta. |
 | `npm run instalar:status` | Mostra, por conta, o marketplace, os plugins e as versões instaladas. |
 | `npm run demo:timeline` | Gera uma linha do tempo fictícia (simulador do modo demonstração) para o timelapse. |
 | `npm run release` | Publica a versão do `package.json` no GitHub (tag e release com as notas do `CHANGELOG.md`). |
