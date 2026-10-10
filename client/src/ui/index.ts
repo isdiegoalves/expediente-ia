@@ -9,6 +9,7 @@ import '@fontsource/pixelify-sans/700.css';
 import './styles.css';
 
 import type { OfficeStore } from '../net/store';
+import { buscarVersaoHttp, mockVersao, VersaoFeed } from '../net/versao';
 import type { Selection, WorldApi } from '../world/api';
 import type { PanelName, UiComponent, UiContext } from './context';
 import { DayLauncher } from './daystats-launcher';
@@ -32,12 +33,15 @@ import { TimelapsePlayer } from './timelapse';
 import { Toasts } from './toasts';
 import { TopBar } from './topbar';
 import { UpdateBanner } from './update';
+import { versaoParaAvisar } from './version';
 import { FreeArea } from './viewport';
 
 /** Relógio dos tempos relativos ("há 5 s"). */
 const CLOCK_MS = 5_000;
 /** Relógio do cronômetro dos shells ("12:31"), ligado só enquanto há shells rodando. */
 const SHELL_CLOCK_MS = 1_000;
+/** Última versão nova de que o usuário já foi avisado. */
+const VERSAO_AVISADA = 'expediente.versao-avisada';
 const NARROW_QUERY = '(max-width: 900px)';
 
 function isTypingTarget(t: EventTarget | null): boolean {
@@ -68,8 +72,11 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi,
   /** A seleção em curso partiu da UI (lista, feed, aviso...), não de um clique no canvas. */
   let uiSelecting = false;
 
+  const versao = new VersaoFeed(store.mock ? async () => mockVersao(new URLSearchParams(location.search).get('versao'), Date.now()) : buscarVersaoHttp);
+
   const ctx: UiContext = {
     store,
+    versao,
     world,
     root,
     get prefs() {
@@ -180,6 +187,20 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi,
     narrow: ctx.isNarrow(),
   }));
   drawer.onLayoutChange = () => applyLayout();
+
+  versao.onChange(() => {
+    try {
+      const nova = versaoParaAvisar(versao.view, storage?.getItem(VERSAO_AVISADA) ?? null);
+      if (nova) {
+        storage?.setItem(VERSAO_AVISADA, nova);
+        toasts.push({ id: `versao-${nova}`, level: 'info', text: `Nova versão do Expediente: v${nova}. Detalhes em Configurações › Sobre.`, at: ctx.now() });
+      }
+    } catch {
+      // sem armazenamento não há como lembrar o que já foi avisado
+    }
+    invalidate();
+  });
+  versao.start();
 
   const components: UiComponent[] = [topbar, sidebar, drawer, terminal, history, feed, toasts, settings, empty, banner, tip, notifier, splash, timelapse, sound, day];
 

@@ -12,6 +12,10 @@ do meio (0.**3**.0).
 
 ### Adicionado
 
+- **Aviso de versão nova, alimentado pelo host.** `npm run versao` (no seu computador, quando quiser ou agendado)
+  consulta a última release do Expediente no GitHub e grava `~/.expediente/host/versao.json`; o servidor só lê esse
+  arquivo e continua sem acessar a internet. Quando há versão maior, aparece o selo **Nova versão**, um aviso (uma vez
+  por versão) e, em Configurações › Sobre, o link do que mudou e há quanto tempo foi a última verificação.
 - **Lista lateral mais útil.** Cada agente mostra o título da sessão e há quanto tempo está ocioso; agentes e salas se
   reordenam arrastando, e a ordem fica guardada no navegador.
 - **Gaveta e terminal móveis.** A gaveta e o terminal se arrastam, mudam de tamanho e o terminal expande; não passam

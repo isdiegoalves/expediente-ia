@@ -675,6 +675,17 @@ a.ui-btn {
   background: color-mix(in srgb, var(--ui-text) 6%, transparent);
 }
 
+/* Selo "Nova versão": no lugar do número quando o script do host achou uma release maior. */
+.ui-version--nova {
+  color: color-mix(in srgb, var(--st-done) 45%, var(--ui-text));
+  background: color-mix(in srgb, var(--st-done) 16%, transparent);
+  border-color: color-mix(in srgb, var(--st-done) 45%, transparent);
+}
+
+.ui-version--nova:hover {
+  background: color-mix(in srgb, var(--st-done) 26%, transparent);
+}
+
 /* Com o selo "Demonstração" não sobra espaço para o número (ele continua em Configurações › Sobre). */
 .ui-topbar__status:has(.ui-demo-badge:not([hidden])) .ui-version {
   display: none;
@@ -2580,6 +2591,25 @@ a.ui-btn {
 
 .ui-about__version {
   font: 700 12.5px/1 var(--font-mono);
+}
+
+.ui-about__nova {
+  display: grid;
+  gap: 2px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--st-done) 45%, transparent);
+  background: color-mix(in srgb, var(--st-done) 12%, transparent);
+  font-size: 12.5px;
+}
+
+.ui-about__link {
+  color: var(--ui-accent);
+  text-decoration: underline;
+}
+
+.ui-about code {
+  font: 11.5px/1.2 var(--font-mono);
 }
 
 .ui-switch {
