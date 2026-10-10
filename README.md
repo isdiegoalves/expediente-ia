@@ -192,11 +192,18 @@ abertas carregam o mod com `/reload-plugins` (ou ao reabrir). Confira com `npm r
 
 ### Atualizar
 
-A versão em uso aparece na barra superior, ao lado de "Conectado", e em **Configurações › Sobre**. A cada 6 horas o
-Expediente confere no GitHub se saiu uma versão nova (as [releases](https://github.com/marmottajr/habblaud/releases)
-deste repositório). Quando sai, aparece o selo verde **Nova versão** no lugar do número, com um aviso e um ponto no
-botão de configurações. Em **Sobre** ficam o link do que mudou e o botão **Verificar agora** (as notas de cada
-versão também estão no [`CHANGELOG.md`](CHANGELOG.md)). Para atualizar:
+A versão em uso aparece na barra superior, ao lado de "Conectado", e em **Configurações › Sobre**. O servidor não
+acessa a internet: quem confere se saiu versão nova é um script no seu computador, que você roda quando quiser
+(as notas de cada versão também estão no [`CHANGELOG.md`](CHANGELOG.md)):
+
+```bash
+npm run versao           # consulta a última release do Expediente no GitHub e grava ~/.expediente/host/versao.json
+```
+
+É uma chamada anônima à API pública do GitHub, com tempo limite; se falhar, o arquivo anterior fica como estava. Para
+agendar, ponha o mesmo comando no `cron` ou no `launchd` (por exemplo, uma vez por dia). Quando a última release é maior
+que a versão em uso, aparece o selo **Nova versão** no lugar do número e um aviso. Em **Sobre** ficam o link do que
+mudou e há quanto tempo foi a última verificação. Para atualizar:
 
 ```bash
 git pull
@@ -209,7 +216,7 @@ npm run docker:up        # ou: npm run build && npm start (e depois npm run inst
 > arquivo.
 
 O mod não é atualizado sozinho: rode `npm run instalar` depois de atualizar (o `docker:up` só lembra, se ele não
-estiver instalado). Para não consultar o GitHub, use `EXPEDIENTE_UPDATE_CHECK=0` (no `.env`, para o Docker).
+estiver instalado).
 
 ### Desinstalar
 

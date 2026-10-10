@@ -26,6 +26,7 @@
     "instalar:status": "tsx scripts/instalar.ts status",
     "desinstalar": "tsx scripts/instalar.ts uninstall",
     "release": "tsx scripts/release.ts",
+    "versao": "tsx scripts/versao.ts",
     "preflight": "node scripts/preflight.mjs"
   },
   "devDependencies": {

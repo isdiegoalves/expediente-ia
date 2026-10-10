@@ -2,6 +2,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { contextView, costView } from '../../shared/stats';
 import { NAME_MAX, parseAppearanceParts, parseCharacterName, parseSeed } from '../../shared/appearance';
+import type { VersaoView } from '../../shared/versao';
 import type { AgentInfo, ModAgentUsage, ModSummary, OfficeSnapshot, SourceInfo } from '../../shared/types';
 import type { AccountsService } from '../accounts/service';
 import type { DayStatsService } from '../history/daystats';
@@ -41,6 +42,8 @@ export interface ApiDeps {
   stats?: DayStatsService;
   /** Tema ativo: GET /api/tema e /temas/<id>/<arquivo> (http/tema.ts); devolve false para o resto. */
   tema?: (req: IncomingMessage, res: ServerResponse, url: URL) => boolean;
+  /** Versão em uso e última publicada, lida do versao.json da ponte (GET /api/versao). */
+  versao?: () => VersaoView;
   /** Relógio dos nonces do /ir (testes). */
   now?: () => number;
 }
@@ -251,6 +254,12 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
           accounts: accounts.entries().map((a) => ({ id: a.id, usageStatus: accounts.usageView(a.id).status })),
         });
       }
+      return true;
+    }
+    if (path === '/api/versao') {
+      if (!isRead) methodNotAllowed(res, 'GET');
+      else if (!deps.versao) sendJson(res, 404, { error: 'rota desconhecida' });
+      else sendJson(res, 200, deps.versao());
       return true;
     }
     if (path === '/api/mod/summary') {

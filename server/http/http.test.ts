@@ -257,6 +257,32 @@ describe('API HTTP', () => {
   });
 });
 
+describe('GET /api/versao', () => {
+  it('devolve a leitura do versao.json e só aceita GET', async () => {
+    const view = { emUso: '9.9.9', nova: false };
+    const env = await start({ versao: () => view });
+    try {
+      const res = await fetch(`${env.base}/api/versao`);
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual(view);
+      expect((await raw(env.base, '/api/versao', { method: 'POST', headers: JSON_HEADERS, body: '{}' })).status).toBe(405);
+    } finally {
+      await env.close();
+      env.cleanup();
+    }
+  });
+
+  it('sem leitor configurado é uma rota desconhecida', async () => {
+    const env = await start();
+    try {
+      expect((await fetch(`${env.base}/api/versao`)).status).toBe(404);
+    } finally {
+      await env.close();
+      env.cleanup();
+    }
+  });
+});
+
 describe('personagem do projeto (PUT/DELETE /api/agents/:id/character)', () => {
   let env: Awaited<ReturnType<typeof start>>;
   beforeEach(async () => {
