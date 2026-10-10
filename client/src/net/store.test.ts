@@ -49,6 +49,12 @@ describe('mockOptionsFrom', () => {
     expect(mockOptionsFrom('?sessions=6.7&speed=2')).toEqual({ speed: 2, sessions: 6 });
     expect(mockOptionsFrom('?sessions=999&speed=999')).toEqual({ speed: 50, sessions: 40 });
   });
+
+  it('projects e subs só entram quando pedidos, com teto', () => {
+    expect(mockOptionsFrom('?sessions=10&projects=10&subs=30')).toEqual({ speed: 1, sessions: 10, projects: 10, subs: 30 });
+    expect(mockOptionsFrom('?projects=0&subs=abc')).toEqual({ speed: 1, sessions: 4 });
+    expect(mockOptionsFrom('?projects=999&subs=999')).toMatchObject({ projects: 20, subs: 50 });
+  });
 });
 
 describe('reconnectDelay', () => {

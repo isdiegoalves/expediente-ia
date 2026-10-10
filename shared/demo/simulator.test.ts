@@ -92,4 +92,25 @@ describe('DemoSimulator', () => {
     expect(comTime.some((a) => a.stoppedByUser)).toBe(true);
     expect([...vistos.values()].some((a) => !a.teamName)).toBe(true);
   });
+  it('projects e subs montam a carga fixa: salas distintas, uma sessão por sala e subagentes repostos', () => {
+    const sim = new DemoSimulator({ seed: 5, sessions: 10, projects: 10, subs: 30 }, 0);
+    const contar = () => {
+      const snap = sim.snapshot();
+      const porSala = new Map<string, number>();
+      for (const a of snap.agents) if (a.kind === 'sub' && a.status === 'working') porSala.set(a.roomId, (porSala.get(a.roomId) ?? 0) + 1);
+      return { rooms: snap.rooms, mains: snap.agents.filter((a) => a.kind === 'main'), porSala };
+    };
+    for (let t = 0; t <= 90_000; t += 1_000) sim.tick(t);
+    const { rooms, mains, porSala } = contar();
+    expect(new Set(rooms.map((r) => r.name)).size).toBe(10);
+    expect(mains).toHaveLength(10);
+    expect(mains.every((m) => m.status !== 'offline')).toBe(true);
+    expect([...porSala.values()]).toEqual(Array(10).fill(30));
+  });
+
+  it('sem projects e subs o padrão não muda: no máximo os 6 projetos fixos', () => {
+    const sim = new DemoSimulator({ seed: 5, sessions: 10 }, 0);
+    for (let t = 0; t <= 90_000; t += 1_000) sim.tick(t);
+    expect(new Set(sim.snapshot().rooms.map((r) => r.name)).size).toBeLessThanOrEqual(6);
+  });
 });

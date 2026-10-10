@@ -84,6 +84,15 @@ const PROJECTS: DemoProject[] = [
   },
 ];
 
+function projectPool(count: number | undefined): DemoProject[] {
+  if (count === undefined) return PROJECTS;
+  return Array.from({ length: Math.max(1, count) }, (_, i) => {
+    if (i < PROJECTS.length) return PROJECTS[i];
+    const base = PROJECTS[i % PROJECTS.length];
+    return { ...base, name: `${base.name}-${Math.floor(i / PROJECTS.length) + 1}` };
+  });
+}
+
 /** Projetos do demo (o histórico fictício do "Meu dia" usa todos, não só as salas abertas no momento). */
 export const DEMO_PROJECT_NAMES: readonly string[] = PROJECTS.map((p) => p.name);
 
@@ -174,6 +183,10 @@ export interface DemoOptions {
   speed?: number;
   /** Quantas sessões principais manter abertas (aprox.). */
   sessions?: number;
+  /** Salas distintas (uma sessão por sala, sem reaproveitar): passa dos 6 projetos fixos criando variações. */
+  projects?: number;
+  /** Subagentes trabalhando o tempo todo em cada sessão (repostos ao terminar); as sessões não encerram. */
+  subs?: number;
   /** Prefixo de ids (o servidor usa "demo:" para não colidir com dados reais). */
   idPrefix?: string;
 }
@@ -186,6 +199,9 @@ export class DemoSimulator {
   private rng: () => number;
   private speed: number;
   private target: number;
+  private pool: DemoProject[];
+  private subsPerSession: number;
+  private fixedRooms: boolean;
   private prefix: string;
   /** Marca desta instância: ids de agentes/atividades/avisos não se repetem ao religar o demo. */
   private tag: string;
@@ -216,6 +232,9 @@ export class DemoSimulator {
     this.prSeq = 12 + Math.floor(this.ghRng() * 80);
     this.target = opts.sessions ?? 4;
     this.prefix = opts.idPrefix ?? '';
+    this.pool = projectPool(opts.projects);
+    this.fixedRooms = opts.projects !== undefined;
+    this.subsPerSession = Math.max(0, Math.floor(opts.subs ?? 0));
     this.tag = now.toString(36);
     this.accounts = this.prefix
       ? DEMO_ACCOUNTS.map((acc, i) => ({ ...acc, ...MERGED_ACCOUNTS[i], id: `${this.prefix}${acc.id}`, configDir: '(demonstração)' }))
@@ -253,6 +272,7 @@ export class DemoSimulator {
       this.nextSpawnAt = now + this.ms(25_000, 70_000);
     }
     for (const a of [...this.agents.values()]) this.step(a, now);
+    if (this.subsPerSession > 0) this.topUpSubs(now);
     if (now >= this.nextGitHubAt) {
       this.nextGitHubAt = now + (35_000 + this.ghRng() * 45_000) / this.speed;
       this.gitHubEvent(now);
@@ -400,9 +420,9 @@ export class DemoSimulator {
   private spawnSession(now: number, warm: boolean): void {
     const activeRooms = new Set([...this.rooms.values()].map((r) => r.name));
     // 35% de chance de reaproveitar uma sala existente (2 sessões no mesmo projeto).
-    const reuse = activeRooms.size > 0 && this.rng() < 0.35;
-    const candidates = PROJECTS.filter((p) => (reuse ? activeRooms.has(p.name) : !activeRooms.has(p.name)));
-    const project = this.pick(candidates.length ? candidates : PROJECTS);
+    const reuse = activeRooms.size > 0 && !this.fixedRooms && this.rng() < 0.35;
+    const candidates = this.pool.filter((p) => (reuse ? activeRooms.has(p.name) : !activeRooms.has(p.name)));
+    const project = this.pick(candidates.length ? candidates : this.pool);
     const room = this.ensureRoom(project, now);
     const n = ++this.seq;
     const sessionId = `${this.prefix}sess-${this.tag}-${n}-${Math.floor(this.rng() * 1e9).toString(36)}`;
@@ -443,7 +463,7 @@ export class DemoSimulator {
       nextActionAt: now,
       actionsLeft: 0,
       children: [],
-      closeAt: now + this.ms(150_000, 420_000),
+      closeAt: this.subsPerSession > 0 ? Infinity : now + this.ms(150_000, 420_000),
       taskCursor: 0,
       shellEnds: new Map(),
       shelledThisTurn: false,
@@ -511,6 +531,18 @@ export class DemoSimulator {
     parent.info.stats.subagents++;
     this.activity(sub, now, { kind: 'prompt', icon: '📨', text: `Nova tarefa: “${desc}”`, detail: desc });
     this.dirty = true;
+  }
+
+  private topUpSubs(now: number): void {
+    const working = new Map<string, number>();
+    for (const a of this.agents.values()) {
+      if (a.info.kind === 'sub' && a.info.parentId && a.info.status === 'working') working.set(a.info.parentId, (working.get(a.info.parentId) ?? 0) + 1);
+    }
+    for (const a of [...this.agents.values()]) {
+      if (a.info.kind !== 'main' || a.phase === 'leaving') continue;
+      a.children = a.children.filter((c) => this.agents.has(c));
+      for (let n = working.get(a.info.id) ?? 0; n < this.subsPerSession; n++) this.spawnSub(a, now);
+    }
   }
 
   private step(a: SimAgent, now: number): void {
