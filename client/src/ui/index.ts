@@ -9,6 +9,7 @@ import '@fontsource/pixelify-sans/700.css';
 import './styles.css';
 
 import type { OfficeStore } from '../net/store';
+import { enviarPresencaHttp, novaAba, PresencaDaAba } from '../net/presenca';
 import { buscarVersaoHttp, mockVersao, VersaoFeed } from '../net/versao';
 import type { Selection, WorldApi } from '../world/api';
 import type { PanelName, UiComponent, UiContext } from './context';
@@ -23,6 +24,7 @@ import { HoverTip } from './hovertip';
 import { hasRunningShells } from './model';
 import { Notifier } from './notify';
 import { ConnectionBanner, EmptyState, Splash } from './overlays';
+import { ResumoPanel } from './resumo';
 import { focusPermission, nextPermissionAgent } from './permission';
 import { loadPrefs, safeLocalStorage, savePrefs, worldOptionsFrom, type UiPrefs } from './prefs';
 import { SettingsPopover } from './settings';
@@ -170,6 +172,8 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi,
   help = new HelpDialog();
   const day = new DayLauncher(ctx, (el) => root.append(el));
   topbar.addPanelButton(day.button);
+  const resumo = new ResumoPanel(ctx);
+  topbar.addPanelButton(resumo.button);
   // Botão direito numa sala (lista lateral ou escritório): renomear.
   const renamer = new RoomRenamer(ctx);
   ctx.renameRoom = (id, at) => renamer.open(id, at);
@@ -183,7 +187,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi,
   const scrim = h('div', { class: 'ui-scrim', attrs: { 'aria-hidden': 'true' }, on: { click: () => ctx.togglePanel('sidebar', false) } });
 
   root.classList.add('ui-root');
-  root.append(timelapse.vignette, topbar.el, sidebar.el, scrim, feed.el, drawer.el, terminal.el, timelapse.el, timelapse.badge, toasts.el, banner.el, update.el, empty.el, tip.el, settings.el, history.el, help.el, renamer.el, live, splash.el);
+  root.append(timelapse.vignette, topbar.el, sidebar.el, scrim, feed.el, drawer.el, terminal.el, timelapse.el, timelapse.badge, toasts.el, banner.el, update.el, empty.el, tip.el, settings.el, history.el, help.el, renamer.el, resumo.el, live, splash.el);
   area = new FreeArea(world, { root, topbar: topbar.el, sidebar: sidebar.el, drawer: drawer.el, feed: feed.el }, () => ({
     sidebar: panels.sidebar,
     feed: panels.feed,
@@ -206,7 +210,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi,
   });
   versao.start();
 
-  const components: UiComponent[] = [topbar, sidebar, drawer, terminal, history, feed, toasts, settings, empty, banner, tip, notifier, splash, timelapse, sound, day];
+  const components: UiComponent[] = [topbar, sidebar, drawer, terminal, history, feed, toasts, settings, empty, banner, tip, notifier, splash, timelapse, sound, day, resumo];
 
   // ---------------------------------------------------------------- renderização agrupada por quadro
   let rafId = 0;
@@ -281,6 +285,23 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi,
     if (!document.hidden && hasRunningShells(store.snapshot)) invalidate();
   }, SHELL_CLOCK_MS);
 
+  if (!store.mock) {
+    const presenca = new PresencaDaAba(
+      enviarPresencaHttp,
+      novaAba(),
+      document,
+      window,
+      (r) => {
+        resumo.definirSaida(r.saiuEm);
+        if (r.mostrar) resumo.open();
+      },
+    );
+    store.on('connection', (c) => {
+      if (c === 'open') void presenca.avisar();
+    });
+    presenca.start();
+  }
+
   addEventListener('keydown', (e) => onKey(e));
 
   function onKey(e: KeyboardEvent): void {
@@ -340,6 +361,11 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi,
       case 'O':
         e.preventDefault();
         ctx.camera('overview');
+        break;
+      case 'r':
+      case 'R':
+        e.preventDefault();
+        resumo.toggle();
         break;
       case 'm':
       case 'M':
