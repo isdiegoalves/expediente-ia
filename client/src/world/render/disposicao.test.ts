@@ -21,14 +21,20 @@ describe('lugar do balão', () => {
     expect(l).toMatchObject({ x: 188, w: 24, chip: true });
   });
 
-  it('alerta sobe um degrau e, sem espaço no meio, anda para o lado; nunca fica por cima', () => {
+  it('alerta sobe um degrau quando o meio de cima está livre', () => {
     const o = new Ocupacao();
-    o.ocupar(150, 80, 100, 20);
-    o.ocupar(150, 54, 100, 20);
+    o.ocupar(110, 80, 180, 20);
     const l = lugarDoBalao({ cx: 200, base: 100, w: 80, h: 20, chip: { w: 24, h: 20 }, degraus: 3 }, 1000, (x, y, w, h) => o.livre(x, y, w, h));
-    expect(l).not.toBeNull();
+    expect(l).toEqual({ x: 160, y: 54, w: 80, h: 20, chip: false, degraus: 1 });
+  });
+
+  it('alerta com o meio tomado em todos os degraus anda para o lado, com o texto; nunca fica por cima', () => {
+    const o = new Ocupacao();
+    for (const y of [80, 54, 28, 2]) o.ocupar(196, y, 8, 20);
+    const l = lugarDoBalao({ cx: 200, base: 100, w: 80, h: 20, chip: { w: 24, h: 20 }, degraus: 3 }, 1000, (x, y, w, h) => o.livre(x, y, w, h));
+    expect(l).toMatchObject({ y: 80, w: 80, chip: false, degraus: 0 });
     expect(o.livre(l!.x, l!.y, l!.w, l!.h)).toBe(true);
-    expect(l!.chip).toBe(false);
+    expect(l!.x === 114 || l!.x === 206).toBe(true);
   });
 
   it('não sai da tela', () => {
