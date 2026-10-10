@@ -2,18 +2,21 @@
 // só guarda `{token, agentId, pid}` em memória: o pid vem do registro do próprio agente, nunca do cliente.
 import { randomBytes } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { PEDIDO_VALIDADE_MS } from '../../shared/foco';
 import { HttpError, readJson, sendJson } from './app';
 import { isLoopbackHost } from './guard';
 import type { NonceStore } from './ir';
 import type { Office } from '../model/office';
 
-export const PEDIDO_VALIDADE_MS = 10_000;
+export { PEDIDO_VALIDADE_MS };
+/** Um mod que perguntou há menos que isto ainda está de pé (ele pergunta a cada segundo). */
+export const MOD_RECENTE_MS = 3000;
 /** Quanto o resultado fica consultável depois que o pedido nasceu. */
 const RETENCAO_MS = 60_000;
 
 export const RESULTADOS = ['focado', 'sem-painel', 'nao-e-claude'] as const;
 export type ResultadoFoco = (typeof RESULTADOS)[number];
-export type EstadoFoco = 'pendente' | 'assumido' | 'vencido' | ResultadoFoco;
+export type EstadoFoco = 'pendente' | 'assumido' | 'vencido' | 'cancelado' | ResultadoFoco;
 
 interface Pedido {
   token: string;
@@ -21,6 +24,7 @@ interface Pedido {
   pid: number;
   criadoEm: number;
   assumido: boolean;
+  cancelado?: boolean;
   resultado?: ResultadoFoco;
 }
 
@@ -29,6 +33,7 @@ export type Assumir = { ok: true; pid: number } | { ok: false; motivo: 'desconhe
 export class FocoStore {
   private readonly porToken = new Map<string, Pedido>();
   private readonly porAgente = new Map<string, string>();
+  private ultimaConsultaDoMod = -Infinity;
 
   constructor(private readonly now: () => number) {}
 
@@ -43,9 +48,23 @@ export class FocoStore {
     return token;
   }
 
+  /** Algum mod perguntou há pouco: só então vale oferecer o foco no navegador. */
+  modAtivo(): boolean {
+    return this.now() - this.ultimaConsultaDoMod <= MOD_RECENTE_MS;
+  }
+
+  /** O navegador desistiu: o pedido ainda não assumido deixa de poder ser executado. */
+  cancelar(token: string): boolean {
+    const p = this.porToken.get(token);
+    if (!p || p.assumido) return false;
+    p.cancelado = true;
+    return true;
+  }
+
   pendentes(): { token: string; pid: number }[] {
     this.varrer();
-    return [...this.porToken.values()].filter((p) => !p.assumido && !this.vencido(p)).map(({ token, pid }) => ({ token, pid }));
+    this.ultimaConsultaDoMod = this.now();
+    return [...this.porToken.values()].filter((p) => !p.assumido && !p.cancelado && !this.vencido(p)).map(({ token, pid }) => ({ token, pid }));
   }
 
   /** Só o primeiro assume. */
@@ -53,7 +72,7 @@ export class FocoStore {
     const p = this.porToken.get(token);
     if (!p) return { ok: false, motivo: 'desconhecido' };
     if (p.assumido) return { ok: false, motivo: 'ja-assumido' };
-    if (this.vencido(p)) return { ok: false, motivo: 'vencido' };
+    if (p.cancelado || this.vencido(p)) return { ok: false, motivo: 'vencido' };
     p.assumido = true;
     return { ok: true, pid: p.pid };
   }
@@ -72,6 +91,7 @@ export class FocoStore {
     if (!p) return undefined;
     if (p.resultado) return p.resultado;
     if (p.assumido) return 'assumido';
+    if (p.cancelado) return 'cancelado';
     return this.vencido(p) ? 'vencido' : 'pendente';
   }
 
@@ -122,8 +142,16 @@ export async function handleFocarRoute(req: IncomingMessage, res: ServerResponse
   sendJson(res, 200, { token: focos.criar(id, src.pid) });
 }
 
-/** `GET /api/focos/:token`: o navegador consulta o andamento do pedido que fez. */
+/** `GET /api/focos/:token`: o andamento do pedido. `DELETE`: o navegador desistiu, e o pedido não assumido morre. */
 export function handleFocoEstado(req: IncomingMessage, res: ServerResponse, token: string, { focos }: Pick<FocarDeps, 'focos'>): void {
+  if (req.method === 'DELETE') {
+    if (!soLocal(req, res)) return;
+    const site = req.headers['sec-fetch-site'];
+    if (site !== undefined && site !== 'none' && site !== 'same-origin') return sendJson(res, 403, { error: 'pedido de outra origem' });
+    req.resume();
+    if (focos.estado(token) === undefined) return sendJson(res, 404, { error: 'pedido desconhecido' });
+    return sendJson(res, 200, { cancelado: focos.cancelar(token) });
+  }
   if (!metodo(req, res, 'GET') || !soLocal(req, res)) return;
   const estado = focos.estado(token);
   if (!estado) return sendJson(res, 404, { error: 'pedido desconhecido' });

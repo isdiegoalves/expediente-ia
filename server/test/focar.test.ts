@@ -4,7 +4,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { IrInfo } from '../../shared/types';
 import { AccountsService } from '../accounts/service';
 import { createApiHandler } from '../http/app';
-import { PEDIDO_VALIDADE_MS } from '../http/focar';
+import { ESPERA_ASSUMIR_MS } from '../../shared/foco';
+import { FOCO_POLL_MS } from '../../mod/expediente/hooks/foco';
+import { MOD_RECENTE_MS, PEDIDO_VALIDADE_MS } from '../http/focar';
 import { createRequestGuard } from '../http/guard';
 import { Hub } from '../http/sse';
 import { NONCE_VALIDADE_MS } from '../http/ir';
@@ -100,6 +102,10 @@ afterEach(async () => {
 });
 
 describe('GET /api/agentes/:id/ir: oferta de foco', () => {
+  beforeEach(async () => {
+    await pendentes();
+  });
+
   it('terminal viva com pid oferece focar; o rótulo do projeto vira "Nova sessão neste projeto"', async () => {
     const j = await ir('.claude:507');
     expect(j.focar).toBe(true);
@@ -112,6 +118,13 @@ describe('GET /api/agentes/:id/ir: oferta de foco', () => {
     agente('.claude:510', { entrypoint: 'claude-desktop' });
     agente('sem-pid');
     for (const id of ['.claude:508', '.claude:509', '.claude:510', 'sem-pid']) expect((await ir(id)).focar).toBeUndefined();
+  });
+
+  it('sem mod que tenha perguntado há pouco não oferece focar, e oferece de novo quando ele volta', async () => {
+    relogio += MOD_RECENTE_MS + 1;
+    expect((await ir('.claude:507')).focar).toBeUndefined();
+    await pendentes();
+    expect((await ir('.claude:507')).focar).toBe(true);
   });
 
   it('o JSON do /ir para outra origem continua sem nonce', async () => {
@@ -196,7 +209,7 @@ describe('pedido de foco', () => {
     expect((await pedir(`/api/focos/${a}`)).status).toBe(404);
   });
 
-  it('vence em 10 s: some dos pendentes, não se assume e o estado é vencido', async () => {
+  it('vence no prazo: some dos pendentes, não se assume e o estado é vencido', async () => {
     const token = await pedirFoco();
     relogio += PEDIDO_VALIDADE_MS;
     expect(await estado(token)).toBe('pendente');
@@ -204,6 +217,38 @@ describe('pedido de foco', () => {
     expect(await pendentes()).toEqual([]);
     expect(await estado(token)).toBe('vencido');
     expect((await assumir(token)).status).toBe(410);
+  });
+
+  it('o pedido não vive mais que a espera do navegador mais uma consulta do mod', () => {
+    expect(PEDIDO_VALIDADE_MS).toBeLessThanOrEqual(ESPERA_ASSUMIR_MS + FOCO_POLL_MS);
+  });
+
+  it('pedido cancelado pelo navegador não é assumível nem listado, e o estado diz cancelado', async () => {
+    const token = await pedirFoco();
+    const r = await pedir(`/api/focos/${token}`, { method: 'DELETE' });
+    expect(r.status).toBe(200);
+    expect(JSON.parse(r.body)).toEqual({ cancelado: true });
+    expect(await pendentes()).toEqual([]);
+    expect(await estado(token)).toBe('cancelado');
+    expect((await assumir(token)).status).toBe(410);
+  });
+
+  it('cancelar depois de assumido não desfaz: o foco já está em andamento', async () => {
+    const token = await pedirFoco();
+    await assumir(token);
+    expect(JSON.parse((await pedir(`/api/focos/${token}`, { method: 'DELETE' })).body)).toEqual({ cancelado: false });
+    expect(await estado(token)).toBe('assumido');
+  });
+
+  it('o cancelamento tem as travas: Host de rede e cross-site 403, token desconhecido 404, terminal desligado 403', async () => {
+    const token = await pedirFoco();
+    expect((await pedir(`/api/focos/${token}`, { method: 'DELETE', headers: { host: '192.168.0.9:4848' } })).status).toBe(403);
+    expect((await pedir(`/api/focos/${token}`, { method: 'DELETE', headers: { 'sec-fetch-site': 'cross-site' } })).status).toBe(403);
+    expect((await pedir(`/api/focos/${'0'.repeat(32)}`, { method: 'DELETE' })).status).toBe(404);
+    terminalLigado = false;
+    expect((await pedir(`/api/focos/${token}`, { method: 'DELETE' })).status).toBe(403);
+    terminalLigado = true;
+    expect(await estado(token)).toBe('pendente');
   });
 
   it('assumir é único: o segundo recebe 409 e o pedido sai dos pendentes', async () => {

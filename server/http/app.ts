@@ -307,7 +307,7 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
         sendJson(res, 400, { error: 'id inválido' });
         return true;
       }
-      handleIrRoute(req, res, url, id, { office, nonces });
+      handleIrRoute(req, res, url, id, { office, nonces, modAtivo: () => focos.modAtivo() });
       return true;
     }
     if (path.startsWith('/api/agents/')) {

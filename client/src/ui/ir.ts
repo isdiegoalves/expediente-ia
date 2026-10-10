@@ -1,6 +1,7 @@
 // "Ir para a sessão": pede o comando seguro ao servidor no clique e o copia direto para a área de transferência.
 // O comando só aparece na tela se a cópia for recusada, já selecionado. Em terminal viva, o clique antes pede ao
 // mod do Claude Code que traga o painel da sessão à frente e só cai na cópia se isso não der certo.
+import { ESPERA_ASSUMIR_MS } from '../../../shared/foco';
 import type { IrInfo } from '../../../shared/types';
 import { copyText, h, setHidden, setText } from './dom';
 
@@ -16,7 +17,6 @@ const AVISO_SEM_RESPOSTA = 'O app não respondeu em 2 s: os atalhos externos del
 
 export const ROTULO_IR = 'Ir para a sessão';
 export const ROTULO_FOCAR = 'Focar a sessão';
-const ESPERA_ASSUMIR_MS = 3000;
 const ESPERA_RESULTADO_MS = 12_000;
 const INTERVALO_MS = 250;
 const MOTIVOS: Record<string, string> = {
@@ -31,6 +31,8 @@ export type DesfechoFoco = { tipo: 'focado' } | { tipo: 'motivo'; texto: string 
 export interface FocoDeps {
   post(url: string, corpo: unknown): Promise<{ ok: boolean; json: unknown }>;
   get(url: string): Promise<{ ok: boolean; json: unknown }>;
+  /** O navegador desistiu do pedido: o servidor o descarta se ninguém assumiu. */
+  apagar(url: string): Promise<unknown>;
   esperar(ms: number): Promise<void>;
   agora(): number;
   /** Falso quando o clique já foi superado por outro agente ou outro clique. */
@@ -41,6 +43,11 @@ function campo(v: unknown, nome: string): unknown {
   return v && typeof v === 'object' ? (v as Record<string, unknown>)[nome] : undefined;
 }
 
+async function desistir(io: FocoDeps, token: string): Promise<DesfechoFoco> {
+  await io.apagar(`/api/focos/${token}`);
+  return { tipo: 'ninguem' };
+}
+
 /** Pede o foco e acompanha o pedido: 3 s para alguém assumir, depois mais tempo para o resultado. */
 export async function focarSessao(io: FocoDeps, id: string, nonce: string): Promise<DesfechoFoco> {
   const pedido = await io.post(`/api/agentes/${encodeURIComponent(id)}/focar`, { n: nonce });
@@ -49,13 +56,13 @@ export async function focarSessao(io: FocoDeps, id: string, nonce: string): Prom
   const inicio = io.agora();
   for (;;) {
     await io.esperar(INTERVALO_MS);
-    if (!io.vale()) return { tipo: 'ninguem' };
+    if (!io.vale()) return desistir(io, token);
     const r = await io.get(`/api/focos/${token}`);
     const estado = r.ok ? campo(r.json, 'estado') : undefined;
     if (estado === 'focado') return { tipo: 'focado' };
     if (typeof estado === 'string' && MOTIVOS[estado]) return { tipo: 'motivo', texto: MOTIVOS[estado] };
     const gasto = io.agora() - inicio;
-    if (estado === 'assumido' ? gasto > ESPERA_RESULTADO_MS : gasto > ESPERA_ASSUMIR_MS) return estado === 'assumido' ? { tipo: 'motivo', texto: 'a sessão não respondeu' } : { tipo: 'ninguem' };
+    if (estado === 'assumido' ? gasto > ESPERA_RESULTADO_MS : gasto > ESPERA_ASSUMIR_MS) return estado === 'assumido' ? { tipo: 'motivo', texto: 'a sessão não respondeu' } : desistir(io, token);
   }
 }
 
@@ -169,6 +176,7 @@ export class IrSection {
     return {
       post: (url, corpo) => chamar(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(corpo) }),
       get: (url) => chamar(url),
+      apagar: (url) => chamar(url, { method: 'DELETE', headers: { 'content-type': 'application/json' } }),
       esperar: (ms) => new Promise((ok) => setTimeout(ok, ms)),
       agora: Date.now,
       vale: () => req === this.req,

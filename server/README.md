@@ -79,7 +79,8 @@ festa) ou 10 min. Push só avisa. O mesmo CI visto de novo em 2 min não repete 
 | `POST /api/demo` | `{enabled: boolean}` liga/desliga agentes simulados (misturados aos reais) |
 | `GET /api/mod/summary?account=&session=` | `ModSummary` para o mod do Claude Code: `{version, agents, working, waiting:[{id, name, room, account, waitingFor, since, answerable}], usage:[{id, name, context?, compactions, lastCompaction?, cost?}], self?}`, sem o demo e sem a sessão de quem pergunta (ver abaixo) |
 | `POST /api/agentes/:id/focar` | `{n}`: pede o foco do painel da sessão de terminal viva (as travas do `/ir?abrir=1`: Host local, `Origin` e `Sec-Fetch-Site` da mesma origem, JSON, nonce de uso único preso ao agente). Responde `{token}`; 409 se o agente não é terminal viva com pid |
-| `GET /api/focos/:token` | `{estado}` do pedido: `pendente`, `assumido`, `focado`, `sem-painel`, `nao-e-claude` ou `vencido`; 404 se desconhecido (pedidos somem 60 s depois de criados) |
+| `GET /api/focos/:token` | `{estado}` do pedido: `pendente`, `assumido`, `focado`, `sem-painel`, `nao-e-claude`, `cancelado` ou `vencido`; 404 se desconhecido (pedidos somem 60 s depois de criados) |
+| `DELETE /api/focos/:token` | o navegador desistiu: um pedido ainda não assumido deixa de poder ser assumido (`{cancelado: true}`; `false` se já assumido) |
 | `GET /api/mod/focos` | (mod) `{focos:[{token, pid}]}`: pedidos ainda não assumidos e dentro dos 10 s de validade |
 | `POST /api/mod/focos/:token/assumir` | (mod) o primeiro recebe `{pid}`; os demais 409 (já assumido), 410 (vencido) ou 404 |
 | `POST /api/mod/focos/:token/resultado` | (mod) `{resultado: 'focado' \| 'sem-painel' \| 'nao-e-claude'}`, só de quem assumiu e uma vez (senão 409) |
@@ -282,12 +283,12 @@ O repositório é também um marketplace de plugins do Claude Code (`.claude-plu
 ### Focar a sessão pelo navegador
 
 `GET /api/agentes/:id/ir` traz `focar: true` quando o agente é uma sessão de terminal viva (origem `terminal`, id
-`<conta>:<pid>`). O navegador então chama `POST /api/agentes/:id/focar` e consulta `GET /api/focos/:token`. O pedido
-(`http/focar.ts`, em memória, um por agente) guarda `{token, agentId, pid, criadoEm}` e vale 10 s; o `pid` sai do id do
+`<conta>:<pid>`) e algum mod perguntou por pedidos nos últimos 3 s; sem mod, o navegador vai direto à cópia. O navegador então chama `POST /api/agentes/:id/focar` e consulta `GET /api/focos/:token`. O pedido
+(`http/focar.ts`, em memória, um por agente) guarda `{token, agentId, pid, criadoEm}` e vale 4 s (a espera de 3 s do navegador mais uma consulta do mod, `shared/foco.ts`); o `pid` sai do id do
 próprio agente, nunca do cliente, e o servidor não recebe argv nem caminho. O mod do Claude Code, que roda na máquina,
 busca os pedidos, assume um e executa o foco (ver [`mod/README.md`](../mod/README.md)). Todas as rotas de foco exigem a trava de publicação do terminal (403 com
 ela desligada) e Host local, como as de permissão, e as do mod só atendem loopback: qualquer processo local pode chamá-las (risco aceito; fecha com o token local de uma
-fatia futura). Sem nenhum mod assumindo, o navegador desiste em 3 s e copia o comando.
+fatia futura). Se ninguém assume em 3 s, o navegador cancela o pedido (`DELETE`) e copia o comando.
 
 ## Contexto e custo por agente
 

@@ -45,6 +45,7 @@ function io(estados: (t: number) => string | undefined, post: { ok: boolean; jso
       const estado = estados(t);
       return { ok: estado !== undefined, json: { estado } };
     },
+    apagar: async (url) => void chamadas.push(`DELETE ${url}`),
     esperar: async (ms) => void (t += ms),
     agora: () => t,
     vale,
@@ -65,6 +66,7 @@ describe('focarSessao', () => {
     expect(await focarSessao(w.deps, 'a:1', 'n')).toEqual({ tipo: 'ninguem' });
     expect(w.tempo()).toBeGreaterThanOrEqual(3000);
     expect(w.tempo()).toBeLessThan(3500);
+    expect(w.chamadas.at(-1)).toBe(`DELETE /api/focos/${TOKEN}`);
   });
 
   it('assumido e ainda sem resposta passa dos 3 s, mas desiste em 12 s', async () => {
@@ -96,6 +98,6 @@ describe('focarSessao', () => {
     const p = focarSessao(w.deps, 'a:1', 'n');
     vale = false;
     expect(await p).toEqual({ tipo: 'ninguem' });
-    expect(w.chamadas).toHaveLength(1);
+    expect(w.chamadas).toEqual([expect.stringMatching(/^POST /), `DELETE /api/focos/${TOKEN}`]);
   });
 });
