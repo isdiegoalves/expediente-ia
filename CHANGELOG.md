@@ -10,6 +10,13 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Adicionado
+
+- Resumo "desde que você saiu": ao voltar à janela depois de 30 minutos fora, abre um painel sem rolagem com quantas
+  sessões terminaram, quais travaram (com o erro), quais esperam você e, por sessão, a última tarefa em andamento. Também
+  abre pelo botão da barra superior ou pela tecla R, e `/escritorio resumo` no Claude Code mostra o mesmo em texto, sem
+  gastar tokens. O servidor guarda a hora da saída em `resumo.json` e ela sobrevive ao reinício.
+
 ## [1.1.0] - 2026-10-10
 
 O melhor do Habblaud 0.8.0 e de dois forks, trazido com a autoria preservada; o aviso de versão nova sem o servidor

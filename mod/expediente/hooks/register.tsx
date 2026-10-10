@@ -14,6 +14,8 @@
 //    (`$.session.surfaces()` vazia = `claude -p`/SDK: nada a mostrar, nada a perguntar).
 // 3. /escritorio: sessões por estado com contexto e custo, respondidas pelo próprio mod (não chama o modelo, não
 //    gasta uso), e um painel com o caminho de cada sessão (link do app, foco do painel do terminal ou o comando seguro).
+//    `/escritorio resumo`: contagens (terminaram, travaram, esperam) e a última tarefa de cada sessão desde que você saiu
+//    do navegador (GET /api/resumo), também sem o modelo.
 // 4. Ponte do app desktop (ponte.ts): a cada 5 s copia 3 campos por sessão do app para
 //    ~/.expediente/host/sessoes-app.json, que o servidor no container lê.
 // 5. Amostra horária (amostra.ts): contagem por entrypoint × kind e nomes de programa da cadeia de pais das sessões vivas.
@@ -35,7 +37,7 @@ import type { EngineInterface, HttpInit, HttpResponse, Register, RenderSurface, 
 import { abrirUrl } from './abrir'
 import { FOCO_OFFLINE_MS, FOCO_POLL_MS, lerPedidos, lerPidAssumido, type ResultadoFoco } from './foco'
 import { acoesDaSessao, detalheTexto, lerIr, listaTexto, nomeDaLinha, pidDoId, porEstado, type IrView } from './escritorio'
-import { offlineText, outdatedText, parseSummary, statusText, summaryText, type Summary } from './resumo'
+import { offlineText, outdatedText, parseResumo, parseSummary, resumoTexto, statusText, summaryText, type Summary } from './resumo'
 import { argvAppRodando, argvFocoTerminalApp, argvFocoZellij, argvLeitorPainel, argvProgramaDe, argvTrazerWezTerm, argvTtyDe, ehClaude, lerPainel, lerTty, type PainelZellij } from './painel'
 import { AMOSTRA_MS, argvPaiDe, arquivoAmostraOf, contarMix, contarProgramas, ehAmostraDaConta, horaDe, lerEntradaRegistro, marcadorAmostraOf, MAX_AMOSTRAS, MAX_NIVEIS, MAX_PIDS, paiDe, pastaAmostrasOf, type EntradaRegistro } from './amostra'
 import { appDirOf, filtrarSessaoApp, FRESCO_MS, PONTE_MS, sessoesAppFileOf, type SessaoApp } from './ponte'
@@ -616,10 +618,21 @@ async function expedienteText($: EngineInterface): Promise<string> {
   return summaryText(asked.summary, url)
 }
 
+/** O texto do /escritorio resumo: contagens e a última tarefa de cada sessão, sem esta sessão. */
+async function resumoText($: EngineInterface): Promise<string> {
+  const e = await readEnv($)
+  const url = `http://localhost:${e.port}`
+  const res = await getExpediente($, e.port, `/api/resumo${await consulta($, e)}`)
+  if (!res) return offlineText(url)
+  if (res.status === 404 && res.text.includes('rota desconhecida')) return outdatedText(url)
+  const resumo = res.ok ? parseResumo(res.text) : undefined
+  return resumo ? resumoTexto(resumo, url) : offlineText(url)
+}
+
 export const register: Register = (on) => {
   on('session.start', async ($, e, next) => {
     try {
-      await $.command.register({ name: 'escritorio', description: 'Resumo do Expediente: quantos agentes, quem trabalha e quem precisa de você' })
+      await $.command.register({ name: 'escritorio', description: 'Resumo do Expediente: quantos agentes, quem trabalha e quem precisa de você; "resumo" mostra o que mudou desde que você saiu' })
     } catch {
       // sem o comando, o resto segue
     }
@@ -663,8 +676,9 @@ export const register: Register = (on) => {
     return next(e)
   })
 
-  on('command.run', { command: 'escritorio' }, async ($) => {
+  on('command.run', { command: 'escritorio' }, async ($, e) => {
     try {
+      if (e.args.trim().toLowerCase() === 'resumo') return { text: await resumoText($) }
       return { text: await expedienteText($) }
     } catch {
       return { text: offlineText(`http://localhost:${env?.port ?? DEFAULT_PORT}`) }

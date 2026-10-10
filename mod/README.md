@@ -37,6 +37,10 @@ partir da 2.1.287; a API ainda é "early access" e pode mudar entre versões. A 
   Esta sessão: contexto 50 k de 200 k (25%)
   ```
 
+  `/escritorio resumo`: contagens (terminaram, travaram, esperam você, trabalhando) e, por sessão, a última tarefa em
+  andamento desde que você saiu do navegador (`GET /api/resumo`, só com Host local), também sem o modelo e sem esta sessão.
+  Sem saída registrada, conta desde que o Expediente subiu.
+
   Fora do ar: `O Expediente não respondeu em http://localhost:4848. Para subir: npm run docker:up na pasta do Expediente.`
 
   Onde a sessão desenha, o comando também abre o painel "Escritório" com o caminho de cada sessão, renovado a cada 15 s
