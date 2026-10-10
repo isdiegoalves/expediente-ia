@@ -10,6 +10,12 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+## [1.1.0] - 2026-10-10
+
+O melhor do Habblaud 0.8.0 e de dois forks, trazido com a autoria preservada; o aviso de versão nova sem o servidor
+acessar a internet; e a documentação com a identidade do Expediente. Para atualizar: `git pull`, `npm run docker:up` e
+`npm run instalar`.
+
 ### Adicionado
 
 - **Aviso de versão nova, alimentado pelo host.** `npm run versao` (no seu computador, quando quiser ou agendado)
@@ -27,6 +33,11 @@ do meio (0.**3**.0).
   decoração por cima do tema; a escolha fica no navegador e as cores vêm do tema como dado.
 - Verificação automática no GitHub (Actions): a cada push na `main`, nas branches de fatia e a cada pull request, o
   projeto roda `typecheck`, testes e build no Node 22.12 e no 24, com as ações fixadas por versão exata.
+
+### Alterado
+
+- A documentação fala do Expediente e do repositório dele: a instalação clona `isdiegoalves/expediente-ia`, os links
+  de release e de comparação são do Expediente, e o histórico até a 0.4.0 é apresentado como o do projeto de origem.
 
 ### Corrigido
 
@@ -101,5 +112,6 @@ Até a 0.4.0 o histórico é o do projeto de origem, o Habblaud, de onde o Exped
 [README](README.md)): o [CHANGELOG dele no commit `cb0c0bb`](https://github.com/marmottajr/habblaud/blob/cb0c0bb/CHANGELOG.md)
 lista o que entrou em cada versão. O Expediente tem releases próprias a partir da 1.0.0.
 
-[Não lançado]: https://github.com/isdiegoalves/expediente-ia/compare/v1.0.0...HEAD
+[Não lançado]: https://github.com/isdiegoalves/expediente-ia/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/isdiegoalves/expediente-ia/releases/tag/v1.1.0
 [1.0.0]: https://github.com/isdiegoalves/expediente-ia/releases/tag/v1.0.0
