@@ -35,3 +35,8 @@ export function ausenciaDoMock(valor: string | null): number | undefined {
   const m = valor ? /^(\d{1,3})(h|m)$/.exec(valor) : null;
   return m ? Number(m[1]) * (m[2] === 'h' ? 3_600_000 : 60_000) : undefined;
 }
+
+/** Muda só quando o desenho muda: `agora` da vista fica de fora e o relógio entra por minuto ("há 1 h"). */
+export function chaveDoDesenho(view: ResumoView, alturaDaJanela: number, saiuConhecida: boolean, agora: number): string {
+  return JSON.stringify([{ ...view, agora: 0 }, alturaDaJanela, saiuConhecida, Math.floor(agora / 60_000)]);
+}

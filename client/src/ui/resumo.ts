@@ -6,7 +6,7 @@ import type { UiComponent, UiContext } from './context';
 import { h, iconButton, setText } from './dom';
 import { relativeTime } from './format';
 import { ICONS } from './icons';
-import { ausenciaDoMock, ausenciaTexto, ESTADO_ROTULO, MAX_LINHAS, maiorQueCabe, recortar } from './resumo-model';
+import { ausenciaDoMock, ausenciaTexto, chaveDoDesenho, ESTADO_ROTULO, MAX_LINHAS, maiorQueCabe, recortar } from './resumo-model';
 
 const ICONE =
   '<svg class="ui-px-icon" width="20" height="20" viewBox="0 0 10 10" shape-rendering="crispEdges" aria-hidden="true" focusable="false">' +
@@ -89,7 +89,7 @@ export class ResumoPanel implements UiComponent {
     }
     const agora = this.ctx.now();
     const view = montarResumo(snap, this.desde, agora);
-    const key = JSON.stringify([view, window.innerHeight, this.saiuConhecida, Math.floor(agora / 60_000)]);
+    const key = chaveDoDesenho(view, window.innerHeight, this.saiuConhecida, agora);
     if (key === this.drawn) return;
     this.drawn = key;
     this.desenhar(view);

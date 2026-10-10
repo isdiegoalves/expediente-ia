@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SessaoResumo } from '../../../shared/resumo';
-import { ausenciaDoMock, ausenciaTexto, MAX_LINHAS, maiorQueCabe, recortar } from './resumo-model';
+import { ausenciaDoMock, chaveDoDesenho, ausenciaTexto, MAX_LINHAS, maiorQueCabe, recortar } from './resumo-model';
 
 const sessao = (id: string): SessaoResumo => ({ id, nome: id, sala: 'loja', estado: 'trabalhando', desde: 0 });
 
@@ -30,5 +30,13 @@ describe('resumo: o que a janela desenha', () => {
     expect(ausenciaDoMock('90m')).toBe(5_400_000);
     expect(ausenciaDoMock('2 dias')).toBeUndefined();
     expect(ausenciaDoMock(null)).toBeUndefined();
+  });
+
+  it('a chave do desenho não muda com o relógio dentro do mesmo minuto, mas muda com o minuto e com o conteúdo', () => {
+    const vista = (agora: number, sessoes: SessaoResumo[] = []) => ({ desde: 0, agora, terminaram: 0, travaram: 0, esperam: 0, trabalhando: 0, sessoes });
+    const base = chaveDoDesenho(vista(60_000), 800, true, 60_000);
+    expect(chaveDoDesenho(vista(60_500), 800, true, 60_500)).toBe(base);
+    expect(chaveDoDesenho(vista(120_000), 800, true, 120_000)).not.toBe(base);
+    expect(chaveDoDesenho(vista(60_000, [sessao('a')]), 800, true, 60_000)).not.toBe(base);
   });
 });

@@ -85,4 +85,14 @@ describe('quando você saiu', () => {
     expect(p.ultimaSaida).toBeNull();
     expect(p.visivel('a').mostrar).toBe(false);
   });
+
+  it('oculta e depois pagehide mantém a hora da primeira saída', () => {
+    const p = new Presenca(null, relogio);
+    p.visivel('a');
+    p.oculta('a');
+    const primeira = p.ultimaSaida;
+    agora += 60_000;
+    expect(p.oculta('a').saiuEm).toBe(primeira);
+    expect(p.ultimaSaida).toBe(primeira);
+  });
 });

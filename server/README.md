@@ -81,6 +81,8 @@ festa) ou 10 min. Push só avisa. O mesmo CI visto de novo em 2 min não repete 
 | `GET /api/health` | `{ok, version, demo, docker, terminal, permissions, sources, accounts:[{id, usageStatus}]}` |
 | `POST /api/demo` | `{enabled: boolean}` liga/desliga agentes simulados (misturados aos reais) |
 | `POST /api/social/ritmo` | `{ritmo: 'calm' \| 'normal' \| 'lively'}` muda o ritmo das rodas e dos passeios para todas as abas; trava do terminal e Host local |
+| `GET /api/resumo?account=&session=` | `ResumoView` "desde que você saiu": `{desde, agora, terminaram, travaram, esperam, trabalhando, sessoes:[{id, nome, sala, estado, motivo?, tarefa?:{rotulo, texto}, desde}]}`, sem o demo e sem a sessão de quem pergunta; `desde` é a última saída gravada (ou a hora em que o servidor subiu); só Host local |
+| `POST /api/resumo/presenca` | `{aba, visivel}`: a aba avisa que ficou visível ou oculta; `200 {saiuEm, mostrar}` (`mostrar`: volta depois de 30 min fora); trava do terminal e Host local |
 | `GET /api/mod/summary?account=&session=` | `ModSummary` para o mod do Claude Code: `{version, agents, working, waiting:[{id, name, room, account, waitingFor, since, answerable}], usage:[{id, name, context?, compactions, lastCompaction?, cost?, coins?}], self?}`, sem o demo e sem a sessão de quem pergunta (ver abaixo) |
 | `POST /api/agentes/:id/focar` | `{n}`: pede o foco do painel da sessão de terminal viva (as travas do `/ir?abrir=1`: Host local, `Origin` e `Sec-Fetch-Site` da mesma origem, JSON, nonce de uso único preso ao agente). Responde `{token}`; 409 se o agente não é terminal viva com pid |
 | `GET /api/focos/:token` | `{estado}` do pedido: `pendente`, `assumido`, `focado`, `sem-painel`, `nao-e-claude`, `cancelado` ou `vencido`; 404 se desconhecido (pedidos somem 60 s depois de criados) |
@@ -289,7 +291,7 @@ Regras:
 | `EXPEDIENTE_PORT` | `4848` | porta HTTP no modo Node (o Docker publica sempre `127.0.0.1:4848`) |
 | `EXPEDIENTE_TERMINAL` | — | `0` desliga o terminal somente leitura |
 | `EXPEDIENTE_CLAUDE_DIRS` | — | config dirs separados por vírgula; substitui a detecção (`~/.claude*` com `projects/` ou `sessions/` + `CLAUDE_CONFIG_DIR`) |
-| `EXPEDIENTE_DATA_DIR` | `~/.expediente` (Docker: `/data`) | estado do Expediente (nomes e personagens dos projetos persistidos em `names.json`, carteiras da vida social em `social.json`, linha do tempo em `timeline/`, estatísticas do Meu dia em `stats/`) |
+| `EXPEDIENTE_DATA_DIR` | `~/.expediente` (Docker: `/data`) | estado do Expediente (nomes e personagens dos projetos persistidos em `names.json`, carteiras da vida social em `social.json`, a hora da última saída das abas em `resumo.json`, linha do tempo em `timeline/`, estatísticas do Meu dia em `stats/`) |
 | `EXPEDIENTE_TIMELINE` | ligado | `0` desliga a gravação da linha do tempo do timelapse |
 | `EXPEDIENTE_DEMO` | desligado | `1` liga o modo demonstração ao iniciar |
 | `EXPEDIENTE_ACCOUNTS` | — | JSON com metadados das contas vindos do host (Docker): `[{id, configDir, mountDir, short, name, email, organization, plan, color, cachedUsage}]`, casados por `id`, `mountDir` ou `configDir` |
