@@ -1,7 +1,11 @@
 // Medição da CPU do servidor nativo de teste (dist/server/index.js) sobre um HOME fictício com sessões
 // vivas e transcripts sintéticos, com e sem aba conectada.
 // Uso:
-//   node scripts/medir-servidor.mjs --saida <pasta> [--cenarios parado-0,parado-1,vivo-0,vivo-1] [--duracao 120] [--aquecer 20] [--sessoes 18]
+//   node scripts/medir-servidor.mjs --saida <pasta> [--cenarios parado-0,parado-1,vivo-0,vivo-1] [--duracao 120] [--aquecer 20] [--sessoes 18] [--container [--dist <pasta>]]
+//
+// Com --container o servidor roda na imagem expediente:local (docker run, nome expediente-medida-<pid>, porta publicada em
+// 127.0.0.1, registro e projects do HOME fictício montados somente leitura) e a CPU vem do cpu.stat do cgroup do próprio container.
+// Com --dist a pasta de build indicada entra somente leitura sobre /app/dist da imagem, para medir o código atual sem reconstruir a imagem. Nunca mexe em outro container; o container de medida é removido no fim.
 //
 // Cenários: <carga>-<abas>.
 //   parado  todas as sessões ociosas, nenhum transcript muda
@@ -32,6 +36,8 @@ if (!saida) {
 const duracao = Number(opt('duracao', '120'));
 const aquecer = Number(opt('aquecer', '20'));
 const nSessoes = Number(opt('sessoes', '18'));
+const emContainer = args.includes('--container');
+const dist = opt('dist', '');
 const cenarios = opt('cenarios', 'parado-0,parado-1,vivo-0,vivo-1').split(',');
 const INTERVALO_CPU_MS = 5_000;
 
@@ -43,6 +49,16 @@ function portaLivre(porta) {
     s.once('error', () => ok(false));
     s.listen(porta, '127.0.0.1', () => s.close(() => ok(true)));
   });
+}
+
+function cpuDoContainer(nome) {
+  const r = execFileSync('docker', ['exec', nome, 'cat', '/sys/fs/cgroup/cpu.stat'], { encoding: 'utf8' });
+  return Number(/usage_usec (\d+)/.exec(r)[1]) / 1e6;
+}
+
+function bytesDaLinhaDoTempoNoContainer(nome) {
+  const r = execFileSync('docker', ['exec', nome, 'sh', '-c', 'cat /data/timeline/*.jsonl 2>/dev/null | wc -c'], { encoding: 'utf8' });
+  return Number(r.trim());
 }
 
 function cpuSegundos(pid) {
@@ -83,20 +99,21 @@ async function medirCenario(id, servidor, sessoes) {
   }
 
   await dormir(aquecer * 1000);
-  const tamanhoAntes = tamanhoTimeline(servidor.dados);
+  const tamanho = () => (servidor.container ? bytesDaLinhaDoTempoNoContainer(servidor.container) : tamanhoTimeline(servidor.dados));
+  const tamanhoAntes = tamanho();
   const amostras = [];
-  let antes = { t: Date.now(), cpu: cpuSegundos(servidor.pid) };
+  let antes = { t: Date.now(), cpu: servidor.container ? cpuDoContainer(servidor.container) : cpuSegundos(servidor.pid) };
   const carga0 = loadavg();
   const fim = Date.now() + duracao * 1000;
   while (Date.now() < fim) {
     await dormir(Math.min(INTERVALO_CPU_MS, fim - Date.now()));
-    const agora = { t: Date.now(), cpu: cpuSegundos(servidor.pid) };
+    const agora = { t: Date.now(), cpu: servidor.container ? cpuDoContainer(servidor.container) : cpuSegundos(servidor.pid) };
     amostras.push(Math.max(0, ((agora.cpu - antes.cpu) / ((agora.t - antes.t) / 1000)) * 100));
     antes = agora;
   }
   const carga1 = loadavg();
-  const rssKb = Number(execFileSync('ps', ['-o', 'rss=', '-p', String(servidor.pid)], { encoding: 'utf8' }).trim());
-  const tamanhoDepois = tamanhoTimeline(servidor.dados);
+  const rssKb = servidor.container ? 0 : Number(execFileSync('ps', ['-o', 'rss=', '-p', String(servidor.pid)], { encoding: 'utf8' }).trim());
+  const tamanhoDepois = tamanho();
 
   if (escritor) clearInterval(escritor);
   leitores.forEach((c) => c.abort());
@@ -126,7 +143,7 @@ function tamanhoTimeline(dados) {
 }
 
 mkdirSync(saida, { recursive: true });
-const casa = mkdtempSync(resolve(tmpdir(), 'medir-servidor-casa-'));
+const casa = mkdtempSync(resolve(emContainer ? '/private/tmp' : tmpdir(), 'medir-servidor-casa-'));
 let servidor = null;
 let fabrica = null;
 try {
@@ -143,12 +160,25 @@ try {
   if (!porta) throw new Error('sem porta livre em 6700-6749');
   const dados = resolve(casa, 'dados');
   mkdirSync(dados, { recursive: true });
-  const filho = spawn(process.execPath, ['dist/server/index.js'], {
-    cwd: RAIZ,
-    stdio: 'ignore',
-    env: { PATH: process.env.PATH, HOME: casa, EXPEDIENTE_PORT: String(porta), EXPEDIENTE_DATA_DIR: dados, EXPEDIENTE_PONTE_DIR: resolve(casa, 'ponte') },
-  });
-  servidor = { porta, pid: filho.pid, filho, dados };
+  if (emContainer) {
+    const nome = `expediente-medida-${process.pid}`;
+    execFileSync('docker', [
+      'run', '-d', '--name', nome, '-p', `127.0.0.1:${porta}:4848`,
+      '-v', `${resolve(casa, '.claude/projects')}:/claude/conta/projects:ro`,
+      '-v', `${resolve(casa, '.claude/sessions')}:/claude/conta/sessions:ro`,
+      ...(dist ? ['-v', `${resolve(dist)}:/app/dist:ro`] : []),
+      '-e', 'EXPEDIENTE_CLAUDE_DIRS=/claude/conta',
+      '--read-only', '--tmpfs', '/tmp', '--cap-drop', 'ALL', 'expediente:local',
+    ]);
+    servidor = { porta, container: nome, dados };
+  } else {
+    const filho = spawn(process.execPath, ['dist/server/index.js'], {
+      cwd: RAIZ,
+      stdio: 'ignore',
+      env: { PATH: process.env.PATH, HOME: casa, EXPEDIENTE_PORT: String(porta), EXPEDIENTE_DATA_DIR: dados, EXPEDIENTE_PONTE_DIR: resolve(casa, 'ponte') },
+    });
+    servidor = { porta, pid: filho.pid, filho, dados };
+  }
   let subiu = false;
   for (let i = 0; i < 100 && !subiu; i++) {
     try {
@@ -159,7 +189,7 @@ try {
   }
   if (!subiu) throw new Error('servidor não subiu');
   const saude = await (await fetch(`http://127.0.0.1:${porta}/api/health`)).json().catch(() => null);
-  console.error(`servidor pid ${servidor.pid} porta ${porta}; ${sessoes.length} sessões; saúde: ${JSON.stringify(saude)?.slice(0, 200)}`);
+  console.error(`servidor ${servidor.container ?? `pid ${servidor.pid}`} porta ${porta}; ${sessoes.length} sessões; saúde: ${JSON.stringify(saude)?.slice(0, 200)}`);
 
   const resultados = [];
   for (const id of cenarios) {
@@ -178,7 +208,11 @@ try {
   writeFileSync(resolve(saida, 'resumo-servidor.md'), resumo + '\n');
   console.log(resumo);
 } finally {
-  if (servidor) {
+  if (servidor?.container) {
+    try {
+      execFileSync('docker', ['rm', '-f', '-v', servidor.container], { stdio: 'ignore' });
+    } catch {}
+  } else if (servidor) {
     try {
       process.kill(servidor.pid);
     } catch {}
