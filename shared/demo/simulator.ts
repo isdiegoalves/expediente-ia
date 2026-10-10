@@ -187,6 +187,8 @@ export interface DemoOptions {
   projects?: number;
   /** Subagentes trabalhando o tempo todo em cada sessão (repostos ao terminar); as sessões não encerram. */
   subs?: number;
+  /** Todas as sessões ficam ociosas para sempre: nada começa, termina ou chega (medição do escritório parado). */
+  quieto?: boolean;
   /** Prefixo de ids (o servidor usa "demo:" para não colidir com dados reais). */
   idPrefix?: string;
 }
@@ -202,6 +204,7 @@ export class DemoSimulator {
   private pool: DemoProject[];
   private subsPerSession: number;
   private fixedRooms: boolean;
+  private quiet: boolean;
   private prefix: string;
   /** Marca desta instância: ids de agentes/atividades/avisos não se repetem ao religar o demo. */
   private tag: string;
@@ -228,12 +231,13 @@ export class DemoSimulator {
     this.speed = opts.speed ?? 1;
     // o primeiro evento do GitHub vem logo (para os prints), os outros a cada 35–80 s
     this.ghRng = mulberry32(((opts.seed ?? hash32(String(now))) ^ 0x6a09e667) >>> 0);
-    this.nextGitHubAt = now + (10_000 + this.ghRng() * 10_000) / this.speed;
+    this.nextGitHubAt = opts.quieto ? Infinity : now + (10_000 + this.ghRng() * 10_000) / this.speed;
     this.prSeq = 12 + Math.floor(this.ghRng() * 80);
     this.target = opts.sessions ?? 4;
     this.prefix = opts.idPrefix ?? '';
     this.pool = projectPool(opts.projects);
     this.fixedRooms = opts.projects !== undefined;
+    this.quiet = !!opts.quieto;
     this.subsPerSession = Math.max(0, Math.floor(opts.subs ?? 0));
     this.tag = now.toString(36);
     this.accounts = this.prefix
@@ -250,10 +254,10 @@ export class DemoSimulator {
     );
     // Começa com o escritório já movimentado — e com alguém esperando um shell (a espera leva minutos;
     // sem isso, a primeira só apareceria depois do primeiro turno completo).
-    for (let i = 0; i < this.target - (this.subsPerSession > 0 ? 0 : 1); i++) this.spawnSession(now, true);
+    for (let i = 0; i < this.target - (this.subsPerSession > 0 || this.quiet ? 0 : 1); i++) this.spawnSession(now, true);
     const first = [...this.agents.values()].find((a) => a.info.kind === 'main');
-    if (first) this.startBackgroundShells(first, now, true);
-    this.nextSpawnAt = now + this.ms(20_000, 40_000);
+    if (first && !this.quiet) this.startBackgroundShells(first, now, true);
+    this.nextSpawnAt = this.quiet ? Infinity : now + this.ms(20_000, 40_000);
     // Descarta o feed/avisos de abertura.
     this.pendingFeed = [];
     this.pendingNotices = [];
@@ -459,11 +463,11 @@ export class DemoSimulator {
       project,
       rng,
       phase: 'idle',
-      phaseUntil: now + (warm ? this.ms(0, 8_000) : this.ms(2_000, 5_000)),
+      phaseUntil: this.quiet ? Infinity : now + (warm ? this.ms(0, 8_000) : this.ms(2_000, 5_000)),
       nextActionAt: now,
       actionsLeft: 0,
       children: [],
-      closeAt: this.subsPerSession > 0 ? Infinity : now + this.ms(150_000, 420_000),
+      closeAt: this.subsPerSession > 0 || this.quiet ? Infinity : now + this.ms(150_000, 420_000),
       taskCursor: 0,
       shellEnds: new Map(),
       shelledThisTurn: false,

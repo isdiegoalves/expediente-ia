@@ -29,7 +29,8 @@
     "release": "tsx scripts/release.ts",
     "versao": "tsx scripts/versao.ts",
     "preflight": "node scripts/preflight.mjs",
-    "medir:escala": "node scripts/medir-escala.mjs"
+    "medir:escala": "node scripts/medir-escala.mjs",
+    "medir:servidor": "node scripts/medir-servidor.mjs"
   },
   "devDependencies": {
     "@fontsource/pixelify-sans": "^5.3.0",

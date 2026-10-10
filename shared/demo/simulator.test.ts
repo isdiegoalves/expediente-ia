@@ -115,4 +115,17 @@ describe('DemoSimulator', () => {
     for (let t = 0; t <= 90_000; t += 1_000) sim.tick(t);
     expect(new Set(sim.snapshot().rooms.map((r) => r.name)).size).toBeLessThanOrEqual(6);
   });
+
+  it('quieto deixa todas as sessões ociosas e sem nenhuma mudança por 10 minutos', () => {
+    const sim = new DemoSimulator({ seed: 5, sessions: 6, quieto: true }, 0);
+    const assinatura = () => JSON.stringify(sim.snapshot(0).agents.map((a) => [a.id, a.status, a.activity?.id]));
+    sim.tick(0);
+    const inicial = assinatura();
+    let mudou = false;
+    for (let t = 1_000; t <= 600_000; t += 1_000) if (sim.tick(t).changed) mudou = true;
+    expect(sim.snapshot().agents.filter((a) => a.kind === 'main')).toHaveLength(6);
+    expect(sim.snapshot().agents.every((a) => a.status === 'idle')).toBe(true);
+    expect(assinatura()).toBe(inicial);
+    expect(mudou).toBe(false);
+  });
 });

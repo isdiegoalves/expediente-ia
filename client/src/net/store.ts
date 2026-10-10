@@ -60,7 +60,7 @@ export function reconnectDelay(attempt: number): number {
 }
 
 /** Opções do simulador a partir da query string (?speed=2&sessions=6; `projects` e `subs` montam a carga fixa de medição). `sessions=0` vale: escritório vazio. */
-export function mockOptionsFrom(search: string): { speed: number; sessions: number; projects?: number; subs?: number } {
+export function mockOptionsFrom(search: string): { speed: number; sessions: number; projects?: number; subs?: number; quieto?: boolean } {
   const params = new URLSearchParams(search);
   const num = (name: string): number | null => {
     const raw = params.get(name);
@@ -77,6 +77,7 @@ export function mockOptionsFrom(search: string): { speed: number; sessions: numb
     sessions: sessions !== null && sessions >= 0 ? Math.min(Math.floor(sessions), 40) : 4,
     ...(projects !== null && projects >= 1 ? { projects: Math.min(Math.floor(projects), 20) } : {}),
     ...(subs !== null && subs >= 1 ? { subs: Math.min(Math.floor(subs), 50) } : {}),
+    ...(params.get('quieto') === '1' ? { quieto: true } : {}),
   };
 }
 

@@ -55,6 +55,11 @@ describe('mockOptionsFrom', () => {
     expect(mockOptionsFrom('?projects=0&subs=abc')).toEqual({ speed: 1, sessions: 4 });
     expect(mockOptionsFrom('?projects=999&subs=999')).toMatchObject({ projects: 20, subs: 50 });
   });
+
+  it('quieto só entra quando vale 1', () => {
+    expect(mockOptionsFrom('?sessions=10&quieto=1')).toEqual({ speed: 1, sessions: 10, quieto: true });
+    expect(mockOptionsFrom('?quieto=0')).toEqual({ speed: 1, sessions: 4 });
+  });
 });
 
 describe('reconnectDelay', () => {

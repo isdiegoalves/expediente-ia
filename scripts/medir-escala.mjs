@@ -7,6 +7,8 @@
 //   b  o mesmo com a aba oculta (emulada na página: document.hidden, rAF parado, temporizadores a 1 Hz)
 //   c  o mesmo com a cena parada (o simulador deixa de gerar eventos)
 //   d  mock atual com 10 sessões      e  mock atual com 40 sessões
+//   i  10 sessões ociosas, nada acontece, medido depois de 5 min de aquecimento; ao fim, um movimento do mouse
+//      mede em quanto tempo e a quantos quadros por segundo o desenho volta
 //
 // O tempo de trabalho do quadro é a soma da duração dos callbacks de requestAnimationFrame de um mesmo
 // quadro (performance.now em volta de cada callback), não o intervalo entre quadros. A CPU vem do tempo de
@@ -47,6 +49,7 @@ const CENARIOS = {
   c: { titulo: '10 salas x 30 subagentes, cena parada', query: 'sessions=10&projects=10&subs=30', parada: true },
   d: { titulo: 'mock atual, 10 sessões', query: 'sessions=10' },
   e: { titulo: 'mock atual, 40 sessões', query: 'sessions=40' },
+  i: { titulo: '10 sessões ociosas, nada acontece (após 5 min)', query: 'sessions=10&quieto=1', aquecer: 300, despertar: true },
 };
 const escolhidos = opt('cenarios', 'a,b,c,d,e').split(',').map((s) => s.trim());
 for (const c of escolhidos) if (!CENARIOS[c]) throw new Error(`cenário desconhecido: ${c}`);
@@ -130,8 +133,8 @@ function estatistica(valores) {
 }
 
 const SCRIPT_DE_MEDIDA = `(() => {
-  const m = { quadros: [], ticks: [], congelado: false, oculto: false, cursor: -1, acc: 0 };
-  m.inicio = () => { m.quadros.length = 0; m.ticks.length = 0; m.cursor = -1; m.acc = 0; };
+  const m = { quadros: [], marcas: [], ticks: [], congelado: false, oculto: false, cursor: -1, acc: 0 };
+  m.inicio = () => { m.quadros.length = 0; m.marcas.length = 0; m.ticks.length = 0; m.cursor = -1; m.acc = 0; };
   const adiados = [];
   const raf = window.requestAnimationFrame.bind(window);
   window.requestAnimationFrame = (cb) => {
@@ -147,6 +150,7 @@ const SCRIPT_DE_MEDIDA = `(() => {
         const d = performance.now() - a;
         if (ts !== m.cursor) {
           if (m.cursor >= 0) m.quadros.push(m.acc);
+          m.marcas.push(ts);
           m.cursor = ts;
           m.acc = 0;
         }
@@ -307,7 +311,8 @@ async function medir(id, servidor, navegador) {
   const ambiente = await cdp.avaliar(aba.sessionId, `({ ua: navigator.userAgent, w: innerWidth, h: innerHeight, dpr: devicePixelRatio, hidden: document.hidden, salas: document.querySelectorAll('canvas').length })`);
 
   if (c.oculta) await cdp.avaliar(aba.sessionId, 'window.__medida.ocultar(true)');
-  await dormir(aquecer * 1000);
+  const aquecimento = opt('aquecer') !== undefined ? aquecer : (c.aquecer ?? aquecer);
+  await dormir(aquecimento * 1000);
   if (c.parada) await cdp.avaliar(aba.sessionId, 'window.__medida.congelado = true');
   await cdp.avaliar(aba.sessionId, 'window.__medida.inicio()');
   const ocultaNoInicio = await cdp.avaliar(aba.sessionId, 'document.hidden');
@@ -326,6 +331,17 @@ async function medir(id, servidor, navegador) {
   const bruto = await cdp.avaliar(aba.sessionId, 'JSON.stringify({ quadros: window.__medida.quadros, ticks: window.__medida.ticks, hidden: document.hidden })');
   const { quadros, ticks, hidden: ocultaNoFim } = JSON.parse(bruto);
 
+  let despertar = null;
+  if (c.despertar) {
+    await cdp.avaliar(aba.sessionId, 'window.__medida.inicio(), window.__medida.disparo = performance.now()');
+    await cdp.enviar('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 300, y: 300 }, aba.sessionId);
+    await dormir(2_000);
+    const d = JSON.parse(await cdp.avaliar(aba.sessionId, 'JSON.stringify({ disparo: window.__medida.disparo, marcas: window.__medida.marcas })'));
+    const apos = d.marcas.filter((t) => t >= d.disparo);
+    const emUmSegundo = apos.filter((t) => t <= d.disparo + 1000);
+    despertar = { primeiroQuadroMs: apos.length ? apos[0] - d.disparo : null, quadrosEmUmSegundo: emUmSegundo.length, intervaloMedioMs: emUmSegundo.length > 1 ? (emUmSegundo[emUmSegundo.length - 1] - emUmSegundo[0]) / (emUmSegundo.length - 1) : null };
+  }
+
   if (!c.oculta) {
     const { data } = await cdp.enviar('Page.captureScreenshot', { format: 'jpeg', quality: 60 }, aba.sessionId);
     writeFileSync(resolve(saida, `cenario-${id}-dpr${dpr}.jpg`), Buffer.from(data, 'base64'));
@@ -338,7 +354,8 @@ async function medir(id, servidor, navegador) {
     titulo: c.titulo,
     url,
     duracaoS: duracao,
-    aquecimentoS: aquecer,
+    aquecimentoS: aquecimento,
+    despertar,
     ambiente: { ...ambiente, ocultaNoInicio, ocultaNoFim },
     quadros: { total: quadros.length, fpsEfetivo: quadros.length / duracao, trabalhoMs: estatistica(quadros) },
     tickMock250ms: { total: ticks.length, ms: estatistica(ticks) },
