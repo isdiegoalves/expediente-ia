@@ -64,6 +64,7 @@ function world(on: On, w: World = {}) {
     return { value: undefined }
   })
   on('http.fetch', async ($, e) => {
+    if (e.url.endsWith('/api/mod/focos')) return { value: response(200, '{"focos":[]}') }
     fetches.push(e.url)
     const a = w.answer ? w.answer() : summary([])
     if (a === 'offline') return { deny: 'connect ECONNREFUSED 127.0.0.1:4850' }

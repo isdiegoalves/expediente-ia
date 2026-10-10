@@ -66,6 +66,7 @@ function mundo(on: On, m: Mundo) {
     return { value: { ...RODOU, ...(m.processo?.(e.argv) ?? {}) } }
   })
   on('http.fetch', ($, e) => {
+    if (e.url.endsWith('/api/mod/focos')) return { value: resposta('{"focos":[]}') }
     buscas.push(e.url)
     const ir = /\/api\/agentes\/([^/]+)\/ir$/.exec(e.url)
     if (ir) {

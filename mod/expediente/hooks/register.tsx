@@ -1,6 +1,6 @@
 // Mod do Expediente (Claude Code 2.1.287+): liga cada sessão ao escritório sem ler a conversa.
 //
-// Faz cinco coisas pequenas, e `claude plugin validate` lista exatamente o que o módulo chama (a saída
+// Faz seis coisas pequenas, e `claude plugin validate` lista exatamente o que o módulo chama (a saída
 // está no mod/README.md):
 //
 // 1. Uso do plano (substitui o tap de statusline): em `session.start` e a cada `session.measure`
@@ -18,6 +18,10 @@
 //    ~/.expediente/host/sessoes-app.json, que o servidor no container lê.
 // 5. Amostra horária (amostra.ts): contagem por entrypoint × kind e nomes de programa da cadeia de pais das sessões vivas.
 //
+// 6. Foco pedido pelo navegador (foco.ts): a cada 1 s, só onde há terminal e com o Expediente no ar, busca os pedidos
+//    de foco (GET /api/mod/focos), assume um (POST .../assumir) e roda o mesmo plano do botão Focar, com o pid inteiro
+//    que o servidor devolve e a conferência de que ele ainda é o claude. Reporta o resultado (POST .../resultado).
+//
 // Regras: nenhum hook lança (um hook que lança é pulado, mas o que ele deixou pela metade fica): cada
 // passo tem seu try/catch e falha = silêncio. $.process roda só argv fixo, sem shell montado de texto alheio: mv e rm -f do .tmp (ponte),
 // pgrep e o próprio ps (amostra, tty, confirmação do programa do pid), o leitor de ZELLIJ_*/WEZTERM_* (foco), zellij, open -a WezTerm, osascript
@@ -29,6 +33,7 @@
 // sempre uma string literal e `$` só é passado para funções declaradas no topo deste arquivo.
 import type { EngineInterface, HttpResponse, Register, RenderSurface, SessionRateLimit } from 'claude-code'
 import { abrirUrl } from './abrir'
+import { FOCO_OFFLINE_MS, FOCO_POLL_MS, lerPedidos, lerPidAssumido, type ResultadoFoco } from './foco'
 import { acoesDaSessao, detalheTexto, lerIr, listaTexto, nomeDaLinha, pidDoId, porEstado, type IrView } from './escritorio'
 import { offlineText, outdatedText, parseSummary, statusText, summaryText, type Summary } from './resumo'
 import { argvAppRodando, argvFocoTerminalApp, argvFocoZellij, argvLeitorPainel, argvProgramaDe, argvTrazerWezTerm, argvTtyDe, ehClaude, lerPainel, lerTty, type PainelZellij } from './painel'
@@ -204,14 +209,15 @@ async function writeUsage($: EngineInterface, rateLimits: readonly SessionRateLi
   lastWrite = { key, at: now }
 }
 
-/** GET no Expediente local com prazo de 2 s; undefined = fora do ar ou lento demais. Nunca lança. */
-async function getExpediente($: EngineInterface, port: number, path: string): Promise<HttpResponse | undefined> {
+/** GET (ou POST com corpo JSON) no Expediente local com prazo de 2 s; undefined = fora do ar ou lento demais. Nunca lança. */
+async function getExpediente($: EngineInterface, port: number, path: string, post?: string): Promise<HttpResponse | undefined> {
   let wait: { cancel: () => void } | undefined
   const timeout = new Promise<undefined>((resolve) => {
     wait = $.clock.after(FETCH_TIMEOUT_MS, () => resolve(undefined))
   })
   try {
-    return await Promise.race([$.http.fetch(`http://127.0.0.1:${port}${path}`, { headers: { accept: 'application/json' } }), timeout])
+    const init = post === undefined ? { headers: { accept: 'application/json' } } : { method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json' }, body: post }
+    return await Promise.race([$.http.fetch(`http://127.0.0.1:${port}${path}`, init), timeout])
   } catch {
     return undefined
   } finally {
@@ -427,20 +433,20 @@ let renovador: { cancel: () => void } | undefined
 /** Painel do zellij (ou tty) de cada sessão viva de terminal, lido uma vez e guardado por 5 min. */
 const focos = new Map<string, { em: number; zellij?: PainelZellij; tty?: string }>()
 
+interface FocoLido {
+  /** O pid ainda é o `claude`: sem isso nada mais é lido. */
+  confirmado: boolean
+  zellij?: PainelZellij
+  tty?: string
+}
+
 /** Lê só as duas variáveis do zellij do processo (argvLeitorPainel); sem elas, o tty para o ramo genérico. */
-async function acharFoco($: EngineInterface, id: string): Promise<{ zellij?: PainelZellij; tty?: string } | undefined> {
-  const pid = pidDoId(id)
-  if (!pid) return undefined
-  const agora = await $.clock.now()
-  const guardado = focos.get(id)
-  if (guardado && agora - guardado.em < FOCO_VALIDO_MS) return guardado
-  const achado: { em: number; zellij?: PainelZellij; tty?: string } = { em: agora }
+async function lerFoco($: EngineInterface, pid: number): Promise<FocoLido> {
+  const achado: FocoLido = { confirmado: false }
   try {
     const programa = await $.process.run(argvProgramaDe(pid), { timeoutMs: 5_000 })
-    if (programa.exitCode !== 0 || !ehClaude(programa.stdout)) {
-      focos.set(id, achado)
-      return achado
-    }
+    if (programa.exitCode !== 0 || !ehClaude(programa.stdout)) return achado
+    achado.confirmado = true
     const lido = await $.process.run(argvLeitorPainel(pid), { timeoutMs: 5_000 })
     const zellij = lerPainel(lido.stdout)
     if (zellij) achado.zellij = zellij
@@ -451,6 +457,18 @@ async function acharFoco($: EngineInterface, id: string): Promise<{ zellij?: Pai
   } catch {
     // sem $.process (sessão do app) ou processo que sumiu: sem foco, fica a cópia do comando
   }
+  return achado
+}
+
+/** O foco de cada sessão do painel, lido uma vez e guardado por 5 min. */
+async function acharFoco($: EngineInterface, id: string): Promise<{ zellij?: PainelZellij; tty?: string } | undefined> {
+  const pid = pidDoId(id)
+  if (!pid) return undefined
+  const agora = await $.clock.now()
+  const guardado = focos.get(id)
+  if (guardado && agora - guardado.em < FOCO_VALIDO_MS) return guardado
+  const { zellij, tty } = await lerFoco($, pid)
+  const achado = { em: agora, ...(zellij ? { zellij } : {}), ...(tty ? { tty } : {}) }
   focos.set(id, achado)
   return achado
 }
@@ -502,35 +520,79 @@ async function copiarComando($: EngineInterface, comando: string, surface: Rende
   $.ui.toast(copiado.isCopied ? 'Expediente: comando copiado' : 'Expediente: não deu para copiar o comando')
 }
 
-/** Painel do zellij e WezTerm à frente (provado ao vivo); sem painel achado ou com falha, copia o comando seguro. */
-async function focar($: EngineInterface, id: string, comando: string, surface: RenderSurface): Promise<void> {
-  const foco = focos.get(id)
-  let ok = false
+/** Painel do zellij e WezTerm à frente (provado ao vivo), ou o terminal genérico pelo tty. Nunca lança. */
+async function executarFoco($: EngineInterface, foco: { zellij?: PainelZellij; tty?: string } | undefined): Promise<boolean> {
   try {
     if (foco?.zellij) {
-      ok = true
       for (const argv of [argvFocoZellij(foco.zellij), argvTrazerWezTerm()]) {
-        if ((await $.process.run(argv, { timeoutMs: 10_000 })).exitCode !== 0) {
-          ok = false
-          break
-        }
+        if ((await $.process.run(argv, { timeoutMs: 10_000 })).exitCode !== 0) return false
       }
-    } else if (foco?.tty) {
+      return true
+    }
+    if (foco?.tty) {
       for (const app of ['Terminal', 'iTerm2'] as const) {
         if ((await $.process.run(argvAppRodando(app), { timeoutMs: 5_000 })).exitCode !== 0) continue
         const r = await $.process.run(argvFocoTerminalApp(app, foco.tty), { timeoutMs: 10_000 })
-        if (r.exitCode === 0 && r.stdout.trim() === 'ok') {
-          ok = true
-          break
-        }
+        if (r.exitCode === 0 && r.stdout.trim() === 'ok') return true
       }
     }
   } catch {
-    ok = false
+    return false
   }
-  if (ok) return
+  return false
+}
+
+/** Botão Focar do painel; sem painel achado ou com falha, copia o comando seguro. */
+async function focar($: EngineInterface, id: string, comando: string, surface: RenderSurface): Promise<void> {
+  if (await executarFoco($, focos.get(id))) return
   $.ui.toast('Expediente: não achei o painel dessa sessão')
   await copiarComando($, comando, surface)
+}
+
+/** Pedido do navegador: relê o pid na hora (nada de cache) e roda o mesmo plano do botão. */
+async function focarPedido($: EngineInterface, pid: number): Promise<ResultadoFoco> {
+  const foco = await lerFoco($, pid)
+  if (!foco.confirmado) return 'nao-e-claude'
+  return (await executarFoco($, foco)) ? 'focado' : 'sem-painel'
+}
+
+let focosTimer: { cancel: () => void } | undefined
+let focosAte = 0
+let atendendo = false
+
+/** Uma rodada de pedidos do navegador: só onde há terminal, só com o Expediente no ar, só o que este mod assume. Nunca lança. */
+async function atenderFocos($: EngineInterface): Promise<void> {
+  if (atendendo) return
+  atendendo = true
+  try {
+    const agora = await $.clock.now()
+    if (agora < focosAte) return
+    if (!(await $.session.surfaces()).includes('terminal')) return
+    const e = await readEnv($)
+    const lista = await getExpediente($, e.port, '/api/mod/focos')
+    if (!lista?.ok) {
+      focosAte = agora + FOCO_OFFLINE_MS
+      return
+    }
+    for (const p of lerPedidos(lista.text)) {
+      const base = `/api/mod/focos/${p.token}`
+      const assumido = await getExpediente($, e.port, `${base}/assumir`, '{}')
+      const pid = assumido?.ok ? lerPidAssumido(assumido.text) : undefined
+      if (pid === undefined) continue
+      const resultado = await focarPedido($, pid)
+      await getExpediente($, e.port, `${base}/resultado`, JSON.stringify({ resultado }))
+    }
+  } catch {
+    // a próxima rodada tenta de novo
+  } finally {
+    atendendo = false
+  }
+}
+
+function ligarFocos($: EngineInterface): void {
+  focosTimer ??= $.clock.every(FOCO_POLL_MS, () => {
+    void atenderFocos($)
+  })
 }
 
 /** O texto do /escritorio e, onde a sessão desenha, o painel aberto. */
@@ -570,6 +632,11 @@ export const register: Register = (on) => {
       schedule($, POLL_MS)
     } catch {
       // sem o aviso embaixo do prompt, o resto segue
+    }
+    try {
+      ligarFocos($)
+    } catch {
+      // sem o foco pelo navegador, o resto segue
     }
     try {
       await ligarPonte($)
