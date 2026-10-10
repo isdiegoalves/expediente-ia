@@ -1,6 +1,6 @@
 // Medição de escala do escritório (?mock=1) em um Chromium próprio, com servidor nativo de teste.
 // Uso:
-//   node scripts/medir-escala.mjs --saida <pasta> [--cenarios a,b,c,d,e] [--duracao 300] [--aquecer 30] [--dpr 2] [--gpu "flags"]
+//   node scripts/medir-escala.mjs --saida <pasta> [--cenarios a,b,c,d,e] [--duracao 300] [--aquecer 30] [--dpr 2] [--gpu "flags"] [--maquete]
 //
 // Cenários (todos com o simulador no navegador):
 //   a  10 salas x 30 subagentes, janela visível
@@ -36,6 +36,7 @@ if (!saida) {
 const duracao = Number(opt('duracao', '300'));
 const aquecer = Number(opt('aquecer', '30'));
 const dpr = Number(opt('dpr', '2'));
+const maquete = args.includes('--maquete');
 const gpuArgs = opt('gpu', '') ? opt('gpu').split(' ') : [];
 const largura = 1600;
 const altura = 900;
@@ -297,6 +298,9 @@ async function medir(id, servidor, navegador) {
   await cdp.enviar('Page.enable', {}, aba.sessionId);
   await cdp.enviar('Emulation.setDeviceMetricsOverride', { width: largura, height: altura, deviceScaleFactor: dpr, mobile: false }, aba.sessionId);
   await cdp.enviar('Page.addScriptToEvaluateOnNewDocument', { source: SCRIPT_DE_MEDIDA }, aba.sessionId);
+  if (maquete) {
+    await cdp.enviar('Page.addScriptToEvaluateOnNewDocument', { source: `localStorage.setItem('expediente:prefs', JSON.stringify({ maquete: true }))` }, aba.sessionId);
+  }
   const url = `http://127.0.0.1:${servidor.porta}/?mock=1&${c.query}`;
   await cdp.enviar('Page.navigate', { url }, aba.sessionId);
   await dormir(3_000);
