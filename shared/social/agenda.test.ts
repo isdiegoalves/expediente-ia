@@ -318,6 +318,22 @@ describe('agenda das rodas', () => {
     expect([c.ana.wins + c.ana.losses, c.bia.wins + c.bia.losses]).toEqual([1, 1]);
   });
 
+  it('jogador que sai de uma partida com torcida acaba com ela: o torcedor não vira jogador e ninguém é pago', () => {
+    const tres = OCIOSOS.slice(0, 3);
+    for (const jogador of ['ana', 'bia']) {
+      const m = new MotorSocial(1);
+      const roda = montarRoda(1, 'jogo', 'pingpong', tres, T0, () => 100);
+      m.incluir(roda);
+      m.passo(T0 + 1_000, tres);
+      expect(m.estado().rodas.map((r) => r.id)).toEqual(['jogo']);
+      m.passo(T0 + 2_000, tres.map((a) => (a.id === jogador ? { ...a, status: 'working' as const } : a)));
+      expect(m.estado().rodas.map((r) => r.id), jogador).not.toContain('jogo');
+      for (let t = T0 + 3_000; t <= roda.fim + 1_000; t += 1000) m.passo(t, tres.map((a) => ({ ...a, status: 'working' as const })));
+      const c = m.estado().carteiras;
+      expect(tres.map((a) => c[a.id].wins + c[a.id].losses), jogador).toEqual([0, 0, 0]);
+    }
+  });
+
   it('partida em que um jogador sai deixa de ser publicada na hora, e o outro fica livre para outra roda antes do fim previsto', () => {
     const vistas = [...rodar(new MotorSocial(13), 900).values()];
     const alvo = vistas.find((r) => partidas(r).some((p) => p.aposta > 0))!;
