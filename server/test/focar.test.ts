@@ -24,6 +24,7 @@ interface Resp {
 }
 
 let relogio = 1_000_000;
+let terminalLigado = true;
 let server: http.Server;
 let base: string;
 let office: Office;
@@ -66,6 +67,7 @@ function agente(id: string, extra: { entrypoint?: string; kind?: string; encerra
 
 beforeEach(async () => {
   relogio = 1_000_000;
+  terminalLigado = true;
   const tmp = tempDir();
   cleanup = tmp.cleanup;
   const accounts = new AccountsService({ dirs: [], home: tmp.dir, env: {}, onChange: () => undefined });
@@ -80,7 +82,7 @@ beforeEach(async () => {
   });
   const hub = new Hub(office, { throttleMs: 10 });
   hub.start();
-  const api = createApiHandler({ office, hub, accounts, sources: () => [], version: 't', inDocker: false, now: () => relogio });
+  const api = createApiHandler({ office, hub, accounts, sources: () => [], version: 't', inDocker: false, now: () => relogio, terminal: () => terminalLigado });
   const guard = createRequestGuard();
   server = http.createServer((req, res) => {
     if (guard(req, res)) return;
@@ -236,5 +238,27 @@ describe('pedido de foco', () => {
     expect((await assumir(token, h)).status).toBe(403);
     expect((await pedir(`/api/focos/${token}`, { headers: h })).status).toBe(403);
     expect(await estado(token)).toBe('pendente');
+  });
+});
+
+describe('trava de publicação (terminalOn)', () => {
+  it('com o terminal desligado as quatro rotas recusam com 403, e ligado voltam a atender', async () => {
+    const { nonce } = await ir('.claude:507');
+    const token = await pedirFoco();
+    terminalLigado = false;
+    const recusas = [
+      await focar('.claude:507', nonce),
+      await pedir(`/api/focos/${token}`),
+      await pedir('/api/mod/focos'),
+      await assumir(token),
+      await resultado(token, 'focado'),
+    ];
+    for (const r of recusas) {
+      expect(r.status).toBe(403);
+      expect(r.body).toContain('desligado');
+    }
+    terminalLigado = true;
+    expect(await estado(token)).toBe('pendente');
+    expect((await focar('.claude:507', nonce)).status).toBe(200);
   });
 });

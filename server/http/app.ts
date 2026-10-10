@@ -273,16 +273,20 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
       return true;
     }
     const modFocos = MOD_FOCOS_ROUTE.exec(path);
+    const focoMatch = FOCO_ROUTE.exec(path);
+    const focarMatch = FOCAR_ROUTE.exec(path);
+    if ((modFocos || focoMatch || focarMatch) && !terminalOn()) {
+      sendJson(res, 403, { error: 'focar a sessão desligado: só funciona com o Expediente acessível apenas pelo próprio computador' });
+      return true;
+    }
     if (modFocos) {
       handleModFocosRoute(req, res, modFocos[1], modFocos[2], { focos }).catch((err) => fail(res, err));
       return true;
     }
-    const focoMatch = FOCO_ROUTE.exec(path);
     if (focoMatch) {
       handleFocoEstado(req, res, focoMatch[1], { focos });
       return true;
     }
-    const focarMatch = FOCAR_ROUTE.exec(path);
     if (focarMatch) {
       let id: string;
       try {

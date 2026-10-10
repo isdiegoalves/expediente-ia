@@ -285,8 +285,8 @@ O repositório é também um marketplace de plugins do Claude Code (`.claude-plu
 `<conta>:<pid>`). O navegador então chama `POST /api/agentes/:id/focar` e consulta `GET /api/focos/:token`. O pedido
 (`http/focar.ts`, em memória, um por agente) guarda `{token, agentId, pid, criadoEm}` e vale 10 s; o `pid` sai do id do
 próprio agente, nunca do cliente, e o servidor não recebe argv nem caminho. O mod do Claude Code, que roda na máquina,
-busca os pedidos, assume um e executa o foco (ver [`mod/README.md`](../mod/README.md)). As rotas do mod só atendem
-Host local, como as de permissão: qualquer processo local pode chamá-las (risco aceito; fecha com o token local de uma
+busca os pedidos, assume um e executa o foco (ver [`mod/README.md`](../mod/README.md)). Todas as rotas de foco exigem a trava de publicação do terminal (403 com
+ela desligada) e Host local, como as de permissão, e as do mod só atendem loopback: qualquer processo local pode chamá-las (risco aceito; fecha com o token local de uma
 fatia futura). Sem nenhum mod assumindo, o navegador desiste em 3 s e copia o comando.
 
 ## Contexto e custo por agente
