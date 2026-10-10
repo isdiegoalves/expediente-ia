@@ -9,6 +9,8 @@
 //   d  mock atual com 10 sessões      e  mock atual com 40 sessões
 //   i  10 sessões ociosas, nada acontece, medido depois de 5 min de aquecimento; ao fim, um movimento do mouse
 //      mede em quanto tempo e a quantos quadros por segundo o desenho volta
+//   j  servidor real com 18 sessões fictícias ociosas e a página sem ?mock: depois da janela calma, uma sessão passa a
+//      esperar permissão; mede o caminho todo (registro, servidor, SSE, página) até os quadros cheios
 //
 // O tempo de trabalho do quadro é a soma da duração dos callbacks de requestAnimationFrame de um mesmo
 // quadro (performance.now em volta de cada callback), não o intervalo entre quadros. A CPU vem do tempo de
@@ -23,6 +25,7 @@ import { cpus, loadavg, tmpdir } from 'node:os';
 import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gravarRegistro, iniciarSessoes } from './sessoes-sinteticas.mjs';
 
 const RAIZ = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -50,6 +53,7 @@ const CENARIOS = {
   d: { titulo: 'mock atual, 10 sessões', query: 'sessions=10' },
   e: { titulo: 'mock atual, 40 sessões', query: 'sessions=40' },
   i: { titulo: '10 sessões ociosas, nada acontece (após 5 min)', query: 'sessions=10&quieto=1', aquecer: 300, despertar: true },
+  j: { titulo: 'servidor real, 18 sessões ociosas e um alerta novo', real: true, aquecer: 90, duracao: 20, alerta: true },
 };
 const escolhidos = opt('cenarios', 'a,b,c,d,e').split(',').map((s) => s.trim());
 for (const c of escolhidos) if (!CENARIOS[c]) throw new Error(`cenário desconhecido: ${c}`);
@@ -133,9 +137,17 @@ function estatistica(valores) {
 }
 
 const SCRIPT_DE_MEDIDA = `(() => {
-  const m = { quadros: [], marcas: [], ticks: [], congelado: false, oculto: false, cursor: -1, acc: 0 };
+  const m = { quadros: [], marcas: [], snapshots: [], ticks: [], congelado: false, oculto: false, cursor: -1, acc: 0 };
   m.inicio = () => { m.quadros.length = 0; m.marcas.length = 0; m.ticks.length = 0; m.cursor = -1; m.acc = 0; };
   const adiados = [];
+  const adicionar = EventSource.prototype.addEventListener;
+  EventSource.prototype.addEventListener = function (tipo, fn, ...r) {
+    if (tipo !== 'snapshot') return adicionar.call(this, tipo, fn, ...r);
+    return adicionar.call(this, tipo, (e) => {
+      m.snapshots.push(performance.timeOrigin + performance.now());
+      return fn.call(this, e);
+    }, ...r);
+  };
   const raf = window.requestAnimationFrame.bind(window);
   window.requestAnimationFrame = (cb) => {
     if (m.oculto) {
@@ -226,15 +238,16 @@ class Cdp {
   }
 }
 
-async function abrirServidor(casa) {
+async function abrirServidor(casa, real = false) {
   let porta = 0;
-  for (let p = 6400; p < 6500; p++) {
+  const [de, ate] = real ? [6700, 6750] : [6400, 6500];
+  for (let p = de; p < ate; p++) {
     if (await portaLivre(p)) {
       porta = p;
       break;
     }
   }
-  if (!porta) throw new Error('sem porta livre em 6400-6499');
+  if (!porta) throw new Error(`sem porta livre em ${de}-${ate - 1}`);
   mkdirSync(resolve(casa, 'dados'), { recursive: true });
   const filho = spawn(process.execPath, ['dist/server/index.js'], {
     cwd: RAIZ,
@@ -245,8 +258,7 @@ async function abrirServidor(casa) {
       EXPEDIENTE_PORT: String(porta),
       EXPEDIENTE_DATA_DIR: resolve(casa, 'dados'),
       EXPEDIENTE_PONTE_DIR: resolve(casa, 'ponte'),
-      EXPEDIENTE_TERMINAL: '0',
-      EXPEDIENTE_TIMELINE: '0',
+      ...(real ? {} : { EXPEDIENTE_TERMINAL: '0', EXPEDIENTE_TIMELINE: '0' }),
     },
   });
   for (let i = 0; i < 100; i++) {
@@ -295,8 +307,26 @@ async function abrirAba(cdp, url) {
   return { targetId, sessionId };
 }
 
-async function medir(id, servidor, navegador) {
+async function medir(id, servidorMock, navegador) {
   const c = CENARIOS[id];
+  const casaReal = c.real ? mkdtempSync(resolve(tmpdir(), 'medir-escala-real-')) : null;
+  const fabrica = casaReal ? iniciarSessoes(casaReal, 18) : null;
+  const servidor = casaReal ? await abrirServidor(casaReal, true) : servidorMock;
+  try {
+    return await medirCenario(id, c, servidor, navegador, fabrica);
+  } finally {
+    if (casaReal) {
+      try {
+        process.kill(servidor.pid);
+      } catch {}
+      fabrica.encerrar();
+      rmSync(casaReal, { recursive: true, force: true });
+    }
+  }
+}
+
+async function medirCenario(id, c, servidor, navegador, fabrica) {
+  const duracaoDoCenario = opt('duracao') !== undefined ? duracao : (c.duracao ?? duracao);
   const { cdp } = navegador;
   const aba = await abrirAba(cdp, 'about:blank');
   await cdp.enviar('Page.enable', {}, aba.sessionId);
@@ -305,7 +335,7 @@ async function medir(id, servidor, navegador) {
   if (maquete) {
     await cdp.enviar('Page.addScriptToEvaluateOnNewDocument', { source: `localStorage.setItem('expediente:prefs', JSON.stringify({ maquete: true }))` }, aba.sessionId);
   }
-  const url = `http://127.0.0.1:${servidor.porta}/?mock=1&${c.query}`;
+  const url = c.real ? `http://127.0.0.1:${servidor.porta}/` : `http://127.0.0.1:${servidor.porta}/?mock=1&${c.query}`;
   await cdp.enviar('Page.navigate', { url }, aba.sessionId);
   await dormir(3_000);
   const ambiente = await cdp.avaliar(aba.sessionId, `({ ua: navigator.userAgent, w: innerWidth, h: innerHeight, dpr: devicePixelRatio, hidden: document.hidden, salas: document.querySelectorAll('canvas').length })`);
@@ -320,7 +350,7 @@ async function medir(id, servidor, navegador) {
   const carga0 = loadavg();
   const cpu = [];
   let anterior = amostraDeCpu(servidor.pid, navegador.pid);
-  const fim = Date.now() + duracao * 1000;
+  const fim = Date.now() + duracaoDoCenario * 1000;
   while (Date.now() < fim) {
     await dormir(Math.min(INTERVALO_CPU_MS, fim - Date.now()));
     const atual = amostraDeCpu(servidor.pid, navegador.pid);
@@ -342,6 +372,26 @@ async function medir(id, servidor, navegador) {
     despertar = { primeiroQuadroMs: apos.length ? apos[0] - d.disparo : null, quadrosEmUmSegundo: emUmSegundo.length, intervaloMedioMs: emUmSegundo.length > 1 ? (emUmSegundo[emUmSegundo.length - 1] - emUmSegundo[0]) / (emUmSegundo.length - 1) : null };
   }
 
+  let alerta = null;
+  if (c.alerta) {
+    await cdp.avaliar(aba.sessionId, 'window.__medida.inicio()');
+    const escritoEm = Date.now();
+    gravarRegistro(fabrica.sessoes[0], 'waiting', { waitingFor: 'approve Bash' });
+    await dormir(4_000);
+    const d = JSON.parse(await cdp.avaliar(aba.sessionId, 'JSON.stringify({ origem: performance.timeOrigin, marcas: window.__medida.marcas, snapshots: window.__medida.snapshots })'));
+    const quadrosEm = d.marcas.map((t) => d.origem + t);
+    const snapshotEm = d.snapshots.find((t) => t >= escritoEm);
+    const apos = snapshotEm === undefined ? [] : quadrosEm.filter((t) => t >= snapshotEm);
+    const cheios = apos.findIndex((t, i) => i + 5 < apos.length && apos.slice(i, i + 6).every((v, k, a) => k === 0 || v - a[k - 1] < 35));
+    alerta = {
+      snapshotChegouAposAEscritaMs: snapshotEm === undefined ? null : snapshotEm - escritoEm,
+      primeiroQuadroAposOSnapshotMs: apos.length ? apos[0] - snapshotEm : null,
+      quadrosCheiosAposOSnapshotMs: cheios >= 0 ? apos[cheios] - snapshotEm : null,
+      quadrosCheiosAposAEscritaMs: cheios >= 0 ? apos[cheios] - escritoEm : null,
+      quadrosEmUmSegundoAposOSnapshot: snapshotEm === undefined ? 0 : apos.filter((t) => t <= snapshotEm + 1000).length,
+    };
+  }
+
   if (!c.oculta) {
     const { data } = await cdp.enviar('Page.captureScreenshot', { format: 'jpeg', quality: 60 }, aba.sessionId);
     writeFileSync(resolve(saida, `cenario-${id}-dpr${dpr}.jpg`), Buffer.from(data, 'base64'));
@@ -353,11 +403,12 @@ async function medir(id, servidor, navegador) {
     cenario: id,
     titulo: c.titulo,
     url,
-    duracaoS: duracao,
+    duracaoS: duracaoDoCenario,
     aquecimentoS: aquecimento,
     despertar,
+    alerta,
     ambiente: { ...ambiente, ocultaNoInicio, ocultaNoFim },
-    quadros: { total: quadros.length, fpsEfetivo: quadros.length / duracao, trabalhoMs: estatistica(quadros) },
+    quadros: { total: quadros.length, fpsEfetivo: quadros.length / duracaoDoCenario, trabalhoMs: estatistica(quadros) },
     tickMock250ms: { total: ticks.length, ms: estatistica(ticks) },
     cpuPct: { servidor: col('servidor'), navegador_total: col('navegador_total'), pagina: col('pagina'), gpu: col('gpu'), navegador_principal: col('navegador_principal'), outros: col('outros') },
     rssMb: { servidor: col('rssServidorMb'), navegador: col('rssNavegadorMb') },
@@ -387,7 +438,7 @@ console.error(`servidor pid ${servidor.pid} porta ${servidor.porta}; navegador p
 const resultados = [];
 try {
   for (const id of escolhidos) {
-    console.error(`cenário ${id}: ${CENARIOS[id].titulo} (${aquecer}s de aquecimento + ${duracao}s)`);
+    console.error(`cenário ${id}: ${CENARIOS[id].titulo} (${CENARIOS[id].aquecer ?? aquecer}s de aquecimento + ${CENARIOS[id].duracao ?? duracao}s)`);
     const r = await medir(id, servidor, navegador);
     resultados.push(r);
     writeFileSync(resolve(saida, `cenario-${id}-dpr${dpr}.json`), JSON.stringify({ ambienteGeral, ...r }, null, 1));

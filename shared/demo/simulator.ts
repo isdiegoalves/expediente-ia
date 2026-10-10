@@ -257,7 +257,7 @@ export class DemoSimulator {
     for (let i = 0; i < this.target - (this.subsPerSession > 0 || this.quiet ? 0 : 1); i++) this.spawnSession(now, true);
     const first = [...this.agents.values()].find((a) => a.info.kind === 'main');
     if (first && !this.quiet) this.startBackgroundShells(first, now, true);
-    this.nextSpawnAt = this.quiet ? Infinity : now + this.ms(20_000, 40_000);
+    this.nextSpawnAt = now + this.ms(20_000, 40_000);
     // Descarta o feed/avisos de abertura.
     this.pendingFeed = [];
     this.pendingNotices = [];
