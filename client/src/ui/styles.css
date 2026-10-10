@@ -7355,7 +7355,7 @@ html.is-replay #world {
 .ui-drawer.is-floating {
   z-index: 25;
   transform: none;
-  box-shadow: 0 24px 60px rgba(5, 7, 12, 0.55);
+  box-shadow: 0 24px 60px color-mix(in srgb, var(--ink-dark) 55%, transparent);
 }
 
 .ui-drawer.is-floating:not(.is-open) {
@@ -7366,7 +7366,7 @@ html.is-replay #world {
   opacity: 0.94;
 }
 
-/* Terminal expandido na tela toda do Habblaud (botão ao lado do fechar). */
+/* Terminal expandido na tela toda do Expediente (botão ao lado do fechar). */
 .ui-term.is-max {
   z-index: 46;
   inset: calc(var(--top-h) + var(--gap)) var(--gap) var(--gap) !important;

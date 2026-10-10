@@ -904,7 +904,7 @@ export class Drawer implements UiComponent {
       this.body,
     );
     // Arrastar pela barra solta a gaveta: flutuante, ela não cobre mais a lateral do escritório.
-    this.movable = new Movable(this.el, bar, { key: 'habblaud.move.drawer', enabled: () => !ctx.isNarrow(), onChange: () => this.onLayoutChange?.() });
+    this.movable = new Movable(this.el, bar, { key: 'expediente.move.drawer', enabled: () => !ctx.isNarrow(), onChange: () => this.onLayoutChange?.() });
     this.el.inert = true;
   }
 

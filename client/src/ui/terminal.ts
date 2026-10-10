@@ -716,7 +716,7 @@ export class TerminalPanel implements UiComponent, TerminalControl {
     );
     this.el.addEventListener('keydown', (e) => this.onKey(e));
     // Arrastar pela barra solta a janela (ui/movable.ts).
-    this.movable = new Movable(this.el, bar, { key: 'habblaud.move.term', enabled: () => !ctx.isNarrow() });
+    this.movable = new Movable(this.el, bar, { key: 'expediente.move.term', enabled: () => !ctx.isNarrow() });
     this.renderFilter();
     // Janela redimensionada: quem está no fim continua vendo o fim.
     if (typeof ResizeObserver === 'function') new ResizeObserver(() => this.follow && this.scrollToEnd()).observe(this.scroll);
