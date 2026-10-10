@@ -106,3 +106,26 @@ describe('segredos mascarados na saída', () => {
     expect(sanitizeOutput('cat /Users/ficticio/outro/x.ts', projetos, { trocarCaminhos: false })).toBe('cat /Users/ficticio/outro/x.ts');
   });
 });
+
+describe('nome de sala e de personagem escolhidos pelo usuário', () => {
+  it('chegam à saída mascarados', () => {
+    const o = new Office({
+      names: new NameStore(null),
+      version: 't',
+      startedAt: 0,
+      accounts: () => [],
+      sources: () => [],
+      accountName: () => undefined,
+      now: () => 1_000_000,
+      roomAlias: () => `Sala ${GHP}`,
+    });
+    o.addMain({ id: 'acc:1', account: 'acc', sessionId: 's1', cwd: CWD, role: 'Agente principal', startedAt: 1, status: 'working' });
+    expect(o.setCharacter('acc:1', { name: 'ghp_aB3dE6gH9jK2mN5p', seed: 1, parts: {} }).result).toBe('ok');
+    const all = strings(tudoQueASaidaMostra(o));
+    expect(all.some((s) => s.startsWith('Sala '))).toBe(true);
+    for (const s of all) {
+      for (const re of SECRETS) expect(s, s).not.toMatch(re);
+      expect(s).not.toContain('aB3dE6gH9jK2mN5p');
+    }
+  });
+});

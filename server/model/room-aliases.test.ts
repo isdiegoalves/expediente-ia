@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -23,6 +23,21 @@ describe('RoomAliases', () => {
       b.setDefault(ASSETS, 'Arquiteto');
       expect(b.set(ASSETS, '')).toBe('Arquiteto');
       expect(b.get('/outro')).toBeUndefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('tira controle e marcas de direção do texto do nome, ao gravar e ao carregar', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'expediente-rooms-'));
+    try {
+      const file = join(dir, 'rooms.json');
+      const a = new RoomAliases(file);
+      expect(a.set(DASH, 'Sala‮odnum\u0007⁦x‏')).toBe('Salaodnumx');
+      writeFileSync(file, JSON.stringify({ version: 1, aliases: { [DASH]: 'Co‭mum\u0000' } }));
+      const b = new RoomAliases(file);
+      b.load();
+      expect(b.get(DASH)).toBe('Comum');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

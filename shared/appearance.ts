@@ -48,6 +48,12 @@ const COLOR = /^#[0-9a-f]{6}$/i;
 // Controle (C0/C1), separadores de linha e parágrafo (U+2028/2029) e marcas de direção do texto (U+200E/200F,
 // U+202A–202E, U+2066–2069): dá para disfarçar um nome com elas.
 const CONTROL = /[\p{Cc}\u2028\u2029\u200e\u200f\u202a-\u202e\u2066-\u2069]/u;
+const CONTROL_ALL = new RegExp(CONTROL.source, 'gu');
+
+/** O texto sem os caracteres de controle e de direção que `parseCharacterName` recusa. */
+export function stripControl(text: string): string {
+  return text.replace(CONTROL_ALL, '');
+}
 
 export const NAME_MAX = 24;
 

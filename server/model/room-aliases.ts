@@ -3,6 +3,7 @@
 // conhecidas (a pasta de assets aparece como "Arquiteto").
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { stripControl } from '../../shared/appearance';
 import { errMsg, log } from '../log';
 
 export const ROOM_NAME_MAX = 40;
@@ -10,6 +11,10 @@ export const ROOM_NAME_MAX = 40;
 /** Chave comparável de um caminho (barras normais, sem barra final, sem diferença de maiúsculas). */
 export function pathKey(p: string): string {
   return p.trim().replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+}
+
+function cleanName(raw: string): string {
+  return stripControl(raw.replace(/\s+/g, ' ').trim()).slice(0, ROOM_NAME_MAX);
 }
 
 export class RoomAliases {
@@ -23,7 +28,7 @@ export class RoomAliases {
     if (!this.file) return;
     try {
       const j = JSON.parse(readFileSync(this.file, 'utf8')) as { aliases?: Record<string, unknown> };
-      for (const [k, v] of Object.entries(j.aliases ?? {})) if (typeof v === 'string' && v.trim()) this.aliases.set(pathKey(k), v.trim().slice(0, ROOM_NAME_MAX));
+      for (const [k, v] of Object.entries(j.aliases ?? {})) if (typeof v === 'string' && cleanName(v)) this.aliases.set(pathKey(k), cleanName(v));
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') log.warn(`rooms.json ilegível (${errMsg(err)}); sem nomes de sala personalizados.`);
     }
@@ -42,7 +47,7 @@ export class RoomAliases {
   /** Define o nome da sala da pasta; vazio volta ao padrão. Devolve o nome em uso. */
   set(path: string, name: string): string | undefined {
     const k = pathKey(path);
-    const clean = name.replace(/\s+/g, ' ').trim().slice(0, ROOM_NAME_MAX);
+    const clean = cleanName(name);
     if (clean) this.aliases.set(k, clean);
     else this.aliases.delete(k);
     this.save();
