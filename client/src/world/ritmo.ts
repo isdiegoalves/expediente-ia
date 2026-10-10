@@ -4,12 +4,12 @@ import type { AgentStatus, OfficeSnapshot } from '../../../shared/types';
 
 /** Sem novidade por este tempo, o desenho cai para `QUADRO_CALMO_MS` entre quadros. */
 export const CALMO_APOS_MS = 60_000;
-/** Espera entre quadros com o escritório calmo. Folga sobre 100 ms: a 100 exatos o vsync deixava a medição em 10 quadros por segundo. */
+/** Espera entre quadros com o escritório calmo: 105 ms rendem até 9,6 quadros por segundo em 60, 120 e 144 Hz (o teste confere). */
 export const QUADRO_CALMO_MS = 105;
 
-const OCUPADOS: ReadonlySet<AgentStatus> = new Set(['working', 'waiting', 'shell']);
+const OCUPADOS: ReadonlySet<AgentStatus> = new Set(['working', 'waiting']);
 
-/** Alguém trabalhando, esperando resposta ou com shell em segundo plano: o desenho fica em quadros cheios. */
+/** Alguém trabalhando ou esperando resposta: o desenho fica em quadros cheios. Shell em segundo plano (servidor de desenvolvimento o dia todo) não conta. */
 export function haAgenteOcupado(snap: OfficeSnapshot): boolean {
   return snap.agents.some((a) => OCUPADOS.has(a.status));
 }

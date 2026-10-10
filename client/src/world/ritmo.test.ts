@@ -16,7 +16,7 @@ function snapshot(agents: AgentInfo[], rev = 1, rooms: RoomInfo[] = []): OfficeS
  * Repete o que o laço do mundo faz: desenha, pergunta ao ritmo quanto esperar e desenha no primeiro
  * vsync depois da espera ou do evento que acorda (o que vier antes). Devolve os instantes dos quadros.
  */
-function quadros(ritmo: Ritmo, ate: number, eventos: Array<{ em: number; fazer: () => void }> = []): number[] {
+function quadros(ritmo: Ritmo, ate: number, eventos: Array<{ em: number; fazer: () => void }> = [], vsync = VSYNC_MS): number[] {
   const marcas: number[] = [];
   const pendentes = [...eventos].sort((x, y) => x.em - y.em);
   let t = 0;
@@ -29,7 +29,7 @@ function quadros(ritmo: Ritmo, ate: number, eventos: Array<{ em: number; fazer: 
       ev.fazer();
       proximo = Math.max(ev.em, t);
     }
-    t = Math.max(Math.ceil(proximo / VSYNC_MS) * VSYNC_MS, t + VSYNC_MS);
+    t = Math.max(Math.ceil(proximo / vsync) * vsync, t + vsync);
   }
   return marcas;
 }
@@ -37,11 +37,10 @@ function quadros(ritmo: Ritmo, ate: number, eventos: Array<{ em: number; fazer: 
 const porSegundo = (marcas: number[], de: number, ate: number) => marcas.filter((m) => m >= de && m < ate).length / ((ate - de) / 1000);
 
 describe('ritmo do desenho', () => {
-  it('escritório ocioso por 5 minutos: no máximo 10 quadros por segundo depois da janela', () => {
-    const ritmo = new Ritmo(0);
-    const marcas = quadros(ritmo, 5 * 60_000);
+  it.each([60, 120, 144])('escritório ocioso por 5 minutos a %i Hz: até 9,6 quadros por segundo depois da janela', (hz) => {
+    const marcas = quadros(new Ritmo(0), 5 * 60_000, [], 1000 / hz);
     expect(porSegundo(marcas, 0, 10_000)).toBeGreaterThan(50);
-    expect(porSegundo(marcas, CALMO_APOS_MS + 1_000, 5 * 60_000)).toBeLessThanOrEqual(10);
+    expect(porSegundo(marcas, CALMO_APOS_MS + 1_000, 5 * 60_000)).toBeLessThanOrEqual(9.6);
     expect(porSegundo(marcas, CALMO_APOS_MS + 1_000, 5 * 60_000)).toBeGreaterThan(8);
   });
 
@@ -60,7 +59,7 @@ describe('ritmo do desenho', () => {
     const evento = 2 * 60_000;
     const marcas = quadros(ritmo, evento + CALMO_APOS_MS + 20_000, [{ em: evento, fazer: () => ritmo.acordar(evento) }]);
     expect(porSegundo(marcas, evento + CALMO_APOS_MS - 5_000, evento + CALMO_APOS_MS - 1_000)).toBeGreaterThan(50);
-    expect(porSegundo(marcas, evento + CALMO_APOS_MS + 2_000, evento + CALMO_APOS_MS + 20_000)).toBeLessThanOrEqual(10);
+    expect(porSegundo(marcas, evento + CALMO_APOS_MS + 2_000, evento + CALMO_APOS_MS + 20_000)).toBeLessThanOrEqual(9.6);
   });
 
   it('o intervalo calmo respeita o quadro por 100 ms contando o que o quadro já gastou', () => {
@@ -74,8 +73,8 @@ describe('ritmo do desenho', () => {
 });
 
 describe('snapshots e o ritmo', () => {
-  it('agente trabalhando, esperando ou com shell mantém os quadros cheios a cada snapshot', () => {
-    for (const status of ['working', 'waiting', 'shell'] as const) {
+  it('agente trabalhando ou esperando mantém os quadros cheios a cada snapshot', () => {
+    for (const status of ['working', 'waiting'] as const) {
       const ritmo = new Ritmo(0);
       let t = 0;
       for (; t < 10 * 60_000; t += 250) {
@@ -83,6 +82,13 @@ describe('snapshots e o ritmo', () => {
         expect(ritmo.calmo(t)).toBe(false);
       }
     }
+  });
+
+  it('sessão com shell em segundo plano não mantém os quadros cheios: vira calma como a ociosa', () => {
+    const ritmo = new Ritmo(0);
+    ritmo.observarSnapshot(snapshot([agente('a', 'shell'), agente('b', 'idle')]), 0);
+    expect(haAgenteOcupado(snapshot([agente('a', 'shell')]))).toBe(false);
+    expect(ritmo.calmo(CALMO_APOS_MS)).toBe(true);
   });
 
   it('agente ocupado mantém os quadros cheios mesmo sem snapshot novo por muito tempo', () => {
