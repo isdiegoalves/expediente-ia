@@ -18,6 +18,7 @@ const AVISO_FORK = 'cria uma cópia, não responde à sessão original';
 const LISTA_PERMITIDA = [
   /^claude:\/\/code\/(?:continue|needs-input)\?session=local_[A-Za-z0-9-]{1,64}$/,
   /^claude:\/\/resume\?session=[A-Za-z0-9][A-Za-z0-9-]{0,63}$/,
+  /^claude:\/\/code\/needs-input$/,
 ];
 
 /** Só estas URLs saem num redirecionamento que faz o sistema abrir o app. */
