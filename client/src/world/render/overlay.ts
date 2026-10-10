@@ -4,6 +4,7 @@
 // Organização: tudo o que flutua (placas, pílulas, balões, etiquetas) disputa espaço na tela.
 // Os itens são POSICIONADOS em ordem decrescente de prioridade (quem chega depois desvia, vira
 // só o ícone ou é descartado) e DESENHADOS em ordem crescente (o mais importante fica por cima).
+import { esperaPorSala, textoPrecisamDeVoce, type EsperaDaSala } from '../../../../shared/espera';
 import { TILE } from '../../art/api';
 import { withAlpha } from '../../art/core/color';
 import { coresDerivadas } from '../../tema/cores';
@@ -38,6 +39,7 @@ export const ALERT_MAX_W = 340;
 const BUBBLE_H = 20;
 const LABEL_H = 15;
 const RECENT_MS = 4000;
+const ALERT_LIFT_STEPS = 3;
 /** Altura mínima (px CSS) da placa na tela para escrever o nome nela. */
 const SIGN_MIN_PX = 14;
 /** Abaixo deste zoom (visão geral), os balões de atividade são racionados. */
@@ -85,8 +87,10 @@ interface Bubble {
   h: number;
   /** Texto já cortado para a largura. */
   fitted: string;
-  /** Subiu um degrau para desviar: o rabicho desce até a cabeça. */
-  lifted: boolean;
+  /** Degraus que subiu para desviar (0 = não subiu): o rabicho desce até a cabeça. */
+  lifted: number;
+  /** Balão único da sala com a contagem de quem espera (visão geral): mantém o texto mesmo em telas minúsculas. */
+  agrega: boolean;
 }
 
 interface Label {
@@ -274,6 +278,7 @@ export class Overlay {
     items.length = 0;
     const heads = this.renderer.heads;
     const showAll = opts.showNames && zoom >= 0.99;
+    const esperaSala = zoom < OVERVIEW_ZOOM && opts.bubbles !== 'none' ? this.esperaDasSalas(vw, vh) : null;
     for (const ch of this.sim.chars.values()) {
       const head = heads.get(ch.id);
       if (!head || !head.visible) continue;
@@ -282,9 +287,10 @@ export class Overlay {
       if (hx < -120 || hx > vw + 120 || hy < -60 || hy > vh + 80) continue;
       const selected = sel.agent === ch.id;
       const hovered = sel.hover === ch.id;
-      const labeled = selected || hovered || ch.mode === 'wait' || showAll;
+      const agregada = ch.mode === 'wait' && !selected && !hovered ? esperaSala?.get(ch.roomId) : undefined;
+      const labeled = selected || hovered || (ch.mode === 'wait' && !agregada) || showAll;
       const above = labeled && this.labelAbove(ch);
-      const b = this.bubbleFor(ch, head, now, opts, selected, hovered);
+      const b = agregada ? this.bubbleDaSala(ch, head, agregada, now) : this.bubbleFor(ch, head, now, opts, selected, hovered);
       if (b) {
         b.extraLift = above ? LABEL_H + 3 : 0;
         items.push(b);
@@ -341,7 +347,7 @@ export class Overlay {
         if (it.type === 'bubble') {
           // atividade comum e falas somem; alerta, entrega, espera de shell e o selecionado viram só o ícone
           if ((it.tone === 'info' && it.prio < 75) || it.tone === 'say') continue;
-          it.chip = true;
+          if (!it.agrega) it.chip = true;
         }
         items[n++] = it;
       }
@@ -563,7 +569,7 @@ export class Overlay {
   private takeBubble(ch: Character, head: HeadInfo, icon: string, text: string, tone: Tone, prio: number, alpha: number, changedAt: number): Bubble {
     let b = this.bubblePool[this.nb];
     if (!b) {
-      b = { type: 'bubble', ch, head, icon, text, tone, prio, alpha, chip: false, extraLift: 0, changedAt, x: 0, y: 0, w: 0, h: 0, fitted: '', lifted: false };
+      b = { type: 'bubble', ch, head, icon, text, tone, prio, alpha, chip: false, extraLift: 0, changedAt, x: 0, y: 0, w: 0, h: 0, fitted: '', lifted: 0, agrega: false };
       this.bubblePool[this.nb] = b;
     } else {
       b.ch = ch;
@@ -576,9 +582,30 @@ export class Overlay {
       b.chip = false;
       b.extraLift = 0;
       b.changedAt = changedAt;
-      b.lifted = false;
+      b.lifted = 0;
+      b.agrega = false;
     }
     this.nb++;
+    return b;
+  }
+
+  /** Salas com dois ou mais esperando você, na visão geral: um balão só, sobre um deles, com a contagem. */
+  private esperaDasSalas(vw: number, vh: number): Map<string, EsperaDaSala> | null {
+    const esperando: { id: string; roomId: string; visivel: boolean }[] = [];
+    for (const ch of this.sim.chars.values()) {
+      if (ch.mode !== 'wait' || ch.leaving) continue;
+      const head = this.renderer.heads.get(ch.id);
+      const hx = head ? this.sx(head.x) : -1e9;
+      const hy = head ? this.sy(head.y) : -1e9;
+      esperando.push({ id: ch.id, roomId: ch.roomId, visivel: !!head?.visible && hx >= -120 && hx <= vw + 120 && hy >= -60 && hy <= vh + 80 });
+    }
+    return esperando.length ? esperaPorSala(esperando) : null;
+  }
+
+  private bubbleDaSala(ch: Character, head: HeadInfo, espera: EsperaDaSala, now: number): Bubble | null {
+    if (espera.ancora !== ch.id) return null;
+    const b = this.takeBubble(ch, head, '✋', textoPrecisamDeVoce(espera.total), 'alert', 100, 1, now);
+    b.agrega = true;
     return b;
   }
 
@@ -672,11 +699,14 @@ export class Overlay {
       return true;
     }
     if (b.tone === 'alert') {
-      // o alerta nunca some: sobe um degrau (rabicho longo até a cabeça) ou fica por cima
-      const up = b.y - b.h - 6;
-      if (!this.overlaps(b.x, up, b.w, b.h)) {
+      // o alerta nunca some: sobe até três degraus (rabicho longo até a cabeça) ou fica por cima
+      const base = b.y;
+      for (let step = 1; step <= ALERT_LIFT_STEPS; step++) {
+        const up = base - step * (b.h + 6);
+        if (this.overlaps(b.x, up, b.w, b.h)) continue;
         b.y = up;
-        b.lifted = true;
+        b.lifted = step;
+        break;
       }
       this.place(b.x, b.y, b.w, b.h);
       return true;
@@ -709,7 +739,7 @@ export class Overlay {
       ctx.lineWidth = 1.5;
       ctx.beginPath();
       ctx.moveTo(tx + 0.5, y + h);
-      ctx.lineTo(tx + 0.5, y + 2 * h + 11);
+      ctx.lineTo(tx + 0.5, y + h + 5 + b.lifted * (h + 6));
       ctx.stroke();
     }
     if (pulse !== 1) {
