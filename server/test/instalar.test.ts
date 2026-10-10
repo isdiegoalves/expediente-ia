@@ -2,7 +2,7 @@
 // FALSOS em pastas temporárias (nunca chama o `claude` de verdade nem toca em ~/.claude*), e a trava estática de
 // que nenhum código do repositório grava em settings.json.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -17,6 +17,7 @@ import {
   type ClaudeRunner,
   type RunOptions,
 } from '../../scripts/instalar';
+import { installedCommit } from '../../scripts/copia-fixa';
 import { tempDir } from './fixtures';
 
 interface FakeAccount {
@@ -309,7 +310,7 @@ describe('instalar.ts (CLI falso, HOME falso)', () => {
       expect(registrada).toBe(copia());
       expect(registrada).not.toBe(root);
     }
-    expect(git(copia(), 'rev-parse', 'HEAD')).toBe(instalado);
+    expect(installedCommit(copia())).toBe(instalado);
     const manifestoAntes = readFileSync(join(copia(), '.claude-plugin', 'marketplace.json'), 'utf8');
 
     writeFileSync(join(root, '.claude-plugin', 'marketplace.json'), '{"name":"outro","plugins":[]}');
@@ -317,7 +318,7 @@ describe('instalar.ts (CLI falso, HOME falso)', () => {
     git(root, 'switch', '-q', '-c', 'outro-ramo');
     writeFileSync(join(root, 'package.json'), '{"version":"9.9.9"}\n');
 
-    expect(git(copia(), 'rev-parse', 'HEAD')).toBe(instalado);
+    expect(installedCommit(copia())).toBe(instalado);
     expect(readFileSync(join(copia(), '.claude-plugin', 'marketplace.json'), 'utf8')).toBe(manifestoAntes);
     expect(readFileSync(join(copia(), 'package.json'), 'utf8')).toContain('0.2.0');
   });
@@ -335,11 +336,11 @@ describe('instalar.ts (CLI falso, HOME falso)', () => {
     writeFileSync(join(root, 'package.json'), '{"version":"0.3.0"}\n');
     const segundo = commit('segundo');
     expect(await exec('install', { commit: primeiro })).toBe(0);
-    expect(git(copia(), 'rev-parse', 'HEAD')).toBe(primeiro);
+    expect(installedCommit(copia())).toBe(primeiro);
 
     fake.folderVersion = '0.3.0';
     expect(await exec('install')).toBe(0);
-    expect(git(copia(), 'rev-parse', 'HEAD')).toBe(segundo);
+    expect(installedCommit(copia())).toBe(segundo);
     expect(installed('.claude')[MOD_PLUGIN].version).toBe('0.3.0');
   });
 
@@ -369,12 +370,77 @@ describe('instalar.ts (CLI falso, HOME falso)', () => {
     expect(existsSync(copia())).toBe(false);
   });
 
+  it('a cópia fixa não depende do checkout: mover ou apagar a pasta do repositório não a afeta', async () => {
+    const instalado = git(root, 'rev-parse', 'HEAD');
+    expect(await exec('install')).toBe(0);
+    expect(existsSync(join(copia(), '.git'))).toBe(false);
+
+    const novo = join(tmp.dir, 'outro-lugar', 'expediente-movido');
+    mkdirSync(join(tmp.dir, 'outro-lugar'));
+    renameSync(root, novo);
+    root = novo;
+    out = [];
+
+    expect(await exec('status')).toBe(0);
+    expect(out.join('\n')).toContain(`commit instalado: ${instalado.slice(0, 7)}`);
+    expect(out.join('\n')).not.toContain('commit instalado: nenhum');
+    out = [];
+    writeFileSync(join(root, 'package.json'), '{"version":"0.3.0"}\n');
+    const segundo = commit('segundo');
+    fake.folderVersion = '0.3.0';
+    expect(await exec('install')).toBe(0);
+    expect(installedCommit(copia())).toBe(segundo);
+
+    rmSync(root, { recursive: true, force: true });
+    expect(existsSync(join(copia(), '.claude-plugin', 'marketplace.json'))).toBe(true);
+    expect(fake.account(join(home, '.claude')).marketplaces.get('expediente')).toBe(copia());
+  });
+
+  it('uninstall com o repositório em outro lugar remove a cópia', async () => {
+    expect(await exec('install')).toBe(0);
+    const novo = join(tmp.dir, 'movido');
+    renameSync(root, novo);
+    root = novo;
+    expect(await exec('uninstall')).toBe(0);
+    expect(existsSync(copia())).toBe(false);
+  });
+
+  it('troca a cópia no formato antigo (git worktree) por uma independente e poda o registro dela', async () => {
+    mkdirSync(join(home, '.expediente'), { recursive: true });
+    git(root, 'worktree', 'add', '--detach', copia(), 'HEAD');
+    expect(existsSync(join(copia(), '.git'))).toBe(true);
+    expect(await exec('install')).toBe(0);
+    expect(existsSync(join(copia(), '.git'))).toBe(false);
+    expect(installedCommit(copia())).toBe(git(root, 'rev-parse', 'HEAD'));
+    expect(git(root, 'worktree', 'list')).not.toContain('mod-instalado');
+  });
+
+  it('cópia no formato antigo com o repositório já movido: instalar também conserta', async () => {
+    mkdirSync(join(home, '.expediente'), { recursive: true });
+    git(root, 'worktree', 'add', '--detach', copia(), 'HEAD');
+    const novo = join(tmp.dir, 'movido');
+    renameSync(root, novo);
+    root = novo;
+    expect(await exec('install')).toBe(0);
+    expect(existsSync(join(copia(), '.git'))).toBe(false);
+    expect(installedCommit(copia())).toBe(git(root, 'rev-parse', 'HEAD'));
+  });
+
+  it('uma conta nova, ainda sem sessão, é detectada e recebe o mod; pasta sem configuração não', async () => {
+    mkdirSync(join(home, '.claude-nova'));
+    writeFileSync(join(home, '.claude-nova', '.claude.json'), '{}');
+    mkdirSync(join(home, '.claude-mem'));
+    expect(await exec('install')).toBe(0);
+    expect(installed('.claude-nova')[MOD_PLUGIN]).toBeDefined();
+    expect(fake.accounts.has(join(home, '.claude-mem'))).toBe(false);
+    expect(out.join('\n')).toContain('.claude-nova');
+  });
+
   it('uninstall também remove a cópia fixa', async () => {
     await exec('install');
     expect(existsSync(copia())).toBe(true);
     expect(await exec('uninstall')).toBe(0);
     expect(existsSync(copia())).toBe(false);
-    expect(git(root, 'worktree', 'list')).not.toContain('mod-instalado');
   });
 });
 

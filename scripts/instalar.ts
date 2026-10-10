@@ -10,19 +10,21 @@
 // este script nunca edita o settings.json de ninguém, e um teste estático impede que algum arquivo do repositório o faça.
 //
 // O marketplace NÃO é este checkout: o Claude Code lê o plugin no lugar, então cada troca de branch aqui passaria a
-// rodar em todas as sessões das contas. O instalador cria uma cópia fixa (git worktree destacado em
-// ~/.expediente/mod-instalado) no commit pedido (--commit; padrão HEAD, recusando árvore com alterações) e registra
-// ESSA pasta. Atualizar o mod é rodar `npm run instalar` de novo, de propósito.
+// rodar em todas as sessões das contas. O instalador exporta o commit pedido (--commit; padrão HEAD, recusando árvore
+// com alterações) para uma cópia fixa e independente do repositório em ~/.expediente/mod-instalado, sem .git, e
+// registra ESSA pasta: mover ou apagar o checkout não afeta o mod instalado. Atualizar o mod é rodar
+// `npm run instalar` de novo (ou `npm run atualizar`, que puxa o repositório antes), de propósito.
 //
 // Nunca desinstala plugin do Habblaud, e recusa o expediente-permissoes numa conta em que o habblaud-permissoes
 // esteja ativo (os dois responderiam o mesmo pedido).
 //
 // Status (e o plano de cada conta): vem de `claude plugin list --json` e `claude plugin marketplace list --json`.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { installedCommit, removeCopy, syncCopy, type GitRunner } from './copia-fixa';
 import { discoverClaudeDirs, expandHome, isDefaultDir } from '../server/accounts/detect';
 
 const DEFAULT_PORT = 4848;
@@ -70,8 +72,9 @@ const CLI_TIMEOUT_MS = 120_000;
 const USAGE = `Uso: npm run <instalar|desinstalar|instalar:status> [-- opções]
 
   instalar          instala o mod do Expediente no Claude Code de cada conta, a partir de uma cópia fixa do commit
-                    (~/.expediente/mod-instalado), só por \`claude plugin\`; o settings.json das contas nunca é
-                    editado por este script. Rodar de novo atualiza a cópia e os plugins
+                    (~/.expediente/mod-instalado, independente deste checkout), só por \`claude plugin\`; o
+                    settings.json das contas nunca é editado por este script. Rodar de novo atualiza a cópia e os
+                    plugins; uma conta nova (pasta ~/.claude* com configuração) entra sozinha
   desinstalar       tira os plugins e o marketplace do Expediente de cada conta e remove a cópia fixa
   instalar:status   mostra o commit instalado e, por conta, o marketplace e os plugins (e versões)
 
@@ -87,8 +90,8 @@ Opções:
 Precisa do Claude Code ${MIN_CLAUDE_VERSION} ou mais novo; em versões anteriores o instalador recusa a conta.
 Antes de tocar nas contas, roda \`claude plugin validate --strict\` na cópia.
 
-Contas: as mesmas do servidor (~/.claude* com projects/ ou sessions/, CLAUDE_CONFIG_DIR ou
-EXPEDIENTE_CLAUDE_DIRS). Uso capturado em EXPEDIENTE_USAGE_DIR (padrão ~/.expediente/host/uso).`;
+Contas: as do servidor (~/.claude* com projects/ ou sessions/, CLAUDE_CONFIG_DIR ou EXPEDIENTE_CLAUDE_DIRS) e as
+~/.claude* que já têm configuração (settings.json, .claude.json, .credentials.json ou plugins/), mesmo sem sessão. Uso capturado em EXPEDIENTE_USAGE_DIR (padrão ~/.expediente/host/uso).`;
 
 // ---------------------------------------------------------------------------------------------
 // O CLI do Claude Code (injetável: os testes nunca chamam o de verdade)
@@ -481,8 +484,6 @@ export interface RunContext {
 
 class FatalError extends Error {}
 
-export type GitRunner = (args: string[], cwd: string) => { code: number | null; stdout: string; stderr: string };
-
 export function makeGitRunner(): GitRunner {
   return (args, cwd) => {
     const r = spawnSync('git', args, { cwd, encoding: 'utf8', timeout: CLI_TIMEOUT_MS, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -519,10 +520,27 @@ export function resolveCommit(git: GitRunner, root: string, ref: string | undefi
   return { commit };
 }
 
-/** Cria (ou move para o commit) a cópia fixa. */
-export function syncCopy(git: GitRunner, root: string, dir: string, commit: string): string | undefined {
-  const r = existsSync(join(dir, '.git')) ? git(['checkout', '-q', '--detach', commit], dir) : git(['worktree', 'add', '--detach', dir, commit], root);
-  return r.code === 0 ? undefined : `não consegui preparar a cópia fixa em ${dir} (${r.stderr || 'git falhou'})`;
+const ACCOUNT_MARKERS = ['.claude.json', 'settings.json', '.credentials.json', 'plugins'];
+
+/**
+ * Contas onde instalar: as do servidor mais as ~/.claude* que já têm configuração do Claude Code, para a conta
+ * criada há pouco (ainda sem sessão) entrar sem outro passo. EXPEDIENTE_CLAUDE_DIRS manda sozinho, como no servidor.
+ */
+export function discoverInstallDirs(env: NodeJS.ProcessEnv, home: string): string[] {
+  const found = discoverClaudeDirs(env, home);
+  if (env.EXPEDIENTE_CLAUDE_DIRS?.trim()) return found;
+  const extra: string[] = [];
+  try {
+    for (const ent of readdirSync(home, { withFileTypes: true })) {
+      if (!ent.name.startsWith('.claude') || !(ent.isDirectory() || ent.isSymbolicLink())) continue;
+      const p = join(home, ent.name);
+      if (found.includes(p) || !ACCOUNT_MARKERS.some((m) => existsSync(join(p, m)))) continue;
+      extra.push(p);
+    }
+  } catch {
+    // $HOME ilegível: fica só com as do servidor
+  }
+  return [...found, ...extra].sort((a, b) => Number(!isDefaultDir(a, home)) - Number(!isDefaultDir(b, home)) || a.localeCompare(b));
 }
 
 async function fetchHealth(port: number): Promise<{ permissions?: boolean } | undefined> {
@@ -592,7 +610,7 @@ export function readAccountState(claude: ClaudeRunner, env: NodeJS.ProcessEnv): 
 
 /** Pastas das contas: as de --conta (que precisam existir) ou as detectadas. */
 function accountDirs(opts: RunOptions, env: NodeJS.ProcessEnv, home: string): string[] {
-  if (!opts.accounts.length) return discoverClaudeDirs(env, home);
+  if (!opts.accounts.length) return discoverInstallDirs(env, home);
   return [...new Set(opts.accounts.map((a) => expandHome(a, home)))].map((dir) => {
     let ok = false;
     try {
@@ -674,13 +692,13 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
     version = opts.dryRun ? readPackageVersion(ctx.root) : readPackageVersion(copy);
   }
   if (opts.command === 'status') {
-    const head = ctx.git(['rev-parse', '--short', 'HEAD'], ctx.root);
-    const inst = existsSync(join(copy, '.git')) ? ctx.git(['rev-parse', '--short', 'HEAD'], copy) : undefined;
-    if (inst?.code === 0) version = existsSync(join(copy, 'package.json')) ? readPackageVersion(copy) : undefined;
+    const head = ctx.git(['rev-parse', 'HEAD'], ctx.root);
+    const inst = installedCommit(copy);
+    if (inst) version = existsSync(join(copy, 'package.json')) ? readPackageVersion(copy) : undefined;
     out(`Claude Code ${cliVersion ?? '(versão desconhecida)'}${cliVersion && !versionAtLeast(cliVersion, MIN_CLAUDE_VERSION) ? ` — o mod precisa do ${MIN_CLAUDE_VERSION}+` : ''}`);
-    if (inst?.code === 0) {
-      const igual = head.code === 0 && head.stdout === inst.stdout;
-      out(`commit instalado: ${inst.stdout} em ${tildify(copy, home)}${igual ? '' : ` (o checkout está em ${head.code === 0 ? head.stdout : '?'}; npm run instalar atualiza)`}`);
+    if (inst) {
+      const igual = head.code === 0 && head.stdout === inst;
+      out(`commit instalado: ${inst.slice(0, 7)} em ${tildify(copy, home)}${igual ? '' : ` (o checkout está em ${head.code === 0 ? head.stdout.slice(0, 7) : '?'}; npm run instalar atualiza)`}`);
     } else out(`commit instalado: nenhum (a cópia fixa ${tildify(copy, home)} não existe; npm run instalar cria)`);
   }
 
@@ -777,9 +795,9 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
     out('');
     out('Pronto. Sessões já abertas continuam com o mod até /reload-plugins (ou até reabrir a sessão).');
   }
-  if (opts.command === 'uninstall' && !opts.dryRun && !failures && existsSync(join(copy, '.git'))) {
-    const rm = ctx.git(['worktree', 'remove', '--force', copy], ctx.root);
-    out(rm.code === 0 ? `✓ cópia fixa removida: ${tildify(copy, home)}` : `! não consegui remover a cópia fixa ${tildify(copy, home)} (${rm.stderr})`);
+  if (opts.command === 'uninstall' && !opts.dryRun && !failures && existsSync(copy)) {
+    const bad = removeCopy(ctx.git, ctx.root, copy);
+    out(bad ? `! não consegui remover a cópia fixa ${tildify(copy, home)} (${bad})` : `✓ cópia fixa removida: ${tildify(copy, home)}`);
   }
   if (opts.command === 'status') {
     // O mod e o plugin de permissões só falam com o Expediente local: diz se ele está lá para responder.
