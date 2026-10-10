@@ -137,9 +137,14 @@ function estatistica(valores) {
 }
 
 const SCRIPT_DE_MEDIDA = `(() => {
-  const m = { quadros: [], marcas: [], snapshots: [], ticks: [], congelado: false, oculto: false, cursor: -1, acc: 0 };
-  m.inicio = () => { m.quadros.length = 0; m.marcas.length = 0; m.ticks.length = 0; m.cursor = -1; m.acc = 0; };
+  const m = { quadros: [], marcas: [], desenhos: [], snapshots: [], ticks: [], congelado: false, oculto: false, cursor: -1, acc: 0 };
+  m.inicio = () => { m.quadros.length = 0; m.marcas.length = 0; m.desenhos.length = 0; m.ticks.length = 0; m.cursor = -1; m.acc = 0; };
   const adiados = [];
+  const preencher = CanvasRenderingContext2D.prototype.fillRect;
+  CanvasRenderingContext2D.prototype.fillRect = function (x, y, w, h) {
+    if (x === 0 && y === 0 && w === this.canvas.width && h === this.canvas.height && this.canvas.isConnected) m.desenhos.push(performance.now());
+    return preencher.call(this, x, y, w, h);
+  };
   const adicionar = EventSource.prototype.addEventListener;
   EventSource.prototype.addEventListener = function (tipo, fn, ...r) {
     if (tipo !== 'snapshot') return adicionar.call(this, tipo, fn, ...r);
@@ -358,8 +363,9 @@ async function medirCenario(id, c, servidor, navegador, fabrica) {
     anterior = atual;
   }
   const carga1 = loadavg();
-  const bruto = await cdp.avaliar(aba.sessionId, 'JSON.stringify({ quadros: window.__medida.quadros, ticks: window.__medida.ticks, hidden: document.hidden })');
-  const { quadros, ticks, hidden: ocultaNoFim } = JSON.parse(bruto);
+  const bruto = await cdp.avaliar(aba.sessionId, 'JSON.stringify({ quadros: window.__medida.quadros, marcas: window.__medida.marcas, desenhos: window.__medida.desenhos, ticks: window.__medida.ticks, hidden: document.hidden })');
+  const { quadros, marcas, desenhos, ticks, hidden: ocultaNoFim } = JSON.parse(bruto);
+  const intervalos = marcas.slice(1).map((t, i) => t - marcas[i]);
 
   let despertar = null;
   if (c.despertar) {
@@ -408,7 +414,7 @@ async function medirCenario(id, c, servidor, navegador, fabrica) {
     despertar,
     alerta,
     ambiente: { ...ambiente, ocultaNoInicio, ocultaNoFim },
-    quadros: { total: quadros.length, fpsEfetivo: quadros.length / duracaoDoCenario, trabalhoMs: estatistica(quadros) },
+    quadros: { total: quadros.length, fpsEfetivo: quadros.length / duracaoDoCenario, trabalhoMs: estatistica(quadros), intervaloMs: estatistica(intervalos), menoresQue99Ms: intervalos.filter((v) => v < 99).length, desenhosDoMundo: desenhos.length, desenhosDoMundoPorSegundo: desenhos.length / duracaoDoCenario, intervaloEntreDesenhosMs: estatistica(desenhos.slice(1).map((t, i) => t - desenhos[i])), desenhosMs: desenhos.slice(0, 400).map((t) => Math.round(t * 10) / 10) },
     tickMock250ms: { total: ticks.length, ms: estatistica(ticks) },
     cpuPct: { servidor: col('servidor'), navegador_total: col('navegador_total'), pagina: col('pagina'), gpu: col('gpu'), navegador_principal: col('navegador_principal'), outros: col('outros') },
     rssMb: { servidor: col('rssServidorMb'), navegador: col('rssNavegadorMb') },

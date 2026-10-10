@@ -268,6 +268,7 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
   const loop = (ts: number) => {
     raf = 0;
     rafTimer = null;
+    const inicio = performance.now();
     const real = Date.now();
     if (playback || camera.animating) ritmo.acordar(ts);
     const realDt = lastTs ? Math.min(ritmo.calmo(ts) ? 0.25 : 0.1, Math.max(0, (ts - lastTs) / 1000)) : 1 / 60;
@@ -315,7 +316,7 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
     } catch (err) {
       console.error('[mundo] erro no frame', err);
     } finally {
-      const espera = ritmo.esperaMs(performance.now(), ts);
+      const espera = ritmo.esperaMs(performance.now(), inicio);
       if (espera > 0) {
         rafTimer = setTimeout(() => {
           rafTimer = null;

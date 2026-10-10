@@ -4,8 +4,8 @@ import type { AgentStatus, OfficeSnapshot } from '../../../shared/types';
 
 /** Sem novidade por este tempo, o desenho cai para `QUADRO_CALMO_MS` entre quadros. */
 export const CALMO_APOS_MS = 60_000;
-/** Intervalo entre quadros com o escritório calmo: no máximo 10 por segundo. */
-export const QUADRO_CALMO_MS = 100;
+/** Espera entre quadros com o escritório calmo. Folga sobre 100 ms: a 100 exatos o vsync deixava a medição em 10 quadros por segundo. */
+export const QUADRO_CALMO_MS = 105;
 
 const OCUPADOS: ReadonlySet<AgentStatus> = new Set(['working', 'waiting', 'shell']);
 
