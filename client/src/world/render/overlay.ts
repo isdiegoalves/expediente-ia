@@ -167,11 +167,16 @@ export class Overlay {
   private zoom = 1;
 
   constructor(
-    private readonly ctx: CanvasRenderingContext2D,
+    private ctx: CanvasRenderingContext2D,
     private readonly sim: Sim,
     private readonly renderer: Renderer,
     private readonly camera: Camera,
   ) {}
+
+  /** Passa a desenhar em outro contexto (o canvas transparente por cima do mundo desfocado, e de volta). */
+  usarContexto(ctx: CanvasRenderingContext2D): void {
+    this.ctx = ctx;
+  }
 
   /** Descarta medições (ex.: depois que uma fonte carregou). */
   resetCaches(): void {

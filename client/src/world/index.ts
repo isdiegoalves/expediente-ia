@@ -11,6 +11,7 @@ import { BUILDING_H, COL_W } from './constants';
 import { inRect } from './layout/geometry';
 import { attachInput, type Hit } from './input';
 import { rebaseSnapshot } from './playback';
+import { criarMaqueteDoNavegador } from './render/maquete';
 import { Overlay } from './render/overlay';
 import { Renderer } from './render/renderer';
 import { Sim } from './sim/sim';
@@ -25,6 +26,7 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
   let options: WorldOptions = { ...DEFAULT_WORLD_OPTIONS };
   const camera = new Camera();
   // Simulação e desenho são recriados quando o timelapse entra, pula ou sai (rebuild).
+  const maquete = criarMaqueteDoNavegador(canvas);
   let sim = new Sim(art, () => options);
   let renderer = new Renderer(canvas, art, sim, camera);
   let overlay = new Overlay(renderer.ctx, sim, renderer, camera);
@@ -256,6 +258,7 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
       if (camera.follow && !followCh) camera.follow = null;
       camera.update(real, followCh ? camera.centerFor(followCh.x, followCh.y - 12, camera.zoom) : null, realDt);
       renderer.frame(now, dt, options, { agent: selection?.type === 'agent' ? selection.id : null, room: selection?.type === 'room' ? selection.id : null, hover });
+      overlay.usarContexto(maquete.aplicar(!!options.maquete, canvas, mouse?.y ?? null, camera.viewH, realDt) ?? renderer.ctx);
       overlay.draw(now, options, { agent: selection?.type === 'agent' ? selection.id : null, room: selection?.type === 'room' ? selection.id : null, hover });
       renderer.pruneHeads();
       // No timelapse o mundo fica mudo: o teclado e o elevador em alta velocidade só fariam barulho.
@@ -397,6 +400,7 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
     },
     destroy: () => {
       cancelAnimationFrame(raf);
+      maquete.liberar();
       abort.abort();
       offSnapshot();
       detachInput();

@@ -19,6 +19,8 @@ export interface WorldOptions {
   daylight?: DaylightMode;
   /** Tema visual. Automático mantém o escritório original, sem troca por calendário. */
   theme?: OfficeTheme;
+  /** (Opcional, aditivo) Modo maquete: tilt-shift sobre o mundo. Desligado por padrão. */
+  maquete?: boolean;
 }
 
 export type OfficeTheme = 'auto' | 'christmas' | 'halloween';

@@ -5409,7 +5409,8 @@ button.ui-term__think:hover,
 /* ------------------------------------------------------------------ timelapse (ui/timelapse.ts) */
 
 /* Escritório reproduzido: leve tom sépia e vinheta, para não confundir com o ao vivo (o selo diz a hora). */
-html.is-replay #world {
+html.is-replay #world,
+html.is-replay #maquete {
   filter: sepia(0.3) saturate(0.9) contrast(1.03);
 }
 

@@ -7,6 +7,7 @@ import type { UiPrefs } from './prefs';
 import { SoundSettingsGroup } from './settings-sound';
 import type { SoundControl } from './sound';
 import { AboutGroup } from './version';
+import { MAQUETE_DICA, opcaoMaquete, webgl2Disponivel } from '../world/render/maquete';
 
 type BoolPref = { [K in keyof UiPrefs]: UiPrefs[K] extends boolean ? K : never }[keyof UiPrefs];
 
@@ -130,7 +131,7 @@ export class SettingsPopover implements UiComponent {
       'div',
       { class: 'ui-popover ui-settings', role: 'dialog', tabIndex: -1, attrs: { 'aria-label': 'Configurações', id: 'ui-settings', popover: 'auto' } },
       h('div', { class: 'ui-popover__head' }, h('h2', { text: 'Configurações' }), close),
-      h('div', { class: 'ui-set-group' }, h('h3', { text: 'Aparência' }), this.theme.row),
+      h('div', { class: 'ui-set-group' }, h('h3', { text: 'Aparência' }), this.theme.row, sw('maquete', 'Modo maquete', MAQUETE_DICA, flip('maquete'))),
       h(
         'div',
         { class: 'ui-set-group' },
@@ -212,6 +213,11 @@ export class SettingsPopover implements UiComponent {
     this.soundGroup.render();
     setHidden(this.demoGroup, this.ctx.store.mock);
     this.about.render();
+
+    const maquete = this.switches.get('maquete')!;
+    const opcao = opcaoMaquete(webgl2Disponivel());
+    setText(maquete.hint, opcao.dica);
+    maquete.btn.disabled = opcao.desativada;
 
     const notif = this.switches.get('browserNotifications')!;
     const state = notificationState();

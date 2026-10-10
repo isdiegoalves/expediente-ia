@@ -16,6 +16,10 @@ do meio (0.**3**.0).
   sessões terminaram, quais travaram (com o erro), quais esperam você e, por sessão, a última tarefa em andamento. Também
   abre pelo botão da barra superior ou pela tecla R, e `/escritorio resumo` no Claude Code mostra o mesmo em texto, sem
   gastar tokens. O servidor guarda a hora da saída em `resumo.json` e ela sobrevive ao reinício.
+- **Modo maquete.** Em Configurações › Aparência, um interruptor deixa o escritório com cara de miniatura: uma faixa nítida
+  que segue o mouse e as bordas desfocadas. Nomes, balões e o aviso de quem espera você continuam nítidos por cima. Vem
+  desligado (o escritório fica como sempre e nada extra é carregado), a escolha fica no navegador e, sem WebGL2 no
+  navegador, a opção aparece desativada.
 
 ## [1.1.0] - 2026-10-10
 
