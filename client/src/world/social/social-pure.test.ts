@@ -1,20 +1,14 @@
-// Regras puras da vida social: personalidades, falas, carteiras e regras das rodas.
+// Regras puras da vida social: personalidades, falas e regras das rodas.
 import { describe, expect, it } from 'vitest';
 import { IDLE_WEIGHTS } from '../sim/behavior';
 import { betFor, kindWeight, pickKind, rpsResult, winChance, type Gesture } from './gathering';
 import { fill, pick, timeLine } from './lines';
 import { bondBetween, personaFor, soloWeights, TRAIT_IDS, TRAITS, type Persona } from './persona';
-import { DELIVERY_REWARD, START_COINS, TASK_REWARD, Wallets, type StorageLike } from './wallet';
 
 const T0 = 1_700_000_000_000;
 
 function persona(traits: Persona['traits']): Persona {
   return { traits, sociability: 0.5, skill: 0.5, catchphrase: 'Bora!' };
-}
-
-function memStorage(): StorageLike & { data: Map<string, string> } {
-  const data = new Map<string, string>();
-  return { data, getItem: (k) => data.get(k) ?? null, setItem: (k, v) => void data.set(k, v) };
 }
 
 describe('personalidade', () => {
@@ -87,65 +81,6 @@ describe('falas', () => {
     expect(timeLine(new Date(2026, 9, 5, 9, 0))).toBe('Segunda-feira, né…');
     expect(timeLine(new Date(2026, 9, 7, 12, 30))).toMatch(/almoço/);
     expect(timeLine(new Date(2026, 9, 7, 16, 0))).toBeNull();
-  });
-});
-
-describe('carteira', () => {
-  const ana = { id: 'ana', name: 'Ana', kind: 'main' as const, tasks: [] as { id: string; title: string; status: string }[] };
-
-  it('quem chega entra com o saldo inicial; tarefas já concluídas são pagas em silêncio, uma vez', () => {
-    const w = new Wallets(null);
-    const sub = { id: 's1', name: 'Rui', kind: 'sub' as const, tasks: [] };
-    expect(w.ensure(sub, T0).created).toBe(true);
-    expect(w.coins('s1')).toBe(START_COINS.sub);
-    const done = { ...ana, tasks: [{ id: '1', title: 'Login', status: 'completed' }, { id: '2', title: 'Testes', status: 'pending' }] };
-    expect(w.ensure(done, T0).created).toBe(true);
-    expect(w.coins('ana')).toBe(START_COINS.main + TASK_REWARD);
-    expect(w.payTasks(done, T0)).toBe(0);
-    expect(w.ensure(done, T0).created).toBe(false);
-  });
-
-  it('cada tarefa concluída paga uma vez (lista refeita com o mesmo id e outro título paga de novo)', () => {
-    const w = new Wallets(null);
-    w.ensure(ana, T0);
-    const t1 = { ...ana, tasks: [{ id: '1', title: 'Login', status: 'completed' }] };
-    expect(w.payTasks(t1, T0)).toBe(TASK_REWARD);
-    expect(w.payTasks(t1, T0)).toBe(0);
-    const t2 = { ...ana, tasks: [{ id: '1', title: 'Cadastro', status: 'completed' }] };
-    expect(w.payTasks(t2, T0)).toBe(TASK_REWARD);
-    expect(w.get('ana')!.ledger[0]).toMatchObject({ delta: TASK_REWARD, text: 'Tarefa concluída: Cadastro' });
-    expect(w.credit('ana', DELIVERY_REWARD, '📦', 'Entregou', T0)).toBe(DELIVERY_REWARD);
-    expect(w.get('ana')!.earned).toBe(START_COINS.main + 2 * TASK_REWARD + DELIVERY_REWARD);
-  });
-
-  it('aposta: nunca deixa saldo negativo; placar e extrato dos dois lados', () => {
-    const w = new Wallets(null);
-    w.ensure(ana, T0);
-    w.ensure({ id: 'bia', name: 'Bia', kind: 'sub', tasks: [] }, T0);
-    expect(w.transfer('bia', 'ana', 50, '✊', 'no jokenpô', T0)).toBe(START_COINS.sub);
-    expect(w.coins('bia')).toBe(0);
-    expect(w.coins('ana')).toBe(START_COINS.main + START_COINS.sub);
-    expect(w.transfer('bia', 'ana', 10, '✊', 'no jokenpô', T0)).toBe(0);
-    expect(w.get('ana')!.ledger[0].text).toBe('Ganhou no jokenpô de Bia');
-    expect(w.get('bia')!.ledger[0].text).toBe('Perdeu no jokenpô para Ana');
-    w.recordMatch('ana', 'bia');
-    expect(w.get('ana')).toMatchObject({ wins: 1, losses: 0, vs: { bia: [1, 0] } });
-    expect(w.get('bia')).toMatchObject({ wins: 0, losses: 1, vs: { ana: [0, 1] } });
-  });
-
-  it('fica salva no navegador e esquece quem sumiu há dias', () => {
-    const st = memStorage();
-    const w = new Wallets(st);
-    w.ensure(ana, T0);
-    w.credit('ana', 7, '💬', 'Pedido atendido', T0);
-    w.save(T0);
-    const again = new Wallets(st);
-    expect(again.coins('ana')).toBe(START_COINS.main + 7);
-    again.ensure({ id: 'velho', name: 'Velho', kind: 'main', tasks: [] }, T0 - 10 * 24 * 3_600_000);
-    again.credit('velho', 1, '💬', 'x', T0);
-    again.save(T0);
-    expect(new Wallets(st).get('velho')).toBeUndefined();
-    expect(new Wallets({ getItem: () => '{lixo', setItem: () => undefined }).coins('ana')).toBe(0);
   });
 });
 

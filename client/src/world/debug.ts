@@ -66,7 +66,7 @@ export interface WorldDebug {
   socialize(kind: GatherKind, ids?: string[]): string[] | null;
   /** Rodas em andamento: tipo, fase, participantes, placar e aposta. */
   gatherings(): unknown;
-  /** Soma (ou tira) moedinhas da carteira de um agente. Retorna o saldo. */
+  /** Soma (ou tira) moedinhas da carteira de um agente, só sem servidor (com servidor o livro é dele). Retorna o saldo. */
   coins(agentId: string, delta: number): number;
   /**
    * Define os shells que um agente espera (sessão simulada ou agente real; o real fica sobreposto
@@ -352,13 +352,7 @@ export function createDebug(sim: Sim, renderer: Renderer, camera: Camera, onCame
         members: g.members.map((m) => ({ name: sim.chars.get(m.id)?.info.name ?? m.id, role: m.role, arrived: m.arrived, left: m.left, pose: m.pose })),
       })),
 
-    coins: (id, delta) => {
-      const w = sim.social.wallets.get(id);
-      if (!w) return 0;
-      if (delta > 0) sim.social.wallets.credit(id, delta, '🛠️', 'Ajuste (depuração)', now());
-      else w.coins = Math.max(0, w.coins + delta);
-      return w.coins;
-    },
+    coins: (id, delta) => sim.social.adjustCoins(id, delta, now()),
 
     setShells: (id, jobs) => {
       if (editAgent(id, (a) => applyShells(a, makeJobs(jobs)))) reapply();

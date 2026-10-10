@@ -1,14 +1,16 @@
-// Integração da vida social com a simulação (sem DOM): rodas que se formam sozinhas, quem é chamado
-// de volta ao trabalho, apostas, moedinhas pelo trabalho e quem espera shell.
+// Integração da vida social com a simulação (sem DOM): rodas da agenda iguais em duas abas,
+// carteiras que vêm do servidor, quem é chamado de volta ao trabalho, apostas, moedinhas pelo
+// trabalho e quem espera shell.
 import { describe, expect, it } from 'vitest';
-import type { AgentInfo, OfficeSnapshot, RoomInfo } from '../../../../shared/types';
+import { montarRoda } from '../../../../shared/social/agenda';
+import { START_COINS, TASK_REWARD, TURN_REWARD, type CarteiraInfo } from '../../../../shared/social/carteiras';
+import type { AgentInfo, OfficeSnapshot, RodaAgendada, RoomInfo } from '../../../../shared/types';
 import type { Appearance, ArtModule, RoomTheme } from '../../art/api';
 import { DEFAULT_WORLD_OPTIONS } from '../api';
 import { Sim } from '../sim/sim';
-import { active, KINDS } from './gathering';
+import { active, KINDS, type Gathering } from './gathering';
 import { CALLED } from './lines';
 import { SHELL_SOCIAL_MIN_MS } from './social';
-import { START_COINS, TASK_REWARD, TURN_REWARD } from './wallet';
 
 const theme: RoomTheme = {
   carpet: '#4f6d8f',
@@ -75,6 +77,19 @@ function snap(rooms: RoomInfo[], agents: AgentInfo[], rev = 1): OfficeSnapshot {
     accounts: [{ id: '.claude', short: 'C', name: 'Conta C', color: '#f08a3c', configDir: '~/.claude', sessions: 1, usageStatus: 'ok' }],
     meta: { demo: true, sources: [], startedAt: T0, version: 't' },
   };
+}
+
+function carteira(coins: number, extra: Partial<CarteiraInfo> = {}): CarteiraInfo {
+  return { coins, earned: coins, wins: 0, losses: 0, vs: {}, ledger: [], ...extra };
+}
+
+/** Snapshot como o servidor manda: com as rodas da agenda e as carteiras do livro. */
+function snapServidor(rooms: RoomInfo[], agents: AgentInfo[], rodas: RodaAgendada[], carteiras: Record<string, CarteiraInfo>, rev = 1): OfficeSnapshot {
+  return { ...snap(rooms, agents, rev), social: { semente: 42, rodas, carteiras } };
+}
+
+function retrato(g: Gathering) {
+  return { kind: g.kind, seed: g.seed, bet: g.bet, phase: g.phase, score: [...g.score], winner: g.winner, members: g.members.map((m) => [m.id, m.role, m.left]) };
 }
 
 function run(sim: Sim, clock: { now: number }, seconds: number, until?: () => boolean): void {
@@ -147,18 +162,19 @@ describe('vida social', () => {
     expect(sim.social.force('rps', clock.now, ['ana', 'caio'])).toHaveLength(2);
     const g = [...sim.social.gatherings][0];
     expect(g.bet).toBeGreaterThan(0);
-    run(sim, clock, 120, () => g.phase === 'ended');
+    // o livro (aqui, a agenda em memória) paga no fim previsto da roda
+    run(sim, clock, 120, () => g.phase === 'ended' && clock.now > g.plano.fim + 1_000);
     expect(g.phase).toBe('ended');
-    const w = sim.social.wallets;
-    expect(w.coins('ana') + w.coins('caio')).toBe(2 * START_COINS.main);
-    const a = w.get('ana')!;
-    const c = w.get('caio')!;
+    const a = sim.social.info('ana')!;
+    const c = sim.social.info('caio')!;
+    expect(a.coins + c.coins).toBe(2 * START_COINS.main);
     expect(a.wins + a.losses).toBe(c.wins + c.losses);
     expect(a.wins).toBe(c.losses);
     if (a.wins + a.losses > 0) {
-      expect(w.coins('ana')).not.toBe(START_COINS.main);
+      expect(a.ledger.some((e) => /jokenpô/.test(e.text))).toBe(true);
       expect(sim.social.events.at(-1)?.text).toMatch(/jokenpô/);
-      expect(['Recepção', 'Copa', 'Lounge']).toContain(sim.social.events.at(-1)?.place);
+      // os cantos de conversa do corredor não têm nome de sala: o lugar sai "Escritório"
+      expect(['Recepção', 'Copa', 'Lounge', 'Escritório']).toContain(sim.social.events.at(-1)?.place);
     }
     // a roda acabou: nenhum lugar fica preso a ela
     for (const s of sim.spots.all()) expect(sim.spots.ownerOf(s.id)?.startsWith('g:') ?? false).toBe(false);
@@ -171,11 +187,11 @@ describe('vida social', () => {
     run(sim, clock, 0.3);
     sim.social.force('pingpong', clock.now, ['ana', 'caio']);
     const g = [...sim.social.gatherings][0];
-    run(sim, clock, 180, () => g.phase === 'ended');
+    run(sim, clock, 180, () => g.phase === 'ended' && clock.now > g.plano.fim + 1_000);
     expect(g.phase).toBe('ended');
     expect(Math.max(...g.score)).toBe(5);
     expect(g.winner).toBeTruthy();
-    expect(sim.social.wallets.get(g.winner!)!.wins).toBe(1);
+    expect(sim.social.info(g.winner!)!.wins).toBe(1);
     expect(sim.social.events.some((e) => e.agentId === g.winner && /pingue-pongue \(5 a \d\)/.test(e.text))).toBe(true);
   });
 
@@ -184,13 +200,13 @@ describe('vida social', () => {
     const clock = { now: T0 };
     const tasks = [{ id: '1', title: 'Login', status: 'in_progress' as const }];
     sim.applySnapshot(snap(ROOMS, [agent('ana', '/a', 'working', { tasks, activity: { id: 'a1', kind: 'edit', icon: '✏️', text: 'Editando', at: T0 } })]), clock.now);
-    expect(sim.social.wallets.coins('ana')).toBe(START_COINS.main);
+    expect(sim.social.info('ana')!.coins).toBe(START_COINS.main);
     run(sim, clock, 1);
     sim.applySnapshot(
       snap(ROOMS, [agent('ana', '/a', 'idle', { tasks: [{ ...tasks[0], status: 'completed' }], activity: { id: 'a2', kind: 'done', icon: '✅', text: 'Concluiu', at: clock.now } })], 2),
       clock.now,
     );
-    expect(sim.social.wallets.coins('ana')).toBe(START_COINS.main + TASK_REWARD + TURN_REWARD);
+    expect(sim.social.info('ana')!.coins).toBe(START_COINS.main + TASK_REWARD + TURN_REWARD);
     expect(sim.social.floaters.filter((f) => f.charId === 'ana').map((f) => f.text).sort()).toEqual([`+🪙${TASK_REWARD}`, `+🪙${TURN_REWARD}`].sort());
   });
 
@@ -235,5 +251,76 @@ describe('vida social', () => {
     expect(info.traits.length).toBeGreaterThanOrEqual(2);
     expect(info.doing).toMatch(new RegExp(`^${KINDS.talk.emoji} ${KINDS.talk.label} com Caio`));
     expect(sim.social.info('ninguem')).toBeNull();
+  });
+
+  it('duas abas com o mesmo snapshot: a mesma roda, os mesmos participantes, o mesmo placar e o mesmo saldo', () => {
+    const agents = [agent('ana', '/a', 'idle'), agent('caio', '/b', 'idle'), agent('davi', '/b', 'idle')];
+    const roda = montarRoda(42, 'r1', 'pingpong', [agents[0], agents[1], agents[2]], T0 + 300, () => 100);
+    const carteiras = { ana: carteira(137), caio: carteira(64), davi: carteira(100) };
+    const abas = [newSim(), newSim()];
+    const clock = { now: T0 };
+    for (const sim of abas) sim.applySnapshot(snapServidor(ROOMS, agents, [roda], carteiras), clock.now);
+    const retratos: ReturnType<typeof retrato>[][] = [[], []];
+    for (let i = 0; i < 120 * 30; i++) {
+      clock.now += 1000 / 30;
+      abas.forEach((sim, k) => {
+        sim.update(1 / 30, clock.now);
+        if (i % 30 === 0) retratos[k].push(...[...sim.social.gatherings].map(retrato));
+      });
+    }
+    expect(retratos[0].length).toBeGreaterThan(10);
+    expect(retratos[1]).toEqual(retratos[0]);
+    const final = retratos[0].at(-1)!;
+    expect(final.members.map((m) => m[0])).toEqual(['ana', 'caio', 'davi']);
+    expect(Math.max(...final.score)).toBe(5);
+    expect(final.winner).toBe(roda.pontos!.filter((p) => p === 0).length === 5 ? 'ana' : 'caio');
+    for (const id of ['ana', 'caio', 'davi']) expect(abas[1].social.info(id)!.coins).toBe(abas[0].social.info(id)!.coins);
+    // o saldo é o do servidor: a festa da vitória não mexe nele
+    expect(abas[0].social.info('ana')!.coins).toBe(137);
+  });
+
+  it('recarregar a aba não zera as carteiras: elas vêm do servidor', () => {
+    const agents = [agent('ana', '/a', 'idle'), agent('caio', '/b', 'idle')];
+    const ledger = [{ at: T0 - 5_000, delta: 15, icon: '🏓', text: 'Ganhou no pingue-pongue de Caio' }];
+    const carteiras = { ana: carteira(215, { wins: 3, losses: 1, vs: { caio: [3, 1] }, ledger }), caio: carteira(15) };
+    const antes = newSim();
+    antes.applySnapshot(snapServidor(ROOMS, agents, [], carteiras), T0);
+    const depois = newSim();
+    depois.applySnapshot(snapServidor(ROOMS, agents, [], carteiras), T0 + 60_000);
+    for (const sim of [antes, depois]) {
+      const info = sim.social.info('ana')!;
+      expect(info.coins).toBe(215);
+      expect([info.wins, info.losses]).toEqual([3, 1]);
+      expect(info.ledger).toEqual(ledger);
+      expect(info.bonds.find((b) => b.id === 'caio')?.record ?? [3, 1]).toEqual([3, 1]);
+    }
+    // nada fica guardado no navegador
+    expect(globalThis.localStorage?.getItem?.('expediente.wallets.v1') ?? null).toBeNull();
+  });
+
+  it('aba aberta com a roda já andando entra nela e chega ao mesmo resultado, revanche inclusive', () => {
+    const agents = [agent('ana', '/a', 'idle'), agent('caio', '/b', 'idle')];
+    const roda = montarRoda(42, 'r3', 'rps', [agents[0], agents[1]], T0, () => 100);
+    expect(roda.revanche).toBeDefined();
+    const carteiras = { ana: carteira(100), caio: carteira(100) };
+    const velha = newSim();
+    const clock = { now: T0 };
+    velha.applySnapshot(snapServidor(ROOMS, agents, [roda], carteiras), clock.now);
+    run(velha, clock, 6);
+    const nova = newSim();
+    nova.applySnapshot(snapServidor(ROOMS, agents, [roda], carteiras), clock.now);
+    const ga = [...velha.social.gatherings][0];
+    let gb: Gathering | undefined;
+    for (let i = 0; i < 120 * 30 && !(ga.phase === 'ended' && gb?.phase === 'ended'); i++) {
+      clock.now += 1000 / 30;
+      velha.update(1 / 30, clock.now);
+      nova.update(1 / 30, clock.now);
+      gb ??= [...nova.social.gatherings][0];
+    }
+    expect(gb!.plano).toBe(ga.plano);
+    gb = gb!;
+    expect([gb.winner, gb.loser, gb.rematches]).toEqual([ga.winner, ga.loser, 1]);
+    expect(ga.rematches).toBe(1);
+    expect(gb.lance).toBe(roda.jogadas!.length);
   });
 });

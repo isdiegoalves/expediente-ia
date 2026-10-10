@@ -1,12 +1,16 @@
 // Vida social do escritório: quando dois ou mais agentes estão à toa (ociosos, ou esperando um
 // shell há um tempo), eles se juntam em rodas — TV, videogame, fliperama, ping-pong, papo na copa,
-// conversa, jokenpô valendo moedinhas e o espelho do banheiro. Este "diretor" escolhe a roda e os
-// parceiros pela personalidade, leva cada um ao seu lugar (passos da fila) e conduz o roteiro
-// (falas, comemorações, placar, apostas). A simulação chama update() a cada quadro.
-import type { AgentInfo } from '../../../../shared/types';
+// conversa, jokenpô valendo moedinhas e o espelho do banheiro. Quem entra em que roda, quando e com
+// que resultado vem da agenda (shared/social/agenda.ts), publicada pelo servidor no snapshot; sem
+// ela (modo mock, timelapse), a mesma agenda roda aqui em memória. Este "diretor" leva cada um ao
+// seu lugar (passos da fila) e conduz o roteiro (falas, comemorações, placar, apostas). A simulação
+// chama update() a cada quadro.
+import type { AgentInfo, OfficeSnapshot, RodaAgendada } from '../../../../shared/types';
 import type { Dir, HeldItem, Pose } from '../../art/api';
 import type { AgentSocial, SocialEvent } from '../api';
-import { mulberry32 } from '../../../../shared/hash';
+import { hash32, mulberry32 } from '../../../../shared/hash';
+import { FINAL_MS, montarRoda, MotorSocial, SHELL_SOCIAL_MIN_MS } from '../../../../shared/social/agenda';
+import { DELIVERY_REWARD, TASK_REWARD, TURN_REWARD, type CarteiraInfo } from '../../../../shared/social/carteiras';
 import { TILE } from '../constants';
 import { CAFE_ID, LOUNGE_ID, RECEPTION_ID, RESTROOM_ID } from '../layout/core';
 import type { SpotDef } from '../layout/types';
@@ -15,29 +19,9 @@ import { isLongIdle } from '../sim/behavior';
 import { facing, type Character } from '../sim/character';
 import type { Sim } from '../sim/sim';
 import type { Step } from '../sim/steps';
-import {
-  active,
-  betFor,
-  GESTURE_ICON,
-  KINDS,
-  ownerTag,
-  partnerScore,
-  pickGesture,
-  pickKind,
-  pickProgram,
-  players,
-  PROGRAM_SEED,
-  rpsResult,
-  TARGET,
-  winChance,
-  type Gathering,
-  type GatherKind,
-  type Member,
-  type Role,
-} from './gathering';
+import { active, GESTURE_ICON, KINDS, MATCH_WHAT, ownerTag, pickGesture, players, PROGRAM_SEED, rpsResult, TARGET, type Gathering, type GatherKind, type Member, type Role } from './gathering';
 import * as L from './lines';
 import { bondBetween, hasTrait, personaFor, TRAITS, type Persona, type TraitId } from './persona';
-import { DELIVERY_REWARD, TURN_REWARD, Wallets, type StorageLike } from './wallet';
 
 /** Texto flutuante sobre a cabeça ("+🪙10"), desenhado pelo overlay. */
 export interface Floater {
@@ -50,8 +34,7 @@ export interface Floater {
 
 export type { SocialEvent } from '../api';
 
-/** Quem espera um shell só sai da mesa depois disto (antes, pipoca na mesa). */
-export const SHELL_SOCIAL_MIN_MS = 40_000;
+export { SHELL_SOCIAL_MIN_MS };
 /** Quem não chega ao lugar da roda em tanto tempo desiste (a roda acontece sem ele ou não acontece). */
 const GATHER_TIMEOUT_MS = 35_000;
 const SAY_MS = 2_600;
@@ -60,15 +43,25 @@ const MAX_FLOATERS = 24;
 const MAX_EVENTS = 40;
 const COIN_COLOR = '#ffd34d';
 const LOSS_COLOR = '#ff8a8a';
+/** Sem servidor, a agenda local usa esta semente (o mesmo timelapse mostra as mesmas rodas). */
+const SEMENTE_LOCAL = 0x45585044;
+const PASSO_MS = 1_000;
+/** Roda da agenda com menos tempo que isso pela frente não começa mais nesta aba. */
+const MIN_RESTANTE_MS = 8_000;
+/** Quanto a roda espera por quem ainda não pode sair da mesa antes de começar sem ele. */
+const ESPERA_MS = 8_000;
 
-const KIND_LIST = Object.keys(KINDS) as GatherKind[];
 const PLACES: Readonly<Record<string, string>> = { [LOUNGE_ID]: 'Lounge', [CAFE_ID]: 'Copa', [RECEPTION_ID]: 'Recepção', [RESTROOM_ID]: 'Banheiros' };
-/** O que se perde/ganha em cada jogo (texto do extrato: "Perdeu no jokenpô para Rafaela"). */
-const MATCH_WHAT: Partial<Record<GatherKind, string>> = {
-  rps: 'no jokenpô',
-  pingpong: 'no pingue-pongue',
-  videogame: 'no videogame',
-  arcade: 'no fliperama',
+/** Lugares que cada roda usa (quem passeia sozinho neles volta para a mesa quando a roda precisa). */
+const SPOT_KINDS: Readonly<Record<GatherKind, readonly SpotDef['kind'][]>> = {
+  tv: ['sofa', 'armchair'],
+  videogame: ['sofa', 'armchair'],
+  arcade: ['arcade'],
+  pingpong: ['pingpong', 'watch'],
+  kitchen: ['cafe_seat'],
+  talk: ['talk'],
+  rps: ['talk'],
+  mirror: ['sink'],
 };
 
 function between(rng: () => number, a: number, b: number): number {
@@ -84,19 +77,23 @@ interface SeatPlan {
 
 export class Social {
   readonly gatherings = new Set<Gathering>();
-  readonly wallets: Wallets;
   readonly floaters: Floater[] = [];
   readonly events: SocialEvent[] = [];
   private seq = 1;
   private eventSeq = 0;
-  private nextSaveAt = 0;
+  /** Agenda e livro em memória, só quando o snapshot não traz as rodas do servidor. */
+  private motor: MotorSocial | null = null;
+  private agentes: readonly AgentInfo[] = [];
+  private rodas: readonly RodaAgendada[] = [];
+  private carteiras: Readonly<Record<string, CarteiraInfo>> = {};
+  /** Rodas da agenda já em cena nesta aba (id da roda -> roda local). */
+  private readonly feitas = new Map<string, Gathering>();
+  /** Tarefas concluídas já vistas de cada agente (para o "+🪙" de quem conclui uma agora). */
+  private readonly tarefas = new Map<string, Set<string>>();
+  private nextStep = 0;
+  private nextTry = 0;
 
-  constructor(
-    private readonly sim: Sim,
-    storage: StorageLike | null,
-  ) {
-    this.wallets = new Wallets(storage);
-  }
+  constructor(private readonly sim: Sim) {}
 
   // =================================================================== disponibilidade
 
@@ -126,41 +123,108 @@ export class Social {
     return [...this.gatherings].some((g) => this.openSpotFor(g, ch) !== undefined);
   }
 
-  // =================================================================== começar / entrar
+  // =================================================================== agenda
 
-  /**
-   * `ch` quer companhia: entra numa roda em andamento (TV, torcida, papo) ou começa uma nova com
-   * colegas livres. `groupOnly` (esperando shell): nada de atividade sozinho.
-   */
-  tryInitiate(ch: Character, now: number, groupOnly: boolean): boolean {
-    if (!this.canJoin(ch, now)) return false;
-    const p = personaFor(ch.info.seed);
-    const open = this.joinable(ch, p);
-    if (open && ch.rng() < 0.4) return this.join(open, ch, now);
-    const cands = this.candidates(ch, now);
-    const avail: Partial<Record<GatherKind, boolean>> = {};
-    for (const k of KIND_LIST) {
-      const need = k === 'mirror' ? (groupOnly ? 1 : 0) : KINDS[k].min - 1;
-      if (cands.length < need) continue;
-      if (k === 'mirror' && !groupOnly) {
-        avail[k] = !!this.plan(k, 1, ch);
+  /** Snapshot novo: rodas e carteiras do servidor; sem elas (mock, timelapse), a agenda roda aqui. */
+  sync(snap: OfficeSnapshot, now: number): void {
+    this.agentes = snap.agents;
+    if (snap.social) {
+      this.motor = null;
+      this.rodas = snap.social.rodas;
+      this.carteiras = snap.social.carteiras;
+      return;
+    }
+    this.motor ??= new MotorSocial(SEMENTE_LOCAL);
+    this.step(now);
+  }
+
+  private step(now: number): void {
+    if (!this.motor) return;
+    this.nextStep = now + PASSO_MS;
+    this.motor.passo(now, this.agentes);
+    const e = this.motor.estado();
+    this.rodas = e.rodas;
+    this.carteiras = e.carteiras;
+  }
+
+  /** Põe em cena as rodas da agenda que já começaram e quem chega com elas andando. */
+  private stage(now: number): void {
+    for (const r of this.rodas) {
+      if (now < r.inicio) continue;
+      const g = this.feitas.get(r.id);
+      if (g) {
+        this.lateJoiners(g, r, now);
         continue;
       }
-      if (KINDS[k].solo && need === 0) continue;
-      avail[k] = !!this.plan(k, need + 1, ch);
+      if (now > r.fim - MIN_RESTANTE_MS) continue;
+      const nova = this.bringIn(r, now);
+      if (nova) this.feitas.set(r.id, nova);
     }
-    const kind = pickKind(ch.rng, p, avail);
-    if (kind && this.start(kind, ch, cands, now, groupOnly)) return true;
-    return open ? this.join(open, ch, now) : false;
+    if (this.feitas.size > this.rodas.length) {
+      const listed = new Set(this.rodas.map((r) => r.id));
+      for (const [id, g] of this.feitas) if (!listed.has(id) && g.phase === 'ended') this.feitas.delete(id);
+    }
   }
 
-  /** Atividade sozinho que usa o roteiro das rodas (o espelho). */
+  /** Pode largar o que está fazendo e ir para uma roda agendada. */
+  private canGo(c: Character, now: number): boolean {
+    if (c.gone || c.leaving || c.arriving || c.inside || !c.homeSpot) return false;
+    if (c.mode !== 'idle' && c.mode !== 'shell') return false;
+    if (now < c.reactUntil) return false;
+    return !c.gathering || c.gathering.local || c.gathering.phase === 'ended';
+  }
+
+  /** Uma roda da agenda entra em cena: quem pode ir larga o passeio e vai para o lugar. */
+  private bringIn(r: RodaAgendada, now: number): Gathering | null {
+    const chars = r.participantes.map((id) => this.sim.chars.get(id));
+    const ready = chars.filter((c): c is Character => !!c && this.canGo(c, now));
+    // quem ainda não pode sair (chegando, no banheiro, voltando de outra roda) ganha um tempinho
+    if (ready.length < chars.length && now - r.inicio < ESPERA_MS) return null;
+    if (KINDS[r.tipo].match && !(chars[0] && chars[1] && ready.includes(chars[0]) && ready.includes(chars[1]))) return null;
+    if (ready.length < (r.tipo === 'mirror' ? 1 : KINDS[r.tipo].min)) return null;
+    const [host, ...guests] = ready;
+    const plan = this.plan(r.tipo, ready.length, host);
+    if (!plan) {
+      this.vacate(r.tipo);
+      return null;
+    }
+    for (const c of ready) if (c.gathering || c.step || c.queue.length) this.sim.clearPlan(c);
+    return this.stageGathering(r, host, guests, plan, now, false);
+  }
+
+  /** O lugar da roda está com quem passeia sozinho: essa gente volta para a mesa e a roda tenta de novo. */
+  private vacate(kind: GatherKind): void {
+    for (const k of SPOT_KINDS[kind]) {
+      for (const s of this.sim.spots.ofKind(k)) {
+        const owner = this.sim.spots.ownerOf(s.id);
+        const c = owner ? this.sim.chars.get(owner) : undefined;
+        if (c && !c.gathering && (c.mode === 'idle' || c.mode === 'shell')) this.sim.clearPlan(c);
+      }
+    }
+  }
+
+  /** Quem a agenda pôs na roda e ainda não está nela (chegou atrasado ou entrou com ela andando) vai agora. */
+  private lateJoiners(g: Gathering, r: RodaAgendada, now: number): void {
+    for (const t of [...r.participantes.map((id) => ({ id, em: r.inicio })), ...(r.tardios ?? [])]) {
+      if (now < t.em || g.members.some((m) => m.id === t.id)) continue;
+      const c = this.sim.chars.get(t.id);
+      if (!c || !this.canGo(c, now) || this.openSpotFor(g, c) === undefined) continue;
+      if (c.gathering || c.step || c.queue.length) this.sim.clearPlan(c);
+      this.join(g, c, now);
+    }
+  }
+
+  /** Atividade sozinho que usa o roteiro das rodas (o espelho), fora da agenda. */
   startSolo(kind: 'mirror', ch: Character, now: number): boolean {
     if (!this.canJoin(ch, now)) return false;
-    return this.start(kind, ch, [], now, false, 0);
+    const plan = this.plan(kind, 1, ch);
+    if (!plan) return false;
+    const r = montarRoda(SEMENTE_LOCAL, `solo:${ch.id}:${now}`, kind, [ch.info], now, () => 0);
+    this.stageGathering(r, ch, [], plan, now, true);
+    return true;
   }
 
-  /** Força uma roda (depuração). Usa `ids` (se vierem) como participantes. */
+  /** Força uma roda (depuração), fora da agenda. Usa `ids` (se vierem) como participantes. */
   force(kind: GatherKind, now: number, ids?: string[]): string[] | null {
     const pool = ids?.length ? ids.map((id) => this.sim.chars.get(id)).filter((c): c is Character => !!c) : [...this.sim.chars.values()];
     for (const c of pool) {
@@ -172,45 +236,28 @@ export class Social {
     if (!free.length) return null;
     const [host, ...rest] = free;
     const extra = kind === 'mirror' ? Math.min(1, rest.length) : Math.min(rest.length, KINDS[kind].max - 1);
-    const ok = this.start(kind, host, rest, now, false, Math.max(KINDS[kind].min - 1, Math.min(extra, kind === 'tv' || kind === 'kitchen' ? 3 : 1)), true);
-    if (!ok) return null;
-    const g = host.gathering;
-    return g ? g.members.map((m) => this.sim.chars.get(m.id)?.info.name ?? m.id) : null;
+    const want = Math.max(KINDS[kind].min - 1, Math.min(extra, kind === 'tv' || kind === 'kitchen' ? 3 : 1));
+    const who = [host, ...rest.slice(0, want)];
+    if (who.length < (kind === 'mirror' ? 1 : KINDS[kind].min)) return null;
+    const plan = this.plan(kind, who.length, host);
+    if (!plan) return null;
+    const r = montarRoda(this.motor?.semente ?? SEMENTE_LOCAL, `local:${this.seq}:${now}`, kind, who.map((c) => c.info), now, (id) => this.coins(id));
+    this.motor?.incluir(r);
+    const g = this.stageGathering(r, host, who.slice(1), plan, now, true);
+    this.feitas.set(r.id, g);
+    return g.members.map((m) => this.sim.chars.get(m.id)?.info.name ?? m.id);
   }
 
-  private start(kind: GatherKind, host: Character, cands: Character[], now: number, groupOnly: boolean, wantOverride?: number, forced = false): boolean {
+  private stageGathering(r: RodaAgendada, host: Character, guests: Character[], plan: SeatPlan, now: number, local: boolean): Gathering {
+    const kind = r.tipo;
     const info = KINDS[kind];
-    const rng = host.rng;
-    const hp = personaFor(host.info.seed);
-    let want: number;
-    if (wantOverride !== undefined) want = wantOverride;
-    else if (kind === 'tv') want = 1 + Math.floor(rng() * 3);
-    else if (kind === 'kitchen') want = 1 + Math.floor(rng() * 2.4);
-    else if (kind === 'mirror') want = groupOnly ? 1 : cands.some((c) => hasTrait(personaFor(c.info.seed), 'vaidade')) && rng() < 0.5 ? 1 : 0;
-    else want = info.min - 1;
-    // torcida já na largada, às vezes
-    if (wantOverride === undefined && (kind === 'pingpong' || kind === 'videogame' || kind === 'rps') && rng() < 0.3) want++;
-    want = Math.max(0, Math.min(want, cands.length, info.max - 1));
-    const ranked = cands
-      .map((c) => {
-        const cp = personaFor(c.info.seed);
-        let s = partnerScore(kind, cp, bondBetween(host.info.seed, c.info.seed), rng);
-        if (isLongIdle(c.info.status, c.info.statusSince, now)) s -= 1.5;
-        if (kind === 'mirror' && !hasTrait(cp, 'vaidade')) s -= 2;
-        return { c, s };
-      })
-      .sort((a, b) => b.s - a.s);
-    let chosen = ranked.slice(0, want).map((x) => x.c);
-    // dorminhocos (ociosos há muito tempo) às vezes nem acordam com o convite
-    if (!forced) chosen = chosen.filter((c, i) => i < info.min - 1 || !isLongIdle(c.info.status, c.info.statusSince, now) || rng() < 0.35);
-    if (chosen.length + 1 < (kind === 'mirror' ? (groupOnly ? 2 : 1) : info.min)) return false;
-    const plan = this.plan(kind, chosen.length + 1, host);
-    if (!plan) return false;
-
-    const id = this.seq++;
+    const seed = hash32(r.id);
     const g: Gathering = {
-      id,
+      id: this.seq++,
       kind,
+      plano: r,
+      local,
+      lance: 0,
       host: host.id,
       members: [],
       phase: 'gather',
@@ -219,10 +266,10 @@ export class Social {
       until: 0,
       nextAt: 0,
       step: 0,
-      seed: (host.info.seed ^ Math.imul(id, 0x9e3779b1)) >>> 0,
-      rng: mulberry32((host.info.seed ^ Math.imul(id, 0x85ebca6b)) >>> 0),
-      program: kind === 'tv' ? pickProgram(rng, hp) : null,
-      bet: 0,
+      seed,
+      rng: mulberry32((seed ^ 0x85ebca6b) >>> 0),
+      program: r.programa ?? null,
+      bet: r.aposta,
       score: [0, 0],
       gestures: null,
       ties: 0,
@@ -236,7 +283,7 @@ export class Social {
     };
     const tag = ownerTag(g);
     for (const s of plan.pool) if (this.sim.spots.reserve(s.id, tag)) g.pool.push(s.id);
-    const everyone = [host, ...chosen];
+    const everyone = [host, ...guests];
     const nPlayers = info.match ? 2 : everyone.length;
     everyone.forEach((c, i) => {
       const role: Role = info.match ? (i < nPlayers ? 'player' : 'watcher') : kind === 'kitchen' || kind === 'talk' ? 'talker' : 'player';
@@ -245,15 +292,10 @@ export class Social {
       if (!spot && role === 'watcher') m.tile = this.standNear(g, c) ?? undefined;
       g.members.push(m);
     });
-    // aposta entre os dois jogadores
-    if (info.match) {
-      const [a, b] = everyone;
-      g.bet = betFor(kind, hp, personaFor(b.info.seed), this.wallets.coins(a.id), this.wallets.coins(b.id), bondBetween(a.info.seed, b.info.seed), g.rng);
-    }
     this.gatherings.add(g);
     for (const m of g.members) this.dispatch(g, m, this.sim.chars.get(m.id)!, now);
-    this.invite(g, host, chosen, now);
-    return true;
+    this.invite(g, host, guests, now);
+    return g;
   }
 
   private member(c: Character, role: Role, spot: SpotDef | null): Member {
@@ -330,31 +372,6 @@ export class Social {
   }
 
   // =================================================================== rodas em andamento
-
-  /** Roda em andamento que aceita mais um (TV, torcida do jogo, papo na copa), pelo gosto de `ch`. */
-  private joinable(ch: Character, p: Persona): Gathering | null {
-    let best: Gathering | null = null;
-    let bestScore = 0;
-    for (const g of this.gatherings) {
-      if (g.phase !== 'run' && g.phase !== 'gather') continue;
-      if (g.kind === 'talk' || g.kind === 'arcade' || g.kind === 'mirror') continue;
-      if (active(g).length >= KINDS[g.kind].max) continue;
-      if (this.openSpotFor(g, ch) === undefined) continue;
-      let s = KINDS[g.kind].match ? 0.8 : 1;
-      s *= g.kind === 'tv' ? (hasTrait(p, 'series') ? 3 : 1.4) : g.kind === 'kitchen' ? (hasTrait(p, 'fofoca') || hasTrait(p, 'cafeina') ? 2.5 : 1) : hasTrait(p, 'competicao') || hasTrait(p, 'esporte') || hasTrait(p, 'games') ? 2 : 1;
-      for (const m of active(g)) {
-        const o = this.sim.chars.get(m.id);
-        const b = o ? bondBetween(ch.info.seed, o.info.seed) : null;
-        if (b === 'amizade') s += 0.8;
-      }
-      s *= 0.6 + ch.rng() * 0.8;
-      if (s > bestScore) {
-        bestScore = s;
-        best = g;
-      }
-    }
-    return best;
-  }
 
   /** Lugar livre para mais um na roda: spot do pool (TV, torcida, copa) ou tile em pé (jokenpô). undefined = não cabe. */
   private openSpotFor(g: Gathering, ch: Character): SpotDef | null | undefined {
@@ -617,10 +634,11 @@ export class Social {
     void now;
   }
 
-  /** Encerra tudo (aba volta do segundo plano). */
+  /** Encerra tudo (aba volta do segundo plano); as rodas da agenda que ainda dão tempo voltam à cena. */
   reset(now: number): void {
     for (const g of this.gatherings) this.end(g, now);
     this.gatherings.clear();
+    this.feitas.clear();
     for (const c of this.sim.chars.values()) c.gathering = null;
     this.floaters.length = 0;
   }
@@ -628,6 +646,11 @@ export class Social {
   // =================================================================== diretor (por quadro)
 
   update(now: number): void {
+    if (this.motor && now >= this.nextStep) this.step(now);
+    if (now >= this.nextTry) {
+      this.nextTry = now + 250;
+      this.stage(now);
+    }
     for (const g of this.gatherings) {
       if (g.phase === 'ended') continue;
       if (g.pending.length) this.flushPending(g, now);
@@ -648,13 +671,11 @@ export class Social {
     }
   }
 
-  /** Baixa frequência: limpa rodas encerradas e grava as carteiras. */
+  /** Baixa frequência: limpa rodas encerradas e quem já foi embora. */
   housekeeping(now: number): void {
     for (const g of this.gatherings) if (g.phase === 'ended') this.gatherings.delete(g);
-    if (now >= this.nextSaveAt) {
-      this.nextSaveAt = now + 5_000;
-      this.wallets.save(now);
-    }
+    for (const id of this.tarefas.keys()) if (!this.sim.chars.has(id)) this.tarefas.delete(id);
+    void now;
   }
 
   private flushPending(g: Gathering, now: number): void {
@@ -698,28 +719,28 @@ export class Social {
     for (const m of active(g)) this.basePose(g, m, now);
     switch (g.kind) {
       case 'tv':
-        g.until = now + between(rng, 30_000, 65_000);
+        g.until = this.planEnd(g, now, 8_000);
         g.nextAt = now + 1_500;
         break;
       case 'kitchen':
-        g.until = now + between(rng, 24_000, 45_000);
+        g.until = this.planEnd(g, now, 6_000);
         g.nextAt = now + 500;
         break;
       case 'talk':
-        g.until = now + between(rng, 10_000, 18_000);
+        g.until = this.planEnd(g, now, 5_000);
         g.nextAt = now + 400;
         break;
       case 'mirror':
-        g.until = now + between(rng, 6_000, 11_000);
+        g.until = this.planEnd(g, now, 4_000);
         g.nextAt = now + between(rng, 2_000, 3_500);
         break;
       case 'videogame':
       case 'arcade':
-        g.until = now + between(rng, 7_000, 10_000); // fim da rodada
+        g.until = now + this.pace(g, now, this.pointsLeft(g), 4_000, 12_000); // fim da rodada
         g.nextAt = now + 1_200;
         break;
       case 'pingpong':
-        g.nextAt = now + between(rng, 1_800, 3_000);
+        g.nextAt = now + this.pace(g, now, this.pointsLeft(g), 1_400, 5_000);
         break;
       case 'rps':
         g.nextAt = now + 600;
@@ -874,11 +895,7 @@ export class Social {
     }
     // fim da rodada
     const [a, b] = ps;
-    const ca = this.charOf(a);
-    const cb = this.charOf(b);
-    const pa = ca ? personaFor(ca.info.seed) : null;
-    const pb = cb ? personaFor(cb.info.seed) : null;
-    const aWins = rng() < winChance(pa?.skill ?? 0.5, pb?.skill ?? 0.5);
+    const aWins = this.nextPoint(g) === 0;
     const [w, l] = aWins ? [a, b] : [b, a];
     g.score[aWins ? 0 : 1]++;
     const target = TARGET[g.kind] ?? 1;
@@ -887,7 +904,7 @@ export class Social {
     this.act(l, 'sulk', g.kind === 'videogame' ? 'controller' : 'none', 1_500, now);
     const cw = this.charOf(w);
     if (cw) this.say(cw, L.pick(L.GAME.round, rng), now);
-    g.until = now + 1_500 + between(rng, 7_000, 10_000);
+    g.until = now + 1_500 + this.pace(g, now + 1_500, this.pointsLeft(g), 4_000, 12_000);
     g.nextAt = now + 1_900;
   }
 
@@ -899,11 +916,9 @@ export class Social {
       g.until = now + 1_000;
       return;
     }
-    g.nextAt = now + between(rng, 2_200, 3_800);
     const [a, b] = ps;
-    const pa = this.charOf(a);
-    const pb = this.charOf(b);
-    const aWins = rng() < winChance(pa ? personaFor(pa.info.seed).skill : 0.5, pb ? personaFor(pb.info.seed).skill : 0.5);
+    const aWins = this.nextPoint(g) === 0;
+    g.nextAt = now + this.pace(g, now, this.pointsLeft(g), 1_400, 5_000);
     const i = aWins ? 0 : 1;
     g.score[i]++;
     const scorer = aWins ? a : b;
@@ -946,15 +961,14 @@ export class Social {
     g.until = now + 3_400;
   }
 
-  /** Paga a aposta (se houver), registra o placar e conta para a interface. */
+  /** A aposta muda de mãos (o livro, que é da agenda, paga no fim da roda) e a interface fica sabendo. */
   private settle(g: Gathering, w: Member, l: Member, now: number): void {
     const cw = this.charOf(w);
     const cl = this.charOf(l);
     if (!cw || !cl) return;
-    this.wallets.recordMatch(w.id, l.id);
     const what = MATCH_WHAT[g.kind] ?? 'na aposta';
     const icon = KINDS[g.kind].emoji;
-    const paid = g.bet ? this.wallets.transfer(l.id, w.id, g.bet, icon, what, now) : 0;
+    const paid = g.bet;
     if (paid) {
       this.float(cw, `+🪙${paid}`, COIN_COLOR, now);
       this.float(cl, `−🪙${paid}`, LOSS_COLOR, now);
@@ -1045,8 +1059,7 @@ export class Social {
       return;
     }
     if (g.step === 3) {
-      const ga = pickGesture(rng, personaFor(ca.info.seed));
-      const gb = pickGesture(rng, personaFor(cb.info.seed));
+      const [ga, gb] = g.plano.jogadas?.[g.lance++] ?? [pickGesture(rng, personaFor(ca.info.seed)), pickGesture(rng, personaFor(cb.info.seed))];
       g.gestures = [ga, gb];
       this.act(a, 'rps', ga, 2_200, now);
       this.act(b, 'rps', gb, 2_200, now);
@@ -1085,12 +1098,10 @@ export class Social {
       const wc = watcher ? this.charOf(watcher) : undefined;
       if (wc) g.pending.push({ id: wc.id, at: now + 600, text: L.pick(L.RPS.watch, rng) });
       this.settle(g, w, l, now);
-      // revanche: quem perdeu e é de competição/apostas pede mais uma (se ainda tem moedinhas)
-      const lp = personaFor(cl.info.seed);
-      const keen = hasTrait(lp, 'competicao') || hasTrait(lp, 'apostas');
-      if (keen && g.rematches < 1 && rng() < 0.6 && (!g.bet || this.wallets.coins(cl.id) >= 1)) {
+      // revanche: quem perdeu e é de competição/apostas pede mais uma (a agenda já decidiu)
+      if (g.plano.revanche && g.rematches < 1) {
         g.rematches++;
-        g.bet = g.bet ? Math.min(g.bet, this.wallets.coins(cl.id), this.wallets.coins(cw.id)) : 0;
+        g.bet = g.plano.revanche.aposta;
         g.pending.push({ id: cl.id, at: now + 2_200, text: L.pick(L.RPS.rematch, rng) });
         g.step = 0;
         g.ties = 0;
@@ -1131,24 +1142,41 @@ export class Social {
 
   // =================================================================== dinheiro do trabalho
 
-  /** Snapshot: garante a carteira e paga tarefas concluídas (com "+🪙" quando é ao vivo). */
+  /** Snapshot: tarefa concluída agora ganha "+🪙" sobre a cabeça (quem paga é o livro da agenda). */
   syncAgent(ch: Character, a: AgentInfo, now: number, live: boolean): void {
-    const { created } = this.wallets.ensure(a, now);
-    if (created) return;
-    const paid = this.wallets.payTasks(a, now);
-    if (paid && live) this.earned(ch, paid, now);
+    const done = new Set(a.tasks.filter((t) => t.status === 'completed').map((t) => `${t.id}|${t.title}`));
+    const before = this.tarefas.get(a.id);
+    this.tarefas.set(a.id, done);
+    if (!before || !live) return;
+    let fresh = 0;
+    for (const k of done) if (!before.has(k)) fresh++;
+    if (fresh) this.earned(ch, fresh * TASK_REWARD, now);
   }
 
   /** Pedido do usuário atendido (fim de turno do principal). */
   turnDone(ch: Character, now: number): void {
-    const v = this.wallets.credit(ch.id, TURN_REWARD, '💬', 'Pedido atendido', now);
-    if (v) this.earned(ch, v, now);
+    this.earned(ch, TURN_REWARD, now);
   }
 
   /** Subagente entregou o resultado: a tarefa dele está paga. */
   delivered(ch: Character, now: number): void {
-    const v = this.wallets.credit(ch.id, DELIVERY_REWARD, '📦', `Entregou: ${ch.info.title ?? 'resultado'}`, now);
-    if (v) this.earned(ch, v, now);
+    this.earned(ch, DELIVERY_REWARD, now);
+  }
+
+  /** Saldo de moedinhas do agente (o do servidor, ou o da agenda local). */
+  coins(id: string): number {
+    return this.carteiras[id]?.coins ?? 0;
+  }
+
+  /** Depuração, só sem servidor: mexe no saldo da agenda local. */
+  adjustCoins(id: string, delta: number, now: number): number {
+    const w = this.motor?.carteiras;
+    const entry = w?.get(id);
+    if (!w || !entry) return this.coins(id);
+    if (delta > 0) w.credit(id, delta, '🛠️', 'Ajuste (depuração)', now);
+    else entry.coins = Math.max(0, entry.coins + delta);
+    this.carteiras = this.motor!.estado().carteiras;
+    return entry.coins;
   }
 
   private earned(ch: Character, v: number, now: number): void {
@@ -1178,7 +1206,7 @@ export class Social {
     const ch = this.sim.chars.get(id);
     if (!ch) return null;
     const p = personaFor(ch.info.seed);
-    const w = this.wallets.get(id);
+    const w = this.carteiras[id];
     const bonds: AgentSocial['bonds'] = [];
     for (const o of this.sim.chars.values()) {
       if (o === ch || o.leaving || o.gone) continue;
@@ -1200,6 +1228,26 @@ export class Social {
   }
 
   // =================================================================== utilidades
+
+  /** Fim das rodas sem placar: o do plano (igual em todas as abas), com um mínimo para quem chega atrasado. */
+  private planEnd(g: Gathering, now: number, minMs: number): number {
+    return Math.max(now + minMs, g.plano.fim - FINAL_MS[g.kind]);
+  }
+
+  /** Espera até a próxima batida de uma partida, para o último ponto cair perto do fim do plano. */
+  private pace(g: Gathering, now: number, left: number, minMs: number, maxMs: number): number {
+    const target = left > 0 ? (g.plano.fim - FINAL_MS[g.kind] - now) / left : minMs;
+    return Math.max(minMs, Math.min(maxMs, target * between(g.rng, 0.85, 1.15)));
+  }
+
+  private pointsLeft(g: Gathering): number {
+    return (g.plano.pontos?.length ?? 0) - g.lance;
+  }
+
+  /** Quem faz o próximo ponto (0 = primeiro jogador), pelo plano. */
+  private nextPoint(g: Gathering): 0 | 1 {
+    return g.plano.pontos?.[g.lance++] ?? (g.score[0] >= g.score[1] ? 0 : 1);
+  }
 
   say(ch: Character, text: string, now: number, ms = SAY_MS): void {
     ch.sayText = text;

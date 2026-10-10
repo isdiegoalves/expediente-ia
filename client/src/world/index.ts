@@ -315,12 +315,10 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
 
   /**
    * Recomeça simulação e desenho do zero (o próximo snapshot é a carga inicial: todos já no lugar).
-   * No timelapse as carteiras ficam só em memória, sem tocar nas moedinhas guardadas no navegador.
+   * No timelapse os snapshots não trazem as rodas do servidor: a agenda e as carteiras ficam só em memória.
    */
   const rebuild = () => {
-    // As carteiras ao vivo gravam a cada 5 s: não perde o que mudou desde a última vez (no replay, não grava nada).
-    sim.social.wallets.save(Date.now());
-    sim = new Sim(art, () => options, playback ? null : undefined);
+    sim = new Sim(art, () => options);
     renderer = new Renderer(canvas, art, sim, camera);
     if (assets) renderer.setAssets(assets);
     if (playback) {

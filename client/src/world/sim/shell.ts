@@ -7,6 +7,7 @@
 // - > 25 min  ('nap'):      cochila na mesa, coberto de teia.
 // Sempre: ampulheta virando acima da cabeça, monitor em 'progress' e balão "⏳ <rótulo> · <tempo>".
 import type { Activity, AgentStatus, ShellJob } from '../../../../shared/types';
+import { oldestShell } from '../../../../shared/shell';
 import type { Dir, IconName } from '../../art/api';
 
 export type ShellStage = 'popcorn' | 'restless' | 'cobweb' | 'nap';
@@ -20,11 +21,7 @@ export const SHELL_COBWEB_MS = 10 * 60_000;
 export const SHELL_COBWEB_BIG_MS = 20 * 60_000;
 export const SHELL_NAP_MS = 25 * 60_000;
 
-/**
- * Comando em PRIMEIRO plano: só vira "espera" depois disto. Comandos rápidos (ls, git status...)
- * não tiram o personagem da digitação.
- */
-export const FOREGROUND_WAIT_MS = 10_000;
+export { countShells, foregroundWaiting, FOREGROUND_WAIT_MS, oldestShell, shellWaitSince } from '../../../../shared/shell';
 
 /** Giro completo na cadeira: duração e intervalo entre giros (estágio 'restless'). */
 export const SPIN_MS = 800;
@@ -74,47 +71,6 @@ export function hourglassIcon(now: number): IconName {
 // ------------------------------------------------------------------ shells do agente
 
 /** Entra na conta? Em primeiro plano, só os comandos sem resultado (background === false). */
-function counts(j: ShellJob, foregroundOnly: boolean): boolean {
-  return !foregroundOnly || j.background === false;
-}
-
-/** O shell mais antigo considerado (sem alocar). `foregroundOnly`: só os de primeiro plano. */
-export function oldestShell(shells: readonly ShellJob[] | undefined, foregroundOnly: boolean): ShellJob | null {
-  if (!shells) return null;
-  let best: ShellJob | null = null;
-  for (const j of shells) {
-    if (!counts(j, foregroundOnly) || !Number.isFinite(j.startedAt)) continue;
-    if (!best || j.startedAt < best.startedAt) best = j;
-  }
-  return best;
-}
-
-/** Quantos shells o agente espera (mesmo critério de `oldestShell`). */
-export function countShells(shells: readonly ShellJob[] | undefined, foregroundOnly: boolean): number {
-  if (!shells) return 0;
-  let n = 0;
-  for (const j of shells) if (counts(j, foregroundOnly)) n++;
-  return n;
-}
-
-/**
- * Esperando um comando em primeiro plano há mais de FOREGROUND_WAIT_MS? (status 'working' com um
- * Bash longo ainda sem resultado: o agente está parado olhando o comando rodar.)
- */
-export function foregroundWaiting(shells: readonly ShellJob[] | undefined, now: number): boolean {
-  const j = oldestShell(shells, true);
-  return !!j && now - j.startedAt > FOREGROUND_WAIT_MS;
-}
-
-/**
- * Início (epoch ms) da espera de um agente no modo 'shell': o shell mais antigo (em primeiro plano,
- * quando o status é 'working'); sem nenhum listado, o momento em que o status mudou.
- */
-export function shellWaitSince(a: { status: AgentStatus; shells?: ShellJob[]; statusSince: number }): number {
-  const j = oldestShell(a.shells, a.status !== 'shell');
-  return j ? j.startedAt : a.statusSince;
-}
-
 /** Rótulo do balão: o do shell mais antigo ou um texto genérico. */
 export function shellLabel(a: { status: AgentStatus; shells?: ShellJob[] }): string {
   const fg = a.status !== 'shell';

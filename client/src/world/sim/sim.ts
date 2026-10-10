@@ -15,7 +15,6 @@ import { BLOCKED, FREE, SEAT } from '../path/grid';
 import { PROGRAM_SEED } from '../social/gathering';
 import { hasTrait, personaFor, soloWeights } from '../social/persona';
 import { Social } from '../social/social';
-import { browserStorage, type StorageLike } from '../social/wallet';
 import {
   canDismantle,
   chooseSeat,
@@ -119,13 +118,11 @@ export class Sim {
   private shrinkPending = false;
   private nextHousekeeping = 0;
 
-  /** `storage` das carteiras: null = só em memória (o timelapse não mexe nas moedinhas de verdade). */
   constructor(
     private readonly art: ArtModule,
     private readonly options: () => WorldOptions,
-    storage: StorageLike | null = browserStorage(),
   ) {
-    this.social = new Social(this, storage);
+    this.social = new Social(this);
     this.building = assembleBuilding(columnsFor([]), [], 0);
     this.finder = new PathFinder(this.building.grid);
     this.spots.setSpots(this.building.spots);
@@ -215,6 +212,7 @@ export class Sim {
       const order = [...fresh].sort((a, b) => Number(a.mode === 'idle') - Number(b.mode === 'idle'));
       for (const ch of order) this.placeInitial(ch, now, seated);
     }
+    this.social.sync(snap, now);
     this.refreshRoomInfo();
   }
 
@@ -1178,15 +1176,7 @@ export class Sim {
         ch.nextOutingAt = now + idleSitMs(ch.rng, this.options().liveliness);
       }
     }
-    // esperando um shell: só sai da mesa para uma roda (sozinho, fica na pipoca)
-    if (ch.mode === 'shell') {
-      if (!ch.nextSocialAt) ch.nextSocialAt = now + idleSitMs(ch.rng, this.options().liveliness) * 1.3;
-      if (now >= ch.nextSocialAt) {
-        ch.nextSocialAt = now + idleSitMs(ch.rng, this.options().liveliness) * 1.3;
-        const p = personaFor(ch.info.seed);
-        if (this.social.hasCompany(ch, now) && ch.rng() < 0.5 + p.sociability * 0.4 && this.social.tryInitiate(ch, now, true)) return true;
-      }
-    }
+    // esperando um shell: só sai da mesa quando a agenda o chama para uma roda (sozinho, fica na pipoca)
     return false;
   }
 
@@ -1451,8 +1441,8 @@ export class Sim {
     const near = { tx: ch.tx, ty: ch.ty };
     const rng = ch.rng;
     const persona = personaFor(ch.info.seed);
-    // colegas à toa: a vontade é de companhia (a personalidade dosa) — TV, jogo, papo, aposta...
-    if (this.social.hasCompany(ch, now) && rng() < 0.45 + persona.sociability * 0.4 && this.social.tryInitiate(ch, now, false)) return true;
+    // colegas à toa: a vontade é de companhia (a personalidade dosa) e fica na mesa, que o convite vem da agenda
+    if (this.social.hasCompany(ch, now) && rng() < 0.45 + persona.sociability * 0.4) return false;
     const avail: Partial<Record<IdleActivity, boolean>> = {
       coffee: !!this.spots.findFree('coffee', { by: ch.id }),
       water: !!this.spots.findFree('water', { by: ch.id }),
@@ -1538,7 +1528,7 @@ export class Sim {
       }
       case 'pingpong':
       case 'talk':
-        return this.social.tryInitiate(ch, now, false);
+        return false;
       case 'mirror':
         return this.social.startSolo('mirror', ch, now);
       case 'phone': {

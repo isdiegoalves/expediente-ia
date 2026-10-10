@@ -527,9 +527,11 @@ no host); as demais ficam fixas dentro do container. Opções: `npm run docker:u
   quem aparece e o que cada um faz.
 - **Shells rodando:** nos transcripts, cada `Bash` em segundo plano (ou comando longo em primeiro plano) vira um
   "shell" com rótulo e cronômetro, até chegar a notificação de que terminou, falhou ou foi interrompido.
-- **Vida social:** as rodas, as personalidades e as moedinhas são simulação do navegador (`client/src/world/social/`),
-  sem nenhum efeito nos agentes de verdade. A personalidade sai da semente de cada agente (é a mesma em qualquer
-  navegador); as carteiras ficam no `localStorage` do navegador.
+- **Vida social:** as rodas, as personalidades e as moedinhas são simulação, sem nenhum efeito nos agentes de verdade.
+  O servidor decide quem entra em que roda, quando e com que resultado (`shared/social/agenda.ts`) e manda as rodas e
+  as carteiras no snapshot; cada aba só anima (`client/src/world/social/`), então duas abas mostram a mesma roda e o
+  mesmo saldo, que também aparece no `/escritorio` do mod. As carteiras ficam em `social.json`, na pasta de dados. A
+  personalidade sai da semente de cada agente (é a mesma em qualquer navegador).
 - **O que cada um está fazendo:** o servidor acompanha o fim dos transcripts (`.jsonl`) das sessões abertas e traduz
   cada chamada de ferramenta numa atividade em português, com ícone. Dali também saem tarefas, título, modelo e
   estatísticas.
@@ -583,7 +585,7 @@ Mais detalhes do servidor em [`server/README.md`](server/README.md).
 | `<conta>/sessions/` | `/claude/<conta>/sessions` (somente leitura) | Sessões abertas e seus status. |
 | `<conta>/projects/` | `/claude/<conta>/projects` (somente leitura) | Transcripts das sessões e dos subagentes. |
 | `~/.expediente/host/` | `/host` (somente leitura) | Ponte do mod; o uso ao vivo é lido de `/host/uso`. |
-| volume `expediente-data` | `/data` | Dados do próprio Expediente (nomes dos personagens, linha do tempo do timelapse e estatísticas do Meu dia). |
+| volume `expediente-data` | `/data` | Dados do próprio Expediente (nomes dos personagens, carteiras da vida social, linha do tempo do timelapse e estatísticas do Meu dia). |
 
 Todo bind do host é somente leitura. A pasta da conta **nunca** é montada inteira (lá ficam credenciais e configurações). O container roda como usuário sem
 privilégios, com sistema de arquivos somente leitura, sem capabilities extras e com `no-new-privileges`. Os metadados

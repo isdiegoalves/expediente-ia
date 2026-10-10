@@ -113,12 +113,7 @@ export function idleSitMs(rng: () => number, liveliness: WorldOptions['livelines
   return a + rng() * (b - a);
 }
 
-/** Ocioso há mais que isso: cochila na mesa e para de passear. */
-export const LONG_IDLE_MS = 10 * 60_000;
-
-export function isLongIdle(status: AgentStatus, statusSince: number, now: number): boolean {
-  return status === 'idle' && now - statusSince > LONG_IDLE_MS;
-}
+export { isLongIdle, LONG_IDLE_MS } from '../../../../shared/social/agenda';
 
 /**
  * Lugar de trabalho: mesa livre (por ordem de preferência); sem mesa, banqueta do canto de
