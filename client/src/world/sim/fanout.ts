@@ -1,11 +1,11 @@
 // Fan-out numa sala: no máximo MAX_INDIVIDUAIS subagentes andam pelo escritório como personagens; os demais
 // ficam na roda da equipe, contados por estado.
-import { chaveEquipe } from '../../../../shared/equipes';
+import { chaveEquipe, MAX_INDIVIDUAIS } from '../../../../shared/equipes';
 import type { AgentInfo, AgentKind, AgentStatus } from '../../../../shared/types';
 import { lugarDaRoda, type LugarDaRoda } from '../layout/roda';
 import type { AreaLayout } from '../layout/types';
 
-export const MAX_INDIVIDUAIS = 8;
+export { MAX_INDIVIDUAIS };
 
 export type EstadoNaRoda = 'esperando' | 'trabalhando' | 'aToa' | 'concluido';
 

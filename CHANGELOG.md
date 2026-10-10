@@ -24,6 +24,7 @@ do meio (0.**3**.0).
   ficam numa roda da equipe, em pé sobre um tapete na cor da sala, com uma placa que conta quantos trabalham, esperam
   você e concluíram; quem espera você sai da roda primeiro. Um clique na roda abre a lista de quem está nela, e o nome
   leva ao subagente. Os balões não se cobrem mais: quem não acha lugar desvia, vira só o ícone ou espera a vez.
+  Enquanto a sala está assim, os subagentes dela ficam de fora das rodas dos ociosos (TV, pingue-pongue, copa).
 
 ### Alterado
 

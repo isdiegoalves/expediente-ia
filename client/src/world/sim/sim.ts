@@ -141,7 +141,8 @@ export class Sim {
       const patches = this.agentPatches;
       snap = { ...snap, agents: snap.agents.map((a) => (patches.has(a.id) ? { ...a, ...patches.get(a.id) } : a)) };
     }
-    snap = { ...snap, agents: this.fanout.filtrar(snap.agents, this.chars.values()) };
+    const todos = snap.agents;
+    snap = { ...snap, agents: this.fanout.filtrar(todos, this.chars.values()) };
     this.lastSnapshot = input;
     this.now = now;
     const first = !this.initialized;
@@ -217,7 +218,8 @@ export class Sim {
       const order = [...fresh].sort((a, b) => Number(a.mode === 'idle') - Number(b.mode === 'idle'));
       for (const ch of order) this.placeInitial(ch, now, seated);
     }
-    this.social.sync(snap, now);
+    // a agenda conta a sala inteira, como no servidor, e não só quem virou personagem
+    this.social.sync({ ...snap, agents: todos }, now);
     this.refreshRoomInfo();
   }
 

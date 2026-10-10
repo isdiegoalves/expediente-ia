@@ -197,6 +197,11 @@ andamento e as carteiras de quem está presente saem no snapshot (`social`); o n
 mostram a mesma roda. A aposta é paga no fim previsto, se os dois jogadores seguirem à toa até lá (W.O. não paga).
 Tarefa concluída, pedido atendido e entrega de subagente pagam no servidor, uma vez.
 
+Numa sala com mais de oito subagentes em atividade (`MAX_INDIVIDUAIS`, em `shared/equipes.ts`), nenhum subagente dela é
+convidado para rodas: só oito viram personagem, e quais são cada aba escolhe pela ordem em que os viu chegar, então o
+servidor não tem como saber quem a aba conseguiria animar. Quem já estava numa roda quando a sala encheu fica nela até
+o fim, e os agentes principais não mudam. Sem servidor, a agenda da aba recebe a sala inteira e aplica a mesma regra.
+
 O ritmo (Calmo, Normal, Agitado) é o tempo que cada um fica na mesa antes da próxima vontade de companhia
 (`SENTADO_MS` em `shared/social/regras.ts`, o mesmo dos passeios sozinhos do navegador). Ele sai no snapshot
 (`social.ritmo`) e muda por `POST /api/social/ritmo`; na troca, as vontades pendentes são sorteadas de novo, e as

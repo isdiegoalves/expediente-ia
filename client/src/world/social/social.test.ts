@@ -367,4 +367,22 @@ describe('vida social', () => {
     };
     expect(contar('calm')).toBeLessThan(contar('lively'));
   });
+
+  it('sem servidor, a agenda da aba conta a sala inteira, como o servidor: com mais subagentes do que personagens, nenhum deles entra em roda', () => {
+    const subsEmRodas = (n: number) => {
+      const subs = Array.from({ length: n }, (_, i) => agent(`sub${i}`, '/a', 'idle', { kind: 'sub', parentId: 'ana', startedAt: T0 + i, statusSince: T0 - 60_000 }));
+      const sim = newSim();
+      const clock = { now: T0 };
+      sim.applySnapshot(snap(ROOMS, [agent('ana', '/a', 'idle'), agent('caio', '/b', 'idle'), ...subs]), clock.now);
+      const vistos = new Set<string>();
+      for (let f = 0; f < 240 * 10; f++) {
+        clock.now += 100;
+        sim.update(0.1, clock.now);
+        if (f % 10 === 0) for (const g of sim.social.gatherings) if (!g.local) for (const m of g.members) if (m.id.startsWith('sub')) vistos.add(m.id);
+      }
+      return vistos.size;
+    };
+    expect(subsEmRodas(12)).toBe(0);
+    expect(subsEmRodas(8)).toBeGreaterThan(0);
+  });
 });

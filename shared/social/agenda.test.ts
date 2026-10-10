@@ -11,10 +11,20 @@ const T0 = 1_700_000_000_000;
 function agente(id: string, extra: Partial<AgenteSocial> = {}): AgenteSocial {
   let seed = 0;
   for (const c of id) seed = (Math.imul(seed, 31) + c.charCodeAt(0)) >>> 0;
-  return { id, name: id[0].toUpperCase() + id.slice(1), kind: 'main', seed: Math.imul(seed, 2654435761) >>> 0, status: 'idle', statusSince: T0 - 60_000, tasks: [], ...extra };
+  return { id, name: id[0].toUpperCase() + id.slice(1), kind: 'main', roomId: '/p', seed: Math.imul(seed, 2654435761) >>> 0, status: 'idle', statusSince: T0 - 60_000, tasks: [], ...extra };
 }
 
 const OCIOSOS = ['ana', 'bia', 'caio', 'davi', 'edu', 'fabi'].map((id) => agente(id));
+
+function membros(r: RodaAgendada): string[] {
+  return [...r.participantes, ...(r.tardios ?? []).map((t) => t.id)];
+}
+
+function subs(n: number, sala: string, de = 0): AgenteSocial[] {
+  return Array.from({ length: n }, (_, i) => agente(`sub${de + i}${sala}`, { kind: 'sub', roomId: sala }));
+}
+
+const eSub = (id: string) => id.startsWith('sub');
 
 /** Roda a agenda de segundo em segundo e guarda cada roda como ela estava na última vez que apareceu. */
 function rodar(m: MotorSocial, segundos: number, agentes: (t: number) => readonly AgenteSocial[] = () => OCIOSOS, inicio = T0): Map<string, RodaAgendada> {
@@ -195,5 +205,53 @@ describe('agenda das rodas', () => {
     // quem saiu ainda aparece no snapshot (indo embora): a gaveta segue com a carteira dele
     m.passo(T0 + 5_000, [{ ...pronto, status: 'offline' }]);
     expect(m.estado().carteiras.ana.coins).toBe(START_COINS.main + TASK_REWARD + TURN_REWARD);
+  });
+
+  it('doze subagentes à toa numa sala, mais do que viram personagem: nenhum entra em roda nem ganha ou perde moedinha', () => {
+    for (const semente of [1, 3, 7]) {
+      const time = subs(12, '/time');
+      const m = new MotorSocial(semente);
+      const vistas = [...rodar(m, 300, () => [agente('chefe', { roomId: '/time' }), ...time]).values()];
+      expect(vistas.filter((r) => membros(r).some(eSub)), `semente ${semente}`).toEqual([]);
+      const c = m.estado().carteiras;
+      expect(time.map((s) => [c[s.id].coins, c[s.id].wins + c[s.id].losses])).toEqual(time.map(() => [START_COINS.sub, 0]));
+    }
+  });
+
+  it('trinta subagentes à toa numa sala: os principais, o da sala inclusive, seguem com as rodas deles, sem subagente', () => {
+    const todos = [agente('chefe', { roomId: '/time' }), ...subs(30, '/time'), ...OCIOSOS];
+    const vistas = [...rodar(new MotorSocial(4), 600, () => todos).values()];
+    expect(vistas.length).toBeGreaterThan(10);
+    expect(vistas.flatMap(membros).filter(eSub)).toEqual([]);
+    expect(vistas.flatMap(membros)).toContain('chefe');
+  });
+
+  it('o corte é por sala e só conta subagente em atividade: nove não entram, oito entram, concluído não conta', () => {
+    const chefe = agente('chefe', { roomId: '/time' });
+    const comSub = (agentes: AgenteSocial[]) => new Set([...rodar(new MotorSocial(3), 300, () => agentes).values()].flatMap(membros).filter(eSub));
+    expect(comSub([chefe, ...subs(9, '/time')]).size).toBe(0);
+    expect(comSub([chefe, ...subs(8, '/time')]).size).toBeGreaterThan(0);
+    const concluidos = subs(5, '/time', 8).map((s) => ({ ...s, status: 'done' as const }));
+    expect(comSub([chefe, ...subs(8, '/time'), ...concluidos]).size).toBeGreaterThan(0);
+    const duasSalas = comSub([chefe, ...subs(12, '/time'), ...subs(3, '/outra')]);
+    expect(duasSalas.size).toBeGreaterThan(0);
+    expect([...duasSalas].filter((id) => id.endsWith('/time'))).toEqual([]);
+  });
+
+  it('subagente que já está numa roda quando a sala enche fica nela até o fim (o personagem dele continua em cena)', () => {
+    const poucos = [agente('chefe', { roomId: '/time' }), ...subs(4, '/time')];
+    const m = new MotorSocial(3);
+    let alvo: RodaAgendada | undefined;
+    let t = T0;
+    for (; t <= T0 + 300_000 && !alvo; t += 1000) {
+      m.passo(t, poucos);
+      alvo = structuredClone(m.estado().rodas.find((r) => r.participantes.some(eSub) && r.fim - t > 10_000));
+    }
+    expect(alvo).toBeDefined();
+    const cheia = [...poucos, ...subs(10, '/time', 4)];
+    for (; t < alvo!.fim; t += 1000) {
+      m.passo(t, cheia);
+      expect(m.estado().rodas.find((r) => r.id === alvo!.id)?.participantes).toEqual(alvo!.participantes);
+    }
   });
 });

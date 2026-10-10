@@ -4,6 +4,7 @@
 //
 // Cada sorteio sai de mulberry32(hash da semente + o que se sorteia), nunca de um gerador com
 // estado: a mesma semente, com o mesmo relógio e os mesmos agentes, dá as mesmas rodas.
+import { MAX_INDIVIDUAIS } from '../equipes';
 import { foregroundWaiting, shellWaitSince } from '../shell';
 import { hash32, mulberry32 } from '../hash';
 import type { AgentInfo, RodaAgendada, SocialSnapshot } from '../types';
@@ -28,7 +29,7 @@ const ENTRADA_MIN_MS = 10_000;
 const LUGAR: Readonly<Record<GatherKind, string>> = { tv: 'tv', videogame: 'tv', arcade: 'fliperama', pingpong: 'mesa', kitchen: 'copa', talk: 'conversa', rps: 'conversa', mirror: 'espelho' };
 const VAGAS: Readonly<Record<string, number>> = { tv: 1, fliperama: 1, mesa: 1, copa: 2, conversa: 3, espelho: 2 };
 
-export type AgenteSocial = Pick<AgentInfo, 'id' | 'name' | 'kind' | 'seed' | 'status' | 'statusSince' | 'shells' | 'tasks' | 'activity' | 'title'>;
+export type AgenteSocial = Pick<AgentInfo, 'id' | 'name' | 'kind' | 'roomId' | 'seed' | 'status' | 'statusSince' | 'shells' | 'tasks' | 'activity' | 'title'>;
 
 export function isLongIdle(status: AgentInfo['status'], statusSince: number, now: number): boolean {
   return status === 'idle' && now - statusSince > LONG_IDLE_MS;
@@ -40,6 +41,16 @@ export function disponivel(a: AgenteSocial, agora: number): { shell: boolean; so
   const shell = a.status === 'shell' || (a.status === 'working' && foregroundWaiting(a.shells, agora));
   if (shell && agora - shellWaitSince(a) >= SHELL_SOCIAL_MIN_MS) return { shell: true, sonolento: false };
   return null;
+}
+
+/**
+ * Salas com mais subagentes em atividade do que os MAX_INDIVIDUAIS que viram personagem. Quais viram, cada aba
+ * decide pela ordem em que os viu chegar; daqui não dá para saber, então nenhum subagente da sala é convidado.
+ */
+function salasCheias(presentes: readonly AgenteSocial[]): Set<string> {
+  const porSala = new Map<string, number>();
+  for (const a of presentes) if (a.kind === 'sub' && a.status !== 'done') porSala.set(a.roomId, (porSala.get(a.roomId) ?? 0) + 1);
+  return new Set([...porSala].filter(([, n]) => n > MAX_INDIVIDUAIS).map(([sala]) => sala));
 }
 
 export function sorteio(semente: number, ...partes: (string | number)[]): () => number {
@@ -220,9 +231,11 @@ export class MotorSocial {
       if (d) livres.set(a.id, { a, p: personaFor(a.seed), ...d });
     }
     this.acompanhar(agora, livres);
-    for (const id of this.ocupados()) livres.delete(id);
-    for (const id of this.quer.keys()) if (!livres.has(id)) this.quer.delete(id);
-    this.planejar(agora, livres);
+    const ocupados = this.ocupados();
+    const cheias = salasCheias(presentes);
+    const convidaveis = new Map([...livres].filter(([id, l]) => !ocupados.has(id) && !(l.a.kind === 'sub' && cheias.has(l.a.roomId))));
+    for (const id of this.quer.keys()) if (!convidaveis.has(id)) this.quer.delete(id);
+    this.planejar(agora, convidaveis);
     this.carteiras.prune(agora);
   }
 
