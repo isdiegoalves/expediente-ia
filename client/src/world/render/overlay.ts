@@ -16,6 +16,7 @@ import type { Character } from '../sim/character';
 import { shellAgeKey, shellBubbleAlpha, shellBubbleText, STORM_LIFT, unitHash } from '../sim/shell';
 import type { Sim } from '../sim/sim';
 import { buildAnim } from './anim';
+import { lugarDoBalao, Ocupacao } from './disposicao';
 import { drawFxBanner } from './github-fx';
 import type { HeadInfo, Renderer } from './renderer';
 
@@ -151,7 +152,8 @@ export function rationBubbles(items: readonly { room: string; prio: number; chan
 export class Overlay {
   private widths = new Map<string, number>();
   private fitted = new Map<string, string>();
-  private placed: number[] = [];
+  private ocupacao = new Ocupacao();
+  private readonly livre = (x: number, y: number, w: number, h: number) => this.ocupacao.livre(x, y, w, h);
   private items: Item[] = [];
   /** Objetos reaproveitados entre frames (sem alocação no caminho quente). */
   private bubblePool: Bubble[] = [];
@@ -227,15 +229,11 @@ export class Overlay {
   }
 
   private overlaps(x: number, y: number, w: number, h: number): boolean {
-    const p = this.placed;
-    for (let i = 0; i < p.length; i += 4) {
-      if (x < p[i] + p[i + 2] && x + w > p[i] && y < p[i + 1] + p[i + 3] && y + h > p[i + 1]) return true;
-    }
-    return false;
+    return !this.ocupacao.livre(x, y, w, h);
   }
 
   private place(x: number, y: number, w: number, h: number): void {
-    this.placed.push(x, y, w, h);
+    this.ocupacao.ocupar(x, y, w, h);
   }
 
   draw(now: number, opts: WorldOptions, sel: { agent: string | null; room: string | null; hover: string | null }): void {
@@ -243,7 +241,7 @@ export class Overlay {
     const dpr = camera.dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.textBaseline = 'middle';
-    this.placed.length = 0;
+    this.ocupacao.limpar();
     const t = camera.transform();
     this.k = t.scale / dpr;
     this.ox = t.ox / dpr;
@@ -671,61 +669,45 @@ export class Overlay {
     return ch.shellText;
   }
 
-  /** Calcula o retângulo do balão (completo ou só o ícone) na posição base sobre a cabeça. */
-  private layoutBubble(b: Bubble): void {
-    const { camera } = this;
-    // acima do ícone da cabeça (quando houver), que é desenhado em espaço de mundo
-    const lift = Math.max(1, this.iconLift(b.ch)) * this.zoom + b.extraLift;
-    const headX = this.sx(b.head.x);
-    const headY = this.sy(b.head.y);
+  /** Tamanho do balão (completo ou só o ícone) e o texto cortado para caber. */
+  private bubbleSize(b: Bubble, chip: boolean): { w: number; h: number; fitted: string } {
     const say = b.tone === 'say';
     const iconW = b.icon && !say ? this.measure(BUBBLE_FONT, b.icon) + 4 : 0;
-    if (b.chip || !b.text) {
-      b.fitted = '';
-      b.w = Math.round(Math.max(20, (say ? this.measure(BUBBLE_FONT, b.icon) + 4 : iconW) + 10));
-    } else if (say) {
-      b.fitted = this.fit(SAY_FONT, b.text, SAY_MAX_W - 14);
-      b.w = Math.round(Math.min(SAY_MAX_W, this.measure(SAY_FONT, b.fitted) + 14));
-    } else {
-      const maxW = b.tone === 'alert' ? ALERT_MAX_W : BUBBLE_MAX_W;
-      b.fitted = this.fit(BUBBLE_FONT, b.text, maxW - 16 - iconW);
-      b.w = Math.round(Math.min(maxW, this.measure(BUBBLE_FONT, b.fitted) + iconW + 14));
+    const h = say && !chip ? SAY_H : BUBBLE_H;
+    if (chip || !b.text) return { w: Math.round(Math.max(20, (say ? this.measure(BUBBLE_FONT, b.icon) + 4 : iconW) + 10)), h, fitted: '' };
+    if (say) {
+      const fitted = this.fit(SAY_FONT, b.text, SAY_MAX_W - 14);
+      return { w: Math.round(Math.min(SAY_MAX_W, this.measure(SAY_FONT, fitted) + 14)), h, fitted };
     }
-    b.h = say && !b.chip ? SAY_H : BUBBLE_H;
-    b.x = Math.max(4, Math.min(camera.viewW - b.w - 4, Math.round(headX - b.w / 2)));
-    b.y = Math.round(headY - lift - b.h - 6);
+    const maxW = b.tone === 'alert' ? ALERT_MAX_W : BUBBLE_MAX_W;
+    const fitted = this.fit(BUBBLE_FONT, b.text, maxW - 16 - iconW);
+    return { w: Math.round(Math.min(maxW, this.measure(BUBBLE_FONT, fitted) + iconW + 14)), h, fitted };
   }
 
-  /** Posiciona o balão sem cobrir o que já está na tela. Retorna false se ele deve sumir. */
+  /**
+   * Põe o balão sem cobrir nada que já está na tela: no lugar, subindo para desviar (só o alerta, que também anda
+   * para o lado) ou só com o ícone. Retorna false se não cabe e ele some neste quadro.
+   */
   private placeBubble(b: Bubble): boolean {
-    this.layoutBubble(b);
-    if (!this.overlaps(b.x, b.y, b.w, b.h)) {
-      this.place(b.x, b.y, b.w, b.h);
-      return true;
-    }
-    if (b.tone === 'alert') {
-      // o alerta nunca some: sobe até três degraus (rabicho longo até a cabeça) ou fica por cima
-      const base = b.y;
-      for (let step = 1; step <= ALERT_LIFT_STEPS; step++) {
-        const up = base - step * (b.h + 6);
-        if (this.overlaps(b.x, up, b.w, b.h)) continue;
-        b.y = up;
-        b.lifted = step;
-        break;
-      }
-      this.place(b.x, b.y, b.w, b.h);
-      return true;
-    }
-    if (!b.chip) {
-      // não cabe com texto: tenta só o ícone, no mesmo lugar
-      b.chip = true;
-      this.layoutBubble(b);
-      if (!this.overlaps(b.x, b.y, b.w, b.h)) {
-        this.place(b.x, b.y, b.w, b.h);
-        return true;
-      }
-    }
-    return false;
+    // acima do ícone da cabeça (quando houver), que é desenhado em espaço de mundo
+    const lift = Math.max(1, this.iconLift(b.ch)) * this.zoom + b.extraLift;
+    const full = this.bubbleSize(b, b.chip);
+    const chip = b.chip || !b.text ? undefined : this.bubbleSize(b, true);
+    const lugar = lugarDoBalao(
+      { cx: this.sx(b.head.x), base: this.sy(b.head.y) - lift - 6, w: full.w, h: full.h, chip, degraus: b.tone === 'alert' ? ALERT_LIFT_STEPS : 0 },
+      this.camera.viewW,
+      this.livre,
+    );
+    if (!lugar) return false;
+    b.x = lugar.x;
+    b.y = lugar.y;
+    b.w = lugar.w;
+    b.h = lugar.h;
+    b.lifted = lugar.degraus;
+    b.chip = b.chip || lugar.chip;
+    b.fitted = lugar.chip ? '' : full.fitted;
+    this.place(b.x, b.y, b.w, b.h);
+    return true;
   }
 
   private drawBubble(b: Bubble, now: number): void {
