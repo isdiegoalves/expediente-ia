@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NAME_MAX, nameKey, parseAppearanceParts, parseCharacterName, parseSeed, partsKey } from './appearance';
+import { NAME_MAX, nameKey, parseAppearanceParts, parseCharacterName, parseSeed, partsKey, stripControl } from './appearance';
 
 describe('parseAppearanceParts', () => {
   it('aceita peças válidas, devolve na ordem fixa e cores em minúsculas', () => {
@@ -41,6 +41,14 @@ describe('parseCharacterName', () => {
     for (const bad of ['', '   ', 'a'.repeat(NAME_MAX + 1), 'Ana\u0000', 'Ana\u202e', 'Ana\u0085', 42, null]) {
       expect(parseCharacterName(bad)).toBeNull();
     }
+  });
+
+  it('recusa caractere invisível de formatação (espaço de largura zero, BOM, hífen suave, junção de palavra)', () => {
+    for (const invisivel of ['\u200b', '\ufeff', '\u00ad', '\u2060']) {
+      expect(parseCharacterName(`An${invisivel}a`)).toBeNull();
+      expect(stripControl(`An${invisivel}a`)).toBe('Ana');
+    }
+    expect(parseCharacterName('Ana \u{1f469}\u200d\u{1f4bb}')).toBe('Ana \u{1f469}\u200d\u{1f4bb}');
   });
 });
 

@@ -45,10 +45,11 @@ const STYLE_VALUES: Partial<Record<PartKey, readonly string[]>> = {
   facialHair: FACIAL_HAIR,
 };
 const COLOR = /^#[0-9a-f]{6}$/i;
-// Controle (C0/C1), separadores de linha e parágrafo (U+2028/2029) e marcas de direção do texto (U+200E/200F,
-// U+202A–202E, U+2066–2069): dá para disfarçar um nome com elas.
-const CONTROL = /[\p{Cc}\u2028\u2029\u200e\u200f\u202a-\u202e\u2066-\u2069]/u;
+// Controle (C0/C1), separadores de linha e parágrafo e todo caractere de formatação invisível (direção do texto,
+// largura zero, BOM): dá para disfarçar um nome com eles. ZWNJ e ZWJ ficam: emoji composto e algumas escritas usam.
+const CONTROL = /(?![\u200c\u200d])[\p{Cc}\p{Cf}\u2028\u2029]/u;
 const CONTROL_ALL = new RegExp(CONTROL.source, 'gu');
+const FORMAT = /(?![\u200c\u200d])\p{Cf}/u;
 
 /** O texto sem os caracteres de controle e de direção que `parseCharacterName` recusa. */
 export function stripControl(text: string): string {
@@ -77,7 +78,10 @@ export function parseAppearanceParts(raw: unknown): AppearanceParts | null {
 /** Nome do personagem: NFC, sem espaços sobrando, de 1 a NAME_MAX caracteres e sem caracteres de controle. */
 export function parseCharacterName(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
-  const name = raw.normalize('NFC').replace(/\s+/g, ' ').trim();
+  const nfc = raw.normalize('NFC');
+  // Antes de juntar espaços: o \s do JavaScript casa o BOM (U+FEFF) e o trocaria por um espaço comum.
+  if (FORMAT.test(nfc)) return null;
+  const name = nfc.replace(/\s+/g, ' ').trim();
   if (!name || CONTROL.test(name) || [...name].length > NAME_MAX) return null;
   return name;
 }
