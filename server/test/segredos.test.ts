@@ -58,6 +58,15 @@ describe('segredos mascarados na saída', () => {
     expect(all.some((s) => s.includes('fictici0TokenValue'))).toBe(false);
   });
 
+  it('o título da sessão e o da tarefa do subagente chegam mascarados no agente', () => {
+    const snap = office().commit().snapshot as OfficeSnapshot;
+    const main = snap.agents.find((x) => x.id === 'acc:1');
+    const sub = snap.agents.find((x) => x.id === 's1:sub');
+    expect(main?.title).toContain('Deploy com');
+    expect(main?.title).not.toContain('ghp_');
+    expect(main?.title).not.toContain('fictici0TokenValue');
+    expect(sub?.title).not.toContain('fictici0TokenValue');
+  });
   it('cwd chega só com o nome da pasta', () => {
     const snap = office().commit().snapshot as OfficeSnapshot;
     for (const s of strings(tudoQueASaidaMostra(office()))) expect(s, s).not.toContain(HOME);
