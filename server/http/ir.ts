@@ -72,8 +72,8 @@ function montar(src: NonNullable<ReturnType<Office['irSource']>>): Omit<IrInfo, 
   const links = cwdLimpo
     ? [
         noApp
-          ? { rotulo: 'Abrir o projeto no app', href: `claude://code/new?folder=${encodeURIComponent(cwd)}` }
-          : { rotulo: 'Abrir o projeto no terminal', href: `claude-cli://open?cwd=${encodeURIComponent(cwd)}` },
+          ? { rotulo: 'Nova sessão neste projeto', href: `claude://code/new?folder=${encodeURIComponent(cwd)}` }
+          : { rotulo: 'Nova sessão neste projeto', href: `claude-cli://open?cwd=${encodeURIComponent(cwd)}` },
       ]
     : [];
   const direto = vivo && noApp && src.appSessionId && ID_APP.test(src.appSessionId) ? `claude://code/continue?session=${src.appSessionId}` : undefined;
@@ -84,7 +84,8 @@ function montar(src: NonNullable<ReturnType<Office['irSource']>>): Omit<IrInfo, 
     return { ...base, comando: `${cwdLimpo ? `cd -- ${entreAspas(cwd)} && ` : ''}claude --resume ${sessionId}`, links };
   }
   if (!noApp && (src.kind === 'bg' || src.kind === 'background')) return { ...base, comando: `claude attach ${sessionId}`, links };
-  return { ...base, comando: `claude --resume ${sessionId} --fork-session`, aviso: AVISO_FORK, links };
+  const focar = origin === 'terminal' && src.pid !== undefined ? { focar: true as const } : {};
+  return { ...focar, ...base, comando: `claude --resume ${sessionId} --fork-session`, aviso: AVISO_FORK, links };
 }
 
 export interface IrDeps {

@@ -7,6 +7,7 @@ import type { DayStatsService } from '../history/daystats';
 import type { Office } from '../model/office';
 import type { SessionHistory } from '../sources/history';
 import { isJsonContentType, isLoopbackHost } from './guard';
+import { FocoStore, handleFocarRoute, handleFocoEstado, handleModFocosRoute } from './focar';
 import { handleIrRoute, NonceStore } from './ir';
 import { handleSessionsRoute } from './sessions';
 import type { Hub } from './sse';
@@ -46,6 +47,11 @@ const TERMINAL_ROUTE = /^\/api\/agents\/([^/]+)\/terminal$/;
 
 /** GET /api/agentes/:id/ir. */
 const IR_ROUTE = /^\/api\/agentes\/([^/]+)\/ir$/;
+
+/** POST /api/agentes/:id/focar, GET /api/focos/:token e as rotas do mod em /api/mod/focos. */
+const FOCAR_ROUTE = /^\/api\/agentes\/([^/]+)\/focar$/;
+const FOCO_ROUTE = /^\/api\/focos\/([0-9a-f]{32})$/;
+const MOD_FOCOS_ROUTE = /^\/api\/mod\/focos(?:\/([0-9a-f]{32})\/(assumir|resultado))?$/;
 
 const MAX_BODY = 256 * 1024;
 
@@ -168,6 +174,7 @@ function usageOf(a: AgentInfo, rooms: ReadonlyMap<string, string>): ModAgentUsag
 export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: ServerResponse, url: URL) => boolean {
   const { office, hub, accounts } = deps;
   const nonces = new NonceStore(deps.now ?? Date.now);
+  const focos = new FocoStore(deps.now ?? Date.now);
   const terminalOn = () => (typeof deps.terminal === 'function' ? deps.terminal() : deps.terminal === true);
 
   const methodNotAllowed = (res: ServerResponse, allow: string) => {
@@ -263,6 +270,28 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
       } else {
         deps.permissions(req, res, path);
       }
+      return true;
+    }
+    const modFocos = MOD_FOCOS_ROUTE.exec(path);
+    if (modFocos) {
+      handleModFocosRoute(req, res, modFocos[1], modFocos[2], { focos }).catch((err) => fail(res, err));
+      return true;
+    }
+    const focoMatch = FOCO_ROUTE.exec(path);
+    if (focoMatch) {
+      handleFocoEstado(req, res, focoMatch[1], { focos });
+      return true;
+    }
+    const focarMatch = FOCAR_ROUTE.exec(path);
+    if (focarMatch) {
+      let id: string;
+      try {
+        id = decodeURIComponent(focarMatch[1]);
+      } catch {
+        sendJson(res, 400, { error: 'id inválido' });
+        return true;
+      }
+      handleFocarRoute(req, res, id, { office, nonces, focos }).catch((err) => fail(res, err));
       return true;
     }
     const irMatch = IR_ROUTE.exec(path);

@@ -118,7 +118,7 @@ describe('GET /api/agentes/:id/ir', () => {
     expect(j.aviso).toBe('cria uma cópia, não responde à sessão original');
     expect(j.links).toEqual([
       { rotulo: 'Abrir a sessão no app', href: `claude://code/continue?session=${APP}` },
-      { rotulo: 'Abrir o projeto no app', href: 'claude://code/new?folder=%2Fp%2Floja' },
+      { rotulo: 'Nova sessão neste projeto', href: 'claude://code/new?folder=%2Fp%2Floja' },
     ]);
     expect(j.nonce).toMatch(/^[0-9a-f]{32}$/);
   });
@@ -138,7 +138,7 @@ describe('GET /api/agentes/:id/ir', () => {
     const bg = await ir('a:2');
     expect(bg.comando).toBe(`claude attach ${SESSAO}`);
     expect(bg.aviso).toBeUndefined();
-    expect(bg.links).toEqual([{ rotulo: 'Abrir o projeto no terminal', href: 'claude-cli://open?cwd=%2Fp%2Floja' }]);
+    expect(bg.links).toEqual([{ rotulo: 'Nova sessão neste projeto', href: 'claude-cli://open?cwd=%2Fp%2Floja' }]);
     const inter = await ir('a:3');
     expect(inter.comando).toBe('claude --resume outra-sessao --fork-session');
     expect(inter.aviso).toBe('cria uma cópia, não responde à sessão original');
