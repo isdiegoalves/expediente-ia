@@ -31,7 +31,7 @@
 //
 // Análise estática do Claude Code: cada chamada é escrita por extenso ($.noun.método), o nome do evento é
 // sempre uma string literal e `$` só é passado para funções declaradas no topo deste arquivo.
-import type { EngineInterface, HttpResponse, Register, RenderSurface, SessionRateLimit } from 'claude-code'
+import type { EngineInterface, HttpInit, HttpResponse, Register, RenderSurface, SessionRateLimit } from 'claude-code'
 import { abrirUrl } from './abrir'
 import { FOCO_OFFLINE_MS, FOCO_POLL_MS, lerPedidos, lerPidAssumido, type ResultadoFoco } from './foco'
 import { acoesDaSessao, detalheTexto, lerIr, listaTexto, nomeDaLinha, pidDoId, porEstado, type IrView } from './escritorio'
@@ -216,7 +216,7 @@ async function getExpediente($: EngineInterface, port: number, path: string, pos
     wait = $.clock.after(FETCH_TIMEOUT_MS, () => resolve(undefined))
   })
   try {
-    const init = post === undefined ? { headers: { accept: 'application/json' } } : { method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json' }, body: post }
+    const init: HttpInit = post === undefined ? { headers: { accept: 'application/json' } } : { method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json' }, body: post }
     return await Promise.race([$.http.fetch(`http://127.0.0.1:${port}${path}`, init), timeout])
   } catch {
     return undefined

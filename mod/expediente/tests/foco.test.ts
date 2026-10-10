@@ -91,7 +91,7 @@ const comPainel = (argv: readonly string[]): Partial<typeof RODOU> => (noClaude(
 const pedido = () => ({ focos: [{ token: TOKEN, pid: 507 }] })
 const resultados = (w: { chamadas: Chamada[] }) => w.chamadas.filter((c) => c.url.endsWith('/resultado')).map((c) => c.corpo)
 
-async function ligar($: Parameters<Parameters<typeof test>[1]>[0], w: { clock: { advance: (ms: number) => Promise<void> } }): Promise<void> {
+async function ligar($: { session: { start: (entrada: typeof START) => Promise<unknown> } }, w: { clock: { advance: (ms: number) => Promise<void> } }): Promise<void> {
   await $.session.start(START)
   await w.clock.advance(FOCO_POLL_MS)
 }
