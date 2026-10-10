@@ -96,3 +96,94 @@ export function offlineText(url: string): string {
 export function outdatedText(url: string): string {
   return `O Expediente em ${url} está numa versão sem a rota do mod. Para atualizar: git pull e npm run docker:up na pasta do Expediente.`
 }
+
+export interface SessaoResumo {
+  nome: string
+  sala: string
+  estado: 'espera' | 'travou' | 'terminou' | 'trabalhando' | 'ociosa'
+  motivo?: string
+  tarefa?: { rotulo: string; texto: string }
+  desde: number
+}
+
+/** Como GET /api/resumo devolve (o servidor já mascarou os textos). */
+export interface Resumo {
+  desde: number
+  agora: number
+  terminaram: number
+  travaram: number
+  esperam: number
+  trabalhando: number
+  sessoes: SessaoResumo[]
+}
+
+const ESTADOS = ['espera', 'travou', 'terminou', 'trabalhando', 'ociosa'] as const
+
+/** Lê a resposta de GET /api/resumo; qualquer coisa fora do formato = undefined. */
+export function parseResumo(text: string): Resumo | undefined {
+  let j: unknown
+  try {
+    j = JSON.parse(text)
+  } catch {
+    return undefined
+  }
+  if (!j || typeof j !== 'object' || Array.isArray(j)) return undefined
+  const r = j as Record<string, unknown>
+  if (!Array.isArray(r.sessoes) || typeof r.desde !== 'number' || typeof r.agora !== 'number') return undefined
+  const sessoes: SessaoResumo[] = []
+  for (const item of r.sessoes) {
+    if (!item || typeof item !== 'object') continue
+    const s = item as Record<string, unknown>
+    const nome = str(s.nome)
+    const estado = ESTADOS.find((e) => e === s.estado)
+    if (!nome || !estado) continue
+    const out: SessaoResumo = { nome, sala: str(s.sala) ?? '?', estado, desde: typeof s.desde === 'number' ? s.desde : r.agora }
+    const motivo = str(s.motivo)
+    if (motivo) out.motivo = motivo
+    const t = s.tarefa as Record<string, unknown> | undefined
+    const rotulo = str(t?.rotulo)
+    const texto = str(t?.texto)
+    if (rotulo && texto) out.tarefa = { rotulo, texto }
+    sessoes.push(out)
+  }
+  return { desde: r.desde, agora: r.agora, terminaram: count(r.terminaram), travaram: count(r.travaram), esperam: count(r.esperam), trabalhando: count(r.trabalhando), sessoes }
+}
+
+/** "2 h 5 min", "35 min", "menos de 1 min". */
+export function duracaoTexto(ms: number): string {
+  const min = Math.floor(Math.max(0, ms) / 60_000)
+  if (min < 1) return 'menos de 1 min'
+  if (min < 60) return `${min} min`
+  const h = Math.floor(min / 60)
+  const resto = min % 60
+  if (h >= 48) return `${Math.floor(h / 24)} dias`
+  return resto ? `${h} h ${resto} min` : `${h} h`
+}
+
+const TITULOS: Record<SessaoResumo['estado'], string> = {
+  espera: 'Esperam você',
+  travou: 'Travaram',
+  terminou: 'Terminaram',
+  trabalhando: 'Trabalhando',
+  ociosa: 'Ociosas',
+}
+
+/** A resposta de `/escritorio resumo` com o Expediente no ar: contagens e, por sessão, a última tarefa. */
+export function resumoTexto(r: Resumo, url: string): string {
+  const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`
+  const linhas = [
+    `Desde que você saiu, há ${duracaoTexto(r.agora - r.desde)} · Expediente em ${url}`,
+    [plural(r.terminaram, 'terminou', 'terminaram'), plural(r.travaram, 'travou', 'travaram'), plural(r.esperam, 'espera você', 'esperam você'), `${r.trabalhando} trabalhando`].join(' · '),
+  ]
+  if (!r.sessoes.length) linhas.push('Nenhuma outra sessão aberta.')
+  for (const estado of ESTADOS) {
+    const doEstado = r.sessoes.filter((s) => s.estado === estado)
+    if (!doEstado.length) continue
+    linhas.push(`${TITULOS[estado]} (${doEstado.length})`)
+    for (const s of doEstado) {
+      linhas.push(`  ${s.nome} · ${s.sala}${s.motivo ? ` · ${s.motivo}` : ''}`)
+      if (s.tarefa) linhas.push(`    ${s.tarefa.rotulo}: ${s.tarefa.texto}`)
+    }
+  }
+  return linhas.join('\n')
+}

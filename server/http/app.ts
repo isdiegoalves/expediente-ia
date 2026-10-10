@@ -2,10 +2,12 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { contextView, costView } from '../../shared/stats';
 import { NAME_MAX, parseAppearanceParts, parseCharacterName, parseSeed } from '../../shared/appearance';
+import { montarResumo } from '../../shared/resumo';
 import type { VersaoView } from '../../shared/versao';
 import type { AgentInfo, ModAgentUsage, ModSummary, OfficeSnapshot, SourceInfo } from '../../shared/types';
 import type { AccountsService } from '../accounts/service';
 import type { DayStatsService } from '../history/daystats';
+import type { Presenca } from '../history/resumo';
 import type { Office } from '../model/office';
 import type { SessionHistory } from '../sources/history';
 import { isJsonContentType, isLoopbackHost } from './guard';
@@ -44,6 +46,8 @@ export interface ApiDeps {
   tema?: (req: IncomingMessage, res: ServerResponse, url: URL) => boolean;
   /** Versão em uso e última publicada, lida do versao.json da ponte (GET /api/versao). */
   versao?: () => VersaoView;
+  /** Resumo "desde que você saiu" (GET /api/resumo e POST /api/resumo/presenca); `inicio` = quando o servidor subiu. */
+  resumo?: { presenca: Presenca; inicio: number };
   /** Relógio dos nonces do /ir (testes). */
   now?: () => number;
 }
@@ -261,6 +265,26 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
       else if (!deps.versao) sendJson(res, 404, { error: 'rota desconhecida' });
       else if (!isLoopbackHost(req.headers.host)) sendJson(res, 403, { error: 'versão só pelo próprio computador (http://localhost)' });
       else sendJson(res, 200, deps.versao());
+      return true;
+    }
+    if (path === '/api/resumo' || path === '/api/resumo/presenca') {
+      const resumo = deps.resumo;
+      const presenca = path === '/api/resumo/presenca';
+      if (presenca ? method !== 'POST' : !isRead) methodNotAllowed(res, presenca ? 'POST' : 'GET');
+      else if (!resumo) sendJson(res, 404, { error: 'rota desconhecida' });
+      else if (!isLoopbackHost(req.headers.host)) sendJson(res, 403, { error: 'o resumo só pelo próprio computador (http://localhost)' });
+      else if (!presenca) {
+        const own = { account: url.searchParams.get('account') || undefined, session: url.searchParams.get('session') || undefined };
+        sendJson(res, 200, montarResumo(hub.current(), resumo.presenca.ultimaSaida ?? resumo.inicio, (deps.now ?? Date.now)(), { isReal: (id) => office.has(id), propria: own }));
+      } else {
+        readJson(req)
+          .then((body) => {
+            const b = body as { aba?: unknown; visivel?: unknown };
+            if (typeof b?.aba !== 'string' || !/^[\w-]{1,64}$/.test(b.aba) || typeof b.visivel !== 'boolean') throw new HttpError(400, 'esperado {aba, visivel}');
+            sendJson(res, 200, b.visivel ? resumo.presenca.visivel(b.aba) : resumo.presenca.oculta(b.aba));
+          })
+          .catch((err) => fail(res, err));
+      }
       return true;
     }
     if (path === '/api/mod/summary') {

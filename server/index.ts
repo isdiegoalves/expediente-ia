@@ -17,6 +17,7 @@ import { TerminalStreams } from './http/terminal';
 import { createTimelineHandler } from './http/timeline';
 import { TIMELINE_DIR, TimelineRecorder } from './history/timeline';
 import { DayStatsService } from './history/daystats';
+import { Presenca } from './history/resumo';
 import { errMsg, log } from './log';
 import { NameStore } from './model/names';
 import { Office } from './model/office';
@@ -73,6 +74,8 @@ const hub = new Hub(office);
 // "Meu dia": amostra o escritório a cada segundo e persiste em <dataDir>/stats/ (ver history/daystats.ts).
 const stats = new DayStatsService({ dir: join(config.dataDir, 'stats'), snapshot: () => hub.current() });
 stats.load();
+const presenca = new Presenca(join(config.dataDir, 'resumo.json'));
+presenca.load();
 // Terminal somente leitura: desligável por EXPEDIENTE_TERMINAL (ver terminalOffReason em config.ts).
 const terminals = config.terminal ? new TerminalStreams({ office, transcriptPathOf: (id) => watcher.transcriptPathOf(id) }) : undefined;
 // Histórico do terminal (sessões recentes, abertas ou encerradas): mesma trava.
@@ -146,6 +149,7 @@ const api = createApiHandler({
   timeline: createTimelineHandler({ dir: timelineDir, recording: !!timeline }),
   permissions: permissions ? createPermissionRoutes(permissions) : undefined,
   stats,
+  resumo: { presenca, inicio: startedAt },
   versao: createVersaoReader(join(config.hostDir, 'versao.json'), config.version),
   tema: createTemaHandler(pastasDoTema, temaAtivo, sendJson),
 });
