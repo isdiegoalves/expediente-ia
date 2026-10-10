@@ -1,7 +1,7 @@
 # Novidades
 
 O que entrou em cada versão do Expediente. Cada versão tem a sua seção aqui, e o texto dela vira as notas da
-[release no GitHub](https://github.com/marmottajr/habblaud/releases) (`npm run release`), que o Expediente abre em
+[release no GitHub](https://github.com/isdiegoalves/expediente-ia/releases) (`npm run release`), que o Expediente abre em
 **Configurações › Sobre › Ver o que mudou**.
 
 O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/), e os números seguem o
@@ -9,6 +9,41 @@ O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/), e
 do meio (0.**3**.0).
 
 ## [Não lançado]
+
+## [1.0.0] - 2026-10-10
+
+Primeira versão do Expediente com numeração própria: o escritório leva você à sessão de cada agente e mostra o que
+importa, no navegador e dentro do Claude Code. Para atualizar: `git pull`, `npm run docker:up` e `npm run instalar`.
+
+### Adicionado
+
+- **Ir para a sessão.** Na gaveta do agente, "Ir para a sessão": a sessão do app desktop abre no app Claude, na própria
+  sessão; a sessão de terminal viva traz o painel dela no zellij e o WezTerm para a frente ("Focar a sessão", executado
+  pelo mod numa sessão do Claude Code aberta; sem nenhuma, o comando é copiado); sessão em segundo plano copia
+  `claude attach`; sessão encerrada copia `cd -- '<pasta>' && claude --resume`. "Nova sessão neste projeto" abre uma
+  sessão nova na pasta. Cada agente mostra de onde vem (app desktop, terminal, sdk, segundo plano).
+- **A gaveta mostra o que importa.** Contexto atual e "compactou N×" com antes e depois; custo exato, ou marcado
+  "(estimado)" quando o Claude Code não grava o custo ou ele está desatualizado (preços do catálogo do Claude Code,
+  sobrescrevíveis em `~/.expediente/host/precos.json`); "esperando há N min" com o motivo, sem zerar quando o servidor
+  reinicia; subagente "parado" com o último erro da API e as tentativas.
+- **Subagentes agrupados** por time ou pelo agente que os criou, com concluídos sobre o total, "rodada N" para nomes que
+  começam com `rN-` e "parado por você".
+- **Perguntas do `AskUserQuestion`** na gaveta, com as opções. Responder pelo escritório pede o plugin
+  `expediente-permissoes` (`npm run instalar -- --com-permissoes`).
+- **Dentro do Claude Code (mod `expediente`).** Linha de status "precisa de você" em até 5 s; `/escritorio` com as
+  sessões por estado, contexto e custo, sem gastar tokens; painel com o caminho para cada sessão (abrir no app, focar o
+  painel do terminal, copiar o comando seguro).
+- **Tema como dado.** Cores, textos e decoração vêm de `tema.json` e PNGs do tema; marca própria em pixel art.
+
+### Segurança
+
+- O servidor só atende pelo próprio computador: porta 4848 publicada só em 127.0.0.1, Host e Origin estritos (só
+  `localhost`, `expediente.localhost` e IPs de loopback), sem CORS. O container monta, só leitura, `projects/` e
+  `sessions/` de cada conta e `~/.expediente/host`. Terminal, histórico, permissões e foco só ligam com a publicação
+  confirmada em loopback; o atalho para o app e o foco usam código de uso único.
+- Segredos mascarados em tudo que a tela mostra, inclusive títulos, perguntas e comandos copiados.
+- Sem saída de rede: a checagem de versão do projeto de origem saiu, e 1 hora de medição no container não achou nenhuma
+  conexão para fora.
 
 ### Alterado
 
