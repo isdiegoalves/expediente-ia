@@ -10,6 +10,29 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Adicionado
+
+- **Lista lateral mais útil.** Cada agente mostra o título da sessão e há quanto tempo está ocioso; agentes e salas se
+  reordenam arrastando, e a ordem fica guardada no navegador.
+- **Gaveta e terminal móveis.** A gaveta e o terminal se arrastam, mudam de tamanho e o terminal expande; não passam
+  por baixo da barra superior e lembram o lugar. A linha do tempo do agente mostra 15 itens, com "Mostrar mais".
+- **Personagem do projeto.** No lápis da gaveta do agente, escolha nome, sorteio e peças do personagem da sala; cada
+  sessão da sala mantém quem era. A sala também pode ser renomeada (lápis ou botão direito). Essas rotas só atendem
+  pelo próprio computador, com a trava do terminal.
+- **Temas do escritório.** Em Configurações › Aparência › Tema do escritório: padrão, Natal ou Halloween, como
+  decoração por cima do tema; a escolha fica no navegador e as cores vêm do tema como dado.
+- Verificação automática no GitHub (Actions): a cada push na `main`, nas branches de fatia e a cada pull request, o
+  projeto roda `typecheck`, testes e build no Node 22.12 e no 24, com as ações fixadas por versão exata.
+
+### Corrigido
+
+- **Subagentes com nome (teammates) no escritório.** O subagente lançado com nome no Claude Code (que vira teammate)
+  não aparecia, ou entrava e saía na hora com "Concluiu em 0s". Agora ele entra trabalhando, fica à toa no escritório
+  entre um turno e outro, volta à mesa quando recebe mensagem e só vai embora quando é encerrado ou a sessão fecha. Se
+  calar no meio do trabalho, aparece como parado, como qualquer subagente.
+- Nome de sala e de personagem recusa ou perde caractere invisível de formatação (espaço de largura zero, BOM, hífen
+  suave, junção de palavra), que disfarçava o nome.
+
 ## [1.0.0] - 2026-10-10
 
 Primeira versão do Expediente com numeração própria: o escritório leva você à sessão de cada agente e mostra o que
@@ -55,17 +78,8 @@ importa, no navegador e dentro do Claude Code. Para atualizar: `git pull`, `npm 
   (`~/.expediente/mod-instalado`) em vez deste checkout, e o `docker:up` não atualiza mais o mod: atualizar é rodar
   `npm run instalar` de novo. Saiu também a migração do nome antigo (pasta de estado, container e plugins `codetown`).
 
-### Adicionado
-
-- Verificação automática no GitHub (Actions): a cada push na `main` e a cada pull request, o projeto roda
-  `typecheck`, testes e build no Node 22.12, a versão mínima que o `package.json` declara.
-
 ### Corrigido
 
-- **Subagentes com nome (teammates) no escritório.** O subagente lançado com nome no Claude Code (que vira teammate)
-  não aparecia, ou entrava e saía na hora com "Concluiu em 0s". Agora ele entra trabalhando, fica à toa no escritório
-  entre um turno e outro, volta à mesa quando recebe mensagem e só vai embora quando é encerrado ou a sessão fecha. Se
-  calar no meio do trabalho, aparece como parado, como qualquer subagente.
 - Quando um arquivo de transcript era apagado e outro, maior, era criado no lugar, o Expediente podia não perceber a
   troca: alguns sistemas de arquivos reaproveitam o número (inode) do arquivo apagado, e só o inode era comparado.
   Agora, quando o sistema informa o momento de criação do arquivo, ele também entra na comparação, e a leitura
