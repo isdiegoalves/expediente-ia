@@ -312,7 +312,7 @@ describe('personagem do projeto (PUT/DELETE /api/agents/:id/character)', () => {
     expect(((await res.json()) as { error: string }).error).toBe(`${other} já está no escritório em web`);
   });
 
-  it('403 com Host que não é local (mesmo liberado em EXPEDIENTE_ALLOWED_HOSTS); 405 para GET', async () => {
+  it('o guard recusa Host de nome estranho; 405 para GET', async () => {
     const port = new URL(env.base).port;
     const r = await raw(env.base, `/api/agents/${encodeURIComponent('.claude:1')}/character`, {
       method: 'PUT',
@@ -324,6 +324,81 @@ describe('personagem do projeto (PUT/DELETE /api/agents/:id/character)', () => {
     const get = await fetch(url());
     expect(get.status).toBe(405);
     expect(get.headers.get('allow')).toBe('PUT, DELETE');
+  });
+
+  it('403 da própria rota com Host de IP da rede (o guard deixa passar), em PUT e DELETE', async () => {
+    const port = new URL(env.base).port;
+    for (const method of ['PUT', 'DELETE']) {
+      const r = await raw(env.base, `/api/agents/${encodeURIComponent('.claude:1')}/character`, {
+        method,
+        headers: { ...JSON_HEADERS, Host: `192.168.0.9:${port}` },
+        body: JSON.stringify({ name: 'Ana', seed: 1, parts: {} }),
+      });
+      expect(r.status, method).toBe(403);
+      expect(r.body, method).toMatch(/só é editado pelo próprio computador/);
+    }
+    expect((await agentOf()).custom).toBeUndefined();
+  });
+});
+
+describe('renomear sala (POST /api/rooms/rename)', () => {
+  let env: Awaited<ReturnType<typeof start>>;
+  const renomeadas: Array<[string, string]> = [];
+  beforeEach(async () => {
+    renomeadas.length = 0;
+    env = await start({
+      terminal: true,
+      renameRoom: (id, name) => {
+        if (id !== 'sala-1') return undefined;
+        renomeadas.push([id, name]);
+        return name.trim();
+      },
+    });
+  });
+  afterEach(async () => {
+    await env.close();
+    env.cleanup();
+  });
+
+  const post = (body: string, headers: Record<string, string> = JSON_HEADERS) => fetch(`${env.base}/api/rooms/rename`, { method: 'POST', headers, body });
+
+  it('200 com o nome que ficou', async () => {
+    const res = await post(JSON.stringify({ id: 'sala-1', name: ' Backend ' }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ name: 'Backend' });
+    expect(renomeadas).toEqual([['sala-1', ' Backend ']]);
+  });
+
+  it('400 para id ou name que não são texto, ou corpo sem objeto', async () => {
+    for (const body of [{ id: 5, name: 'x' }, { id: 'sala-1', name: 5 }, { id: 'sala-1' }, { name: 'x' }, null]) {
+      const res = await post(JSON.stringify(body));
+      expect(res.status, JSON.stringify(body)).toBe(400);
+    }
+    expect(renomeadas).toEqual([]);
+  });
+
+  it('404 para sala desconhecida', async () => {
+    const res = await post(JSON.stringify({ id: 'outra', name: 'x' }));
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as { error: string }).error).toBe('sala não encontrada');
+  });
+
+  it('415 sem JSON; 405 para GET', async () => {
+    expect((await post('{"id":"sala-1","name":"x"}', { 'Content-Type': 'text/plain' })).status).toBe(415);
+    expect((await fetch(`${env.base}/api/rooms/rename`)).status).toBe(405);
+    expect(renomeadas).toEqual([]);
+  });
+
+  it('403 da própria rota com Host de IP da rede (o guard deixa passar)', async () => {
+    const port = new URL(env.base).port;
+    const r = await raw(env.base, '/api/rooms/rename', {
+      method: 'POST',
+      headers: { ...JSON_HEADERS, Host: `192.168.0.9:${port}` },
+      body: JSON.stringify({ id: 'sala-1', name: 'x' }),
+    });
+    expect(r.status).toBe(403);
+    expect(r.body).toMatch(/renomear salas só pelo próprio computador/);
+    expect(renomeadas).toEqual([]);
   });
 });
 
