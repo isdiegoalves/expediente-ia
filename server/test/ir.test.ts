@@ -1,7 +1,6 @@
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { LINK_LISTA_DE_ESPERA } from '../../shared/espera';
 import type { IrInfo, OfficeSnapshot } from '../../shared/types';
 import { AccountsService } from '../accounts/service';
 import { Hub } from '../http/sse';
@@ -345,15 +344,8 @@ describe('urlPermitida', () => {
     expect(urlPermitida(`claude://code/continue?session=${APP}`)).toBe(true);
     expect(urlPermitida(`claude://code/needs-input?session=${APP}`)).toBe(true);
     expect(urlPermitida(`claude://resume?session=${SESSAO}`)).toBe(true);
-    expect(urlPermitida(LINK_LISTA_DE_ESPERA)).toBe(true);
     for (const ruim of [
-      'claude://code/needs-input?',
-      'claude://code/needs-input?source=desktop_action',
-      'claude://code/needs-input/',
-      'claude://code/needs-input#x',
-      'claude://code/needs-input\n',
-      ' claude://code/needs-input',
-      'claude://code/needs-input?session=abc',
+      'claude://code/needs-input',
       'file:///etc/passwd',
       'javascript:alert(1)',
       'https://evil.example',

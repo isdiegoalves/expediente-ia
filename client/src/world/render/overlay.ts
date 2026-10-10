@@ -691,7 +691,7 @@ export class Overlay {
     return b;
   }
 
-  /** Salas com dois ou mais esperando você, na visão geral: um balão só, sobre um deles, com a contagem. */
+  /** Cada sala com alguém esperando você, na visão geral: um balão só, sobre um deles, com a contagem. */
   private esperaDasSalas(vw: number, vh: number): Map<string, EsperaDaSala> | null {
     const esperando: { id: string; roomId: string; visivel: boolean }[] = [];
     for (const ch of this.sim.chars.values()) {

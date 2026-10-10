@@ -6,11 +6,10 @@ import { argvAtivarPainelWezTerm, argvFocoZellij } from '../hooks/painel'
 const UUID = '11111111-aaaa-4aaa-8aaa-111111111111'
 
 describe('argvAbrir', () => {
-  test('aceita só as quatro formas da lista permitida', async () => {
+  test('aceita só as três formas da lista permitida', async () => {
     for (const url of [
       'claude://code/continue?session=local_aaaa-1',
       'claude://code/needs-input?session=local_aaaa-1',
-      'claude://code/needs-input',
       `claude://resume?session=${UUID}`,
     ]) {
       expect(argvAbrir(url)).toEqual(['open', url])
@@ -35,10 +34,7 @@ describe('argvAbrir', () => {
       'claude://code/continue?session=local_../../x',
       `claude://code/continue?session=local_${'a'.repeat(65)}`,
       'claude://code/continue',
-      'claude://code/needs-input?',
-      'claude://code/needs-input?source=desktop_action',
-      'claude://code/needs-input/',
-      'claude://code/needs-input\n',
+      'claude://code/needs-input',
       'claude://resume?session=nao-e-uuid',
       `claude://resume?session=${UUID}&x=1`,
       `claude://code/resume?session=${UUID}`,
