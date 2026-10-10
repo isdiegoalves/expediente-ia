@@ -205,11 +205,28 @@ automático: só roda quando você manda (opt-in). Para agendar, ponha o mesmo c
 `launchd` (macOS), por exemplo uma vez por dia:
 
 ```
-0 9 * * * cd /caminho/do/expediente && npm run versao >> ~/.expediente/versao.log 2>&1
+0 9 * * * cd /caminho/do/expediente-ia && PATH=/caminho/do/node/bin:/usr/bin:/bin /caminho/do/node/bin/npm run versao >> $HOME/.expediente/versao.log 2>&1
 ```
 
-No `launchd`, um agente com `StartCalendarInterval` e o mesmo comando em `ProgramArguments`. O servidor relê o arquivo
-sozinho, sem reiniciar (no Docker, o `~/.expediente/host` já é montado em `/host`, só leitura).
+O `cron` e o `launchd` rodam com um `PATH` mínimo, sem o do seu terminal: se o Node vem do `nvm` ou do Homebrew, o `npm` não
+é achado. Por isso a linha leva o caminho absoluto do `npm` e o `PATH` com a pasta do Node; descubra a pasta com
+`dirname "$(command -v node)"` num terminal onde o `npm run` funciona.
+
+No `launchd` (macOS), um agente em `~/Library/LaunchAgents` com o mesmo comando e o mesmo `PATH`:
+
+```xml
+<key>ProgramArguments</key>
+<array>
+  <string>/bin/sh</string><string>-c</string>
+  <string>cd /caminho/do/expediente-ia &amp;&amp; /caminho/do/node/bin/npm run versao</string>
+</array>
+<key>EnvironmentVariables</key>
+<dict><key>PATH</key><string>/caminho/do/node/bin:/usr/bin:/bin</string></dict>
+<key>StartCalendarInterval</key>
+<dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
+```
+
+O servidor relê o arquivo sozinho, sem reiniciar (no Docker, o `~/.expediente/host` já é montado em `/host`, só leitura).
 
 Quando a última release é maior que a versão em uso, aparece o selo **Nova versão** no lugar do número e um aviso (uma vez por versão). Em **Configurações › Sobre**
 ficam a versão nova com a data, o link **Ver o que mudou**, como atualizar e há quanto tempo foi a última verificação
