@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { appRespondeu, copiadoTexto, ehLinkDaSessao, focarSessao, ordemTentada, type FocoDeps } from './ir';
+import type { IrInfo } from '../../../shared/types';
+import { appRespondeu, cliqueNaSessao, copiadoTexto, ehLinkDaSessao, focarSessao, focavelNaGaveta, ordemTentada, SEM_MOD, type FocoDeps } from './ir';
 
 describe('ir', () => {
   it('copiadoTexto: repete o rótulo da cópia por fork só quando o servidor o manda', () => {
@@ -99,5 +100,71 @@ describe('focarSessao', () => {
     vale = false;
     expect(await p).toEqual({ tipo: 'ninguem' });
     expect(w.chamadas).toEqual([expect.stringMatching(/^POST /), `DELETE /api/focos/${TOKEN}`]);
+  });
+});
+
+const IR: IrInfo = { estado: 'vivo', origin: 'terminal', comando: 'claude --resume s --fork-session', aviso: 'cria uma cópia', links: [], focar: true, nonce: 'n'.repeat(32) };
+
+function clique(estados: (t: number) => string | undefined, copiaOk = true, vale = () => true) {
+  const w = io(estados);
+  const eventos: string[] = [];
+  const deps = {
+    foco: w.deps,
+    emFoco: () => void eventos.push('focando'),
+    copiar: async (texto: string) => {
+      eventos.push(`copiou ${texto}`);
+      return copiaOk;
+    },
+    vale,
+  };
+  return { w, eventos, deps };
+}
+
+describe('cliqueNaSessao', () => {
+  it('terminal viva com foco oferecido: mostra focando, e ao focar não copia nada', async () => {
+    const c = clique(() => 'focado');
+    expect(await cliqueNaSessao(IR, '.claude:507', c.deps)).toEqual({ info: 'Sessão em foco.', ordem: '', copiou: true });
+    expect(c.eventos).toEqual(['focando']);
+  });
+
+  it('ninguém assume: avisa que não há sessão com o Expediente e copia o comando com o aviso de cópia', async () => {
+    const c = clique(() => 'pendente');
+    const r = await cliqueNaSessao(IR, '.claude:507', c.deps);
+    expect(r?.info).toBe(`${SEM_MOD} Comando copiado: cria uma cópia.`);
+    expect(c.eventos).toEqual(['focando', 'copiou claude --resume s --fork-session']);
+  });
+
+  it('o mod devolve um motivo: mostra o motivo e copia', async () => {
+    const c = clique(() => 'sem-painel');
+    expect((await cliqueNaSessao(IR, '.claude:507', c.deps))?.info).toBe('Não deu para focar: não achei o painel dessa sessão. Comando copiado: cria uma cópia.');
+  });
+
+  it('sem focar no /ir (sem mod, app desktop, encerrada) ou sem nonce: nem pede o foco, só copia', async () => {
+    for (const ir of [{ ...IR, focar: undefined }, { ...IR, nonce: undefined }]) {
+      const c = clique(() => 'focado');
+      expect((await cliqueNaSessao(ir, '.claude:507', c.deps))?.info).toBe('Comando copiado: cria uma cópia.');
+      expect(c.eventos).toEqual(['copiou claude --resume s --fork-session']);
+      expect(c.w.chamadas).toEqual([]);
+    }
+  });
+
+  it('cópia recusada: pede para selecionar e deixa o comando à vista', async () => {
+    const c = clique(() => 'focado', false);
+    const r = await cliqueNaSessao({ ...IR, focar: undefined }, '.claude:507', c.deps);
+    expect(r).toMatchObject({ info: 'Não foi possível copiar. Selecione e copie (cria uma cópia):', copiou: false });
+  });
+
+  it('clique superado: nada é mostrado', async () => {
+    const c = clique(() => 'focado', true, () => false);
+    expect(await cliqueNaSessao(IR, '.claude:507', c.deps)).toBeUndefined();
+  });
+});
+
+describe('focavelNaGaveta', () => {
+  it('só terminal viva vira "Focar a sessão"', () => {
+    expect(focavelNaGaveta({ origin: 'terminal', status: 'working' })).toBe(true);
+    expect(focavelNaGaveta({ origin: 'terminal', status: 'offline' })).toBe(false);
+    expect(focavelNaGaveta({ origin: 'app desktop', status: 'working' })).toBe(false);
+    expect(focavelNaGaveta({ status: 'working' })).toBe(false);
   });
 });

@@ -66,6 +66,34 @@ export async function focarSessao(io: FocoDeps, id: string, nonce: string): Prom
   }
 }
 
+export interface CliqueDeps {
+  foco: FocoDeps;
+  emFoco(): void;
+  copiar(texto: string): Promise<boolean>;
+  vale(): boolean;
+}
+
+/** O que o clique em "Ir para a sessão" decide: tenta o foco quando o servidor oferece, senão (ou se falhar) copia o comando. */
+export async function cliqueNaSessao(ir: IrInfo, id: string, io: CliqueDeps): Promise<{ info: string; ordem: string; copiou: boolean } | undefined> {
+  let aviso = '';
+  if (ir.focar && ir.nonce) {
+    io.emFoco();
+    const desfecho = await focarSessao(io.foco, id, ir.nonce);
+    if (!io.vale()) return undefined;
+    if (desfecho.tipo === 'focado') return { info: 'Sessão em foco.', ordem: '', copiou: true };
+    aviso = `${desfecho.tipo === 'ninguem' ? SEM_MOD : `Não deu para focar: ${desfecho.texto}.`} `;
+  }
+  const copiou = await io.copiar(ir.comando);
+  if (!io.vale()) return undefined;
+  const texto = copiou ? copiadoTexto(ir) : `Não foi possível copiar. Selecione e copie${ir.aviso ? ` (${ir.aviso})` : ''}:`;
+  return { info: aviso + texto, ordem: ordemTentada(ir), copiou };
+}
+
+/** Terminal viva: onde o botão pede o foco do painel em vez de só copiar o comando. */
+export function focavelNaGaveta(a: { origin?: string; status: string }): boolean {
+  return a.origin === 'terminal' && a.status !== 'offline';
+}
+
 export function ehLinkDaSessao(href: string): boolean {
   return LINK_DA_SESSAO.test(href);
 }
@@ -112,8 +140,8 @@ export class IrSection {
     );
   }
 
-  /** `focavel`: terminal viva, onde o botão pede o foco do painel em vez de só copiar o comando. */
-  setAgent(id: string, focavel = false): void {
+  /** `focavel`: ver `focavelNaGaveta`. */
+  setAgent(id: string, focavel: boolean): void {
     if (focavel !== this.focavel) {
       this.focavel = focavel;
       setText(this.btn, focavel ? ROTULO_FOCAR : ROTULO_IR);
@@ -143,19 +171,16 @@ export class IrSection {
     );
     setText(this.hint, AVISO_ATALHOS);
     setHidden(this.hint, !ir.links.some((l) => ehLinkDaSessao(l.href)));
-    let aviso = '';
-    if (ir.focar && ir.nonce) {
-      this.show('Focando…', '');
-      const desfecho = await focarSessao(this.focoDeps(req), id, ir.nonce);
-      if (req !== this.req) return;
-      if (desfecho.tipo === 'focado') return this.show('Sessão em foco.', '');
-      aviso = `${desfecho.tipo === 'ninguem' ? SEM_MOD : `Não deu para focar: ${desfecho.texto}.`} `;
-    }
-    const ok = await copyText(ir.comando);
-    if (req !== this.req) return;
-    this.show(aviso + (ok ? copiadoTexto(ir) : `Não foi possível copiar. Selecione e copie${ir.aviso ? ` (${ir.aviso})` : ''}:`), ordemTentada(ir));
-    setHidden(this.fallback, ok);
-    if (ok) return;
+    const r = await cliqueNaSessao(ir, id, {
+      foco: this.focoDeps(req),
+      emFoco: () => this.show('Focando…', ''),
+      copiar: copyText,
+      vale: () => req === this.req,
+    });
+    if (!r) return;
+    this.show(r.info, r.ordem);
+    setHidden(this.fallback, r.copiou);
+    if (r.copiou) return;
     setText(this.fallback, ir.comando);
     const range = document.createRange();
     range.selectNodeContents(this.fallback);

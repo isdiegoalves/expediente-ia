@@ -21,7 +21,7 @@ import {
   usageLevel,
 } from './format';
 import { ICONS } from './icons';
-import { IrSection } from './ir';
+import { focavelNaGaveta, IrSection } from './ir';
 import {
   accountsOf,
   activityFallback,
@@ -474,7 +474,7 @@ class AgentView {
     setHidden(this.appRow, !origin?.appSessionId);
     setText(this.appId, origin?.appSessionId ?? '');
     setHidden(this.irSec.el, a.kind !== 'main');
-    this.ir.setAgent(a.id, a.origin === 'terminal' && a.status !== 'offline');
+    this.ir.setAgent(a.id, focavelNaGaveta(a));
     setText(this.title, a.title ?? '');
     setHidden(this.title, !a.title);
     setTitle(this.title, a.title ?? '');
