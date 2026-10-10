@@ -91,7 +91,7 @@ festa) ou 10 min. Push só avisa. O mesmo CI visto de novo em 2 min não repete 
 O snapshot (SSE e `GET /api/snapshot`) leva só as últimas 8 atividades de cada agente em `recent`; o histórico
 de até 200 (inclusive o começo de transcripts longos, lido em segundo plano) vem de `GET /api/agents/:id`.
 
-Borda (`http/guard.ts`, vale para API, estáticos e Vite): `Host` precisa ser `localhost`/`*.localhost` ou um IP
+Borda (`http/guard.ts`, vale para API, estáticos e Vite): `Host` precisa ser `localhost`/`expediente.localhost` ou um IP
 (contra DNS rebinding) → senão 403; `X-Forwarded-For` com endereço fora do loopback → 403; `POST` em `/api/*` exige
 `Content-Type: application/json` (415) e `Origin` da mesma origem do `Host` (403), contra CSRF. Respostas JSON
 saem com `nosniff` e `Cross-Origin-Resource-Policy: same-origin`, sem CORS.
@@ -118,7 +118,7 @@ depois que o `docker:up` conferir com `docker inspect` que toda porta publicada 
 desligados (`publicacao.ts`) e ligam sozinhos quando ele aparece. `EXPEDIENTE_TERMINAL=0` desliga sempre
 (`config.ts`, `terminalOffReason`).
 
-Além disso, cada requisição precisa de `Host` local (`localhost`, `*.localhost`, 127.x ou `[::1]`): IPs da rede recebem 403. O estado sai em `meta.terminal` do snapshot e em
+Além disso, cada requisição precisa de `Host` local (`localhost`, `expediente.localhost`, 127.x ou `[::1]`): IPs da rede recebem 403. O estado sai em `meta.terminal` do snapshot e em
 `terminal` no `/api/health`. Erros antes do stream respondem JSON `{error}`: 403 (desligado ou acesso que não é
 local), 404 (agente ou transcript desconhecido), 405 (método que não é `GET`), 429 (terminais demais) e 500
 (transcript ilegível).

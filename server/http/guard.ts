@@ -3,7 +3,8 @@
 // 1) DNS rebinding: um site malicioso pode fazer o próprio domínio resolver para 127.0.0.1 e,
 //    assim, ler /api/snapshot "como se fosse a mesma origem". O navegador manda o cabeçalho Host
 //    com o domínio do atacante, então só aceitamos Host que seja um IP literal, `localhost`
-//    (ou `*.localhost`).
+//    ou `expediente.localhost` (o nome do Expediente no portless); `*.localhost` em geral não, porque nem todo
+//    navegador fixa esse sufixo no loopback.
 // 2) CSRF: requisições que mudam estado (POST) exigem `Content-Type: application/json` — o que um
 //    formulário ou um fetch "simples" de outro site não consegue enviar sem preflight de CORS, que
 //    este servidor nunca autoriza — e, quando há `Origin`, ele precisa ser da mesma origem do Host.
@@ -32,13 +33,13 @@ export function hostnameOf(value: string | undefined): string | undefined {
 }
 
 function isLoopbackName(name: string): boolean {
-  if (name === 'localhost' || name.endsWith('.localhost')) return true;
+  if (name === 'localhost' || name === 'expediente.localhost') return true;
   if (name === '::1') return true;
   return isIP(name) === 4 && name.startsWith('127.');
 }
 
 /**
- * Cabeçalho Host local (`localhost`, `*.localhost`, 127.x ou `[::1]`; porta ignorada)? Usado pelo terminal
+ * Cabeçalho Host local (`localhost`, `expediente.localhost`, 127.x ou `[::1]`; porta ignorada)? Usado pelo terminal
  * somente leitura, que só atende quem abriu o Expediente pelo próprio computador: um IP da rede não serve. Ausente ou inválido: false.
  */
 export function isLoopbackHost(host: string | undefined): boolean {
@@ -47,7 +48,7 @@ export function isLoopbackHost(host: string | undefined): boolean {
 }
 
 /**
- * Host aceito? IP literal (não há DNS envolvido, logo não há rebinding) ou `localhost`/`*.localhost`
+ * Host aceito? IP literal (não há DNS envolvido, logo não há rebinding) ou `localhost`/`expediente.localhost`
  * (os navegadores resolvem sempre para o loopback).
  * Sem cabeçalho Host (HTTP/1.0, ferramentas de linha de comando): aceito — navegadores sempre enviam.
  */

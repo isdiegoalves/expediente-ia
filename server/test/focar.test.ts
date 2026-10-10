@@ -262,3 +262,17 @@ describe('trava de publicação (terminalOn)', () => {
     expect((await focar('.claude:507', nonce)).status).toBe(200);
   });
 });
+
+describe('Host de subdomínio localhost', () => {
+  it('evil.localhost é recusado no /ir, no focar e nas permissões; localhost e expediente.localhost seguem aceitos', async () => {
+    const { nonce } = await ir('.claude:507');
+    const evil = { host: 'evil.localhost:4848', origin: 'http://evil.localhost:4848', 'sec-fetch-site': 'same-origin' };
+    expect((await pedir('/api/agentes/.claude%3A507/ir', { headers: evil })).status).toBe(403);
+    expect((await focar('.claude:507', nonce, evil)).status).toBe(403);
+    expect((await pedir('/api/permissions', { method: 'POST', headers: evil, body: '{}' })).status).toBe(403);
+    for (const host of ['localhost:4848', 'expediente.localhost:4848']) {
+      expect((await pedir('/api/agentes/.claude%3A507/ir', { headers: { host } })).status).toBe(200);
+    }
+    expect((await focar('.claude:507', nonce, { host: 'expediente.localhost:4848', origin: 'http://expediente.localhost:4848' })).status).toBe(200);
+  });
+});
