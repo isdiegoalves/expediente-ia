@@ -250,7 +250,7 @@ export class DemoSimulator {
     );
     // Começa com o escritório já movimentado — e com alguém esperando um shell (a espera leva minutos;
     // sem isso, a primeira só apareceria depois do primeiro turno completo).
-    for (let i = 0; i < this.target - 1; i++) this.spawnSession(now, true);
+    for (let i = 0; i < this.target - (this.subsPerSession > 0 ? 0 : 1); i++) this.spawnSession(now, true);
     const first = [...this.agents.values()].find((a) => a.info.kind === 'main');
     if (first) this.startBackgroundShells(first, now, true);
     this.nextSpawnAt = now + this.ms(20_000, 40_000);

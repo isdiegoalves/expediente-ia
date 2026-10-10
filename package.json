@@ -28,7 +28,8 @@
     "desinstalar": "tsx scripts/instalar.ts uninstall",
     "release": "tsx scripts/release.ts",
     "versao": "tsx scripts/versao.ts",
-    "preflight": "node scripts/preflight.mjs"
+    "preflight": "node scripts/preflight.mjs",
+    "medir:escala": "node scripts/medir-escala.mjs"
   },
   "devDependencies": {
     "@fontsource/pixelify-sans": "^5.3.0",

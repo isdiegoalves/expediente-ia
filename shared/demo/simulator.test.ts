@@ -100,7 +100,9 @@ describe('DemoSimulator', () => {
       for (const a of snap.agents) if (a.kind === 'sub' && a.status === 'working') porSala.set(a.roomId, (porSala.get(a.roomId) ?? 0) + 1);
       return { rooms: snap.rooms, mains: snap.agents.filter((a) => a.kind === 'main'), porSala };
     };
-    for (let t = 0; t <= 90_000; t += 1_000) sim.tick(t);
+    sim.tick(0);
+    expect(contar().mains).toHaveLength(10);
+    for (let t = 1_000; t <= 90_000; t += 1_000) sim.tick(t);
     const { rooms, mains, porSala } = contar();
     expect(new Set(rooms.map((r) => r.name)).size).toBe(10);
     expect(mains).toHaveLength(10);
