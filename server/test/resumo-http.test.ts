@@ -28,12 +28,12 @@ let office: Office;
 let servidor: http.Server | undefined;
 let base: string;
 
-async function subir(presenca: Presenca): Promise<void> {
+async function subir(presenca: Presenca, terminal = true): Promise<void> {
   await descer();
   const accounts = new AccountsService({ dirs: [], home: dir, env: {}, onChange: () => undefined });
   const hub = new Hub(office, { throttleMs: 10 });
   hub.start();
-  const api = createApiHandler({ office, hub, accounts, sources: () => [], version: 't', inDocker: false, resumo: { presenca, inicio: T0 - 1_000 }, now: () => relogio });
+  const api = createApiHandler({ office, hub, accounts, sources: () => [], version: 't', inDocker: false, terminal, resumo: { presenca, inicio: T0 - 1_000 }, now: () => relogio });
   const guard = createRequestGuard();
   servidor = http.createServer((req, res) => {
     if (guard(req, res)) return;
@@ -117,6 +117,18 @@ describe('saída e volta', () => {
     expect((await pedir('/api/resumo', { method: 'POST', body: {} })).status).toBe(405);
     expect((await pedir('/api/resumo/presenca', { method: 'POST', body: { aba: 'x' } })).status).toBe(400);
     expect((await pedir('/api/resumo/presenca', { method: 'POST', body: { aba: 'a b/c', visivel: true } })).status).toBe(400);
+  });
+});
+
+describe('trava de publicação', () => {
+  it('com o terminal desligado a presença não muda nada (403) e a leitura continua', async () => {
+    const arquivo = join(dir, 'resumo.json');
+    const p = new Presenca(arquivo, () => relogio);
+    await subir(p, false);
+    const r = await pedir('/api/resumo/presenca', { method: 'POST', body: { aba: 'x', visivel: false } });
+    expect(r.status).toBe(403);
+    expect(p.ultimaSaida).toBeNull();
+    expect((await pedir('/api/resumo')).status).toBe(200);
   });
 });
 

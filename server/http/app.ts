@@ -272,6 +272,7 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
       const presenca = path === '/api/resumo/presenca';
       if (presenca ? method !== 'POST' : !isRead) methodNotAllowed(res, presenca ? 'POST' : 'GET');
       else if (!resumo) sendJson(res, 404, { error: 'rota desconhecida' });
+      else if (presenca && !terminalOn()) sendJson(res, 403, { error: 'registrar a presença desligado: só funciona com o Expediente acessível apenas pelo próprio computador' });
       else if (!isLoopbackHost(req.headers.host)) sendJson(res, 403, { error: 'o resumo só pelo próprio computador (http://localhost)' });
       else if (!presenca) {
         const own = { account: url.searchParams.get('account') || undefined, session: url.searchParams.get('session') || undefined };
