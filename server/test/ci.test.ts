@@ -6,7 +6,7 @@ const ROOT = resolve(__dirname, '../..');
 const WORKFLOW = readFileSync(resolve(ROOT, '.github/workflows/ci.yml'), 'utf8');
 const SCRIPTS = new Set(Object.keys(JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf8')).scripts as Record<string, string>));
 
-const SEM_SHA = new Set(['actions/checkout@v7', 'actions/setup-node@v7']);
+const SEM_SHA = new Set<string>();
 
 describe('workflow de CI', () => {
   it('toda ação é fixada por SHA de 40 hexadecimais ou está listada como pendente', () => {
