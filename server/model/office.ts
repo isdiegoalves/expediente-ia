@@ -460,6 +460,7 @@ export class Office {
       }
       this.notice('done', id, 'success', `✅ ${info.name} concluiu em ${room}`, info.roomId);
     }
+    if (info.kind === 'sub') this.lembrarSub(info);
     this.markDirty();
   }
 
@@ -663,7 +664,7 @@ export class Office {
       parentId: info.parentId ?? '',
       teamName: info.teamName,
       rodada: info.rodada,
-      done: info.status === 'done' || info.status === 'offline',
+      done: info.status === 'done' || info.status === 'offline' || info.status === 'idle',
       stoppedByUser: !!info.stoppedByUser,
     });
   }
