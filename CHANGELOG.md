@@ -25,6 +25,12 @@ do meio (0.**3**.0).
   você e concluíram; quem espera você sai da roda primeiro. Um clique na roda abre a lista de quem está nela, e o nome
   leva ao subagente. Os balões não se cobrem mais: quem não acha lugar desvia, vira só o ícone ou espera a vez.
 
+### Alterado
+
+- Escritório parado gasta menos do computador: com todos os agentes ociosos há um minuto e sem você mexer na janela, o
+  desenho cai para 10 quadros por segundo, e volta ao máximo na hora em que chega um alerta, um agente começa a trabalhar
+  ou você mexe o mouse ou o teclado. Com a aba oculta, o escritório deixa de se atualizar e se põe em dia ao voltar.
+
 ## [1.1.0] - 2026-10-10
 
 O melhor do Habblaud 0.8.0 e de dois forks, trazido com a autoria preservada; o aviso de versão nova sem o servidor

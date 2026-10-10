@@ -15,6 +15,7 @@ import { criarMaqueteDoNavegador } from './render/maquete';
 import { Overlay } from './render/overlay';
 import { Renderer } from './render/renderer';
 import { rodaAbertaApos, rodaNoPonto } from './render/roda';
+import { Ritmo } from './ritmo';
 import { Sim } from './sim/sim';
 import { SoundCues } from './sound-cues';
 
@@ -46,16 +47,27 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
   let hoverPointer = false;
   let mouse: { x: number; y: number } | null = null;
   let raf = 0;
+  let rafTimer: ReturnType<typeof setTimeout> | null = null;
   let lastTs = 0;
   let hiddenAt = 0;
+  const ritmo = new Ritmo(performance.now());
   let userMoved = false;
   let framed = false;
   let lastCols = -1;
   const abort = new AbortController();
 
+  const acordar = () => {
+    ritmo.acordar(performance.now());
+    if (rafTimer === null) return;
+    clearTimeout(rafTimer);
+    rafTimer = null;
+    raf = requestAnimationFrame(loop);
+  };
+
   // ------------------------------------------------------------------ tamanho/DPR
 
   const resize = () => {
+    acordar();
     const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
     const w = canvas.clientWidth || window.innerWidth;
     const h = canvas.clientHeight || window.innerHeight;
@@ -130,6 +142,7 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
   };
 
   const focusAgent = (id: string, opts: { follow?: boolean } = {}) => {
+    acordar();
     const ch = sim.chars.get(id);
     const alvo = ch ?? rodaDe(id);
     if (!alvo) return;
@@ -141,6 +154,7 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
   };
 
   const focusRoom = (id: string) => {
+    acordar();
     const room = sim.rooms.get(id);
     if (!room) return;
     userMoved = true;
@@ -227,6 +241,7 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
   const onSnapshot = () => {
     const snap = store.snapshot;
     if (!snap) return;
+    if (ritmo.observarSnapshot(snap, performance.now())) acordar();
     try {
       // No timelapse, os horários do snapshot vão para o relógio do mundo (world/playback.ts).
       if (playback) sim.applySnapshot(rebaseSnapshot(snap, worldNow - snap.serverTime), worldNow);
@@ -236,6 +251,7 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
     }
   };
   const offSnapshot = store.on('snapshot', onSnapshot);
+  const offNotice = store.on('notice', acordar);
   if (store.snapshot) onSnapshot();
 
   void loadWorldAssets().then((a) => {
@@ -250,9 +266,11 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
   // ------------------------------------------------------------------ laço
 
   const loop = (ts: number) => {
-    raf = requestAnimationFrame(loop);
+    raf = 0;
+    rafTimer = null;
     const real = Date.now();
-    const realDt = lastTs ? Math.min(0.1, Math.max(0, (ts - lastTs) / 1000)) : 1 / 60;
+    if (playback || camera.animating) ritmo.acordar(ts);
+    const realDt = lastTs ? Math.min(ritmo.calmo(ts) ? 0.25 : 0.1, Math.max(0, (ts - lastTs) / 1000)) : 1 / 60;
     lastTs = ts;
     // Timelapse: simulação e desenho no relógio do mundo (acelerado ou parado); a câmera segue no tempo real.
     const k = playback ? Math.max(0, playback.scale()) : 1;
@@ -296,6 +314,14 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
       if (selection?.type === 'room' && !sim.rooms.has(selection.id)) setSelection(null);
     } catch (err) {
       console.error('[mundo] erro no frame', err);
+    } finally {
+      const espera = ritmo.esperaMs(performance.now(), ts);
+      if (espera > 0) {
+        rafTimer = setTimeout(() => {
+          rafTimer = null;
+          raf = requestAnimationFrame(loop);
+        }, espera);
+      } else raf = requestAnimationFrame(loop);
     }
   };
 
@@ -305,6 +331,7 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
       return;
     }
     lastTs = 0;
+    acordar();
     if (hiddenAt && Date.now() - hiddenAt > 5000) sim.fastForward(playback ? worldNow : Date.now());
     hiddenAt = 0;
   };
@@ -330,6 +357,7 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
   canvas.addEventListener('contextmenu', onContextMenu);
   window.addEventListener('resize', resize);
   document.addEventListener('visibilitychange', onVisibility);
+  for (const tipo of ['pointermove', 'pointerdown', 'wheel', 'keydown'] as const) window.addEventListener(tipo, acordar, { passive: true, signal: abort.signal });
   resize();
   raf = requestAnimationFrame(loop);
 
@@ -360,7 +388,10 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
   };
 
   return {
-    select: (sel, opts) => setSelection(sel, !!opts?.focus),
+    select: (sel, opts) => {
+      acordar();
+      setSelection(sel, !!opts?.focus);
+    },
     getSelection: () => selection,
     onSelect: (cb) => {
       selectCbs.add(cb);
@@ -373,10 +404,12 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
     focusAgent,
     focusRoom,
     overview: () => {
+      acordar();
       userMoved = false;
       overview(true);
     },
     zoomBy: (factor) => {
+      acordar();
       if (!Number.isFinite(factor) || factor <= 0 || factor === 1) return;
       const target = camera.snapZoom(camera.zoom * factor, factor > 1 ? 'up' : 'down');
       if (Math.abs(target - camera.zoom) < 1e-3) zoomStep(factor > 1 ? 1 : -1);
@@ -387,10 +420,12 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
     },
     getOptions: () => ({ ...options }),
     setOptions: (o) => {
+      acordar();
       options = { ...options, ...o };
       if (o.followSelected !== undefined) camera.follow = o.followSelected && selection?.type === 'agent' ? selection.id : null;
     },
     setViewInsets: (ins) => {
+      acordar();
       const v = (n: number | undefined, cur: number) => (typeof n === 'number' && Number.isFinite(n) ? Math.max(0, n) : cur);
       const cur = camera.insets;
       camera.insets = { top: v(ins.top, cur.top), right: v(ins.right, cur.right), bottom: v(ins.bottom, cur.bottom), left: v(ins.left, cur.left) };
@@ -416,6 +451,7 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
       return () => void socialCbs.delete(cb);
     },
     setPlayback: (p) => {
+      acordar();
       playback = p;
       worldNow = p ? p.clock() : 0;
       rebuild();
@@ -427,8 +463,10 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
     destroy: () => {
       cancelAnimationFrame(raf);
       maquete.liberar();
+      if (rafTimer !== null) clearTimeout(rafTimer);
       abort.abort();
       offSnapshot();
+      offNotice();
       detachInput();
       window.removeEventListener('resize', resize);
       canvas.removeEventListener('contextmenu', onContextMenu);
