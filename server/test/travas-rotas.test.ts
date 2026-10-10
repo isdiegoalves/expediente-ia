@@ -2,7 +2,19 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const FONTE = readFileSync(join(__dirname, '../http/app.ts'), 'utf8');
+const ler = (arquivo: string) => readFileSync(join(__dirname, '..', arquivo), 'utf8');
+
+interface Fontes {
+  app: string;
+  index: string;
+  delegadas: Record<string, string>;
+}
+
+const FONTES: Fontes = {
+  app: ler('http/app.ts'),
+  index: ler('index.ts'),
+  delegadas: { 'tema.ts': ler('http/tema.ts'), 'timeline.ts': ler('http/timeline.ts'), 'stats.ts': ler('http/stats.ts') },
+};
 
 type Classe =
   | { tipo: 'leitura' }
@@ -11,7 +23,9 @@ type Classe =
   | { tipo: 'delegada'; arquivo: string };
 
 // Toda rota do handler, pelo começo do bloco dela. "trava" = age sobre sessões ou grava estado, e por isso só atende
-// com a trava de publicação (o Expediente acessível apenas pelo próprio computador). Rota nova entra aqui com a classe.
+// com a trava de publicação (o Expediente acessível apenas pelo próprio computador). "leitura" recusa qualquer método
+// que não seja de leitura. "delegada" é atendida por outro arquivo, que recusa escrita antes de tudo. Rota nova entra
+// aqui com a classe.
 const ROTAS: Record<string, Classe> = {
   'if (deps.tema?.(req, res, url)) return true;': { tipo: 'delegada', arquivo: 'tema.ts' },
   "if (path === '/api/stream')": { tipo: 'leitura' },
@@ -31,7 +45,7 @@ const ROTAS: Record<string, Classe> = {
   "if (path.startsWith('/api/agents/'))": { tipo: 'leitura' },
   "if (path === '/api/rooms/rename')": { tipo: 'trava' },
   "if (path === '/api/social/ritmo')": { tipo: 'trava' },
-  "if (path === '/api/stats' || path.startsWith('/api/stats/'))": { tipo: 'leitura' },
+  "if (path === '/api/stats' || path.startsWith('/api/stats/'))": { tipo: 'delegada', arquivo: 'stats.ts' },
   "if (path === '/api/demo')": { tipo: 'sem-trava', motivo: 'liga e desliga o modo demonstração, preferência da tela que não age sobre sessões' },
   'if (deps.timeline?.(req, res, url)) return true;': { tipo: 'delegada', arquivo: 'timeline.ts' },
 };
@@ -55,20 +69,49 @@ const PASSOS = [
   'return true;',
 ];
 
-/** As linhas do corpo do handler devolvido por createApiHandler. */
-function corpoDoHandler(fonte: string): string[] {
+// Em cada arquivo que recebe rota delegada: onde o handler começa, o que pode vir antes da recusa de escrita e a recusa.
+const DELEGADAS: Record<string, { inicio: string; antes: string[]; recusa: string }> = {
+  'tema.ts': {
+    inicio: '  return (req, res, url) => {',
+    antes: ['const path = url.pathname;', "const isApi = path === '/api/tema';", "if (!isApi && !path.startsWith('/temas/')) return false;"],
+    recusa: "if (req.method !== 'GET' && req.method !== 'HEAD') {",
+  },
+  'timeline.ts': {
+    inicio: '  return (req, res, url) => {',
+    antes: ['const path = url.pathname;', "if (path !== '/api/timeline' && !path.startsWith('/api/timeline/')) return false;", "const method = req.method ?? 'GET';"],
+    recusa: "if (method !== 'GET' && method !== 'HEAD') {",
+  },
+  'stats.ts': {
+    inicio: 'export function handleStatsRoute(',
+    antes: ["const method = req.method ?? 'GET';", 'const path = url.pathname;', "if (path !== '/api/stats' && path !== '/api/stats/days') {", "send(res, 404, { error: 'rota desconhecida' });", 'return;', '}'],
+    recusa: "if (method !== 'GET' && method !== 'HEAD') {",
+  },
+};
+
+// O pedido em index.ts só passa pelo guard, pelo handler da API e pelo resto (estáticos): rota não nasce ali.
+const PEDIDO = [
+  'const url = parseUrl(req);',
+  'try {',
+  'if (guard(req, res)) return;',
+  'if (!api(req, res, url)) fallback(req, res, url);',
+  '} catch (err) {',
+  'log.warn(`Erro ao responder ${req.method} ${url.pathname}: ${errMsg(err)}`);',
+  "if (!res.headersSent) sendJson(res, 500, { error: 'erro interno' });",
+  'else res.destroy();',
+  '}',
+];
+
+const semComentario = (linhas: string[]) => linhas.map((l) => l.trim()).filter((l) => l && !l.startsWith('//'));
+
+function entre(fonte: string, inicio: string, fim: string, onde: string): string[] {
   const linhas = fonte.split('\n');
-  const inicio = linhas.findIndex((l) => l === '  return (req, res, url) => {');
-  const fim = linhas.findIndex((l, i) => i > inicio && l === '  };');
-  if (inicio < 0 || fim < 0) throw new Error('handler de createApiHandler não encontrado em app.ts');
-  return linhas.slice(inicio + 1, fim);
+  const a = linhas.findIndex((l) => l.startsWith(inicio));
+  const b = linhas.findIndex((l, i) => i > a && l === fim);
+  if (a < 0 || b < 0) throw new Error(`${onde}: trecho que começa em "${inicio.trim()}" não encontrado`);
+  return linhas.slice(a + 1, b);
 }
 
 const ehInstrucao = (linha: string) => /^ {4}[^ }]/.test(linha) && !linha.trimStart().startsWith('//');
-
-/** O começo de cada instrução de primeiro nível do handler (sem comentários). */
-const instrucoes = (corpo: string[]) => corpo.filter(ehInstrucao).map((l) => l.trim());
-
 const rotaDe = (instrucao: string) => Object.keys(ROTAS).find((cabeca) => instrucao.startsWith(cabeca));
 
 /** Os blocos de rota do handler, do começo de um até o começo do próximo. */
@@ -90,42 +133,86 @@ function blocosDeRota(corpo: string[]): Map<string, string> {
   return blocos;
 }
 
-describe('toda rota que age sobre sessões ou grava estado confere a trava de publicação', () => {
-  const corpo = corpoDoHandler(FONTE);
+function delegadaRecusaAntes(fonte: string, arquivo: string): boolean {
+  const d = DELEGADAS[arquivo];
+  if (!d) return false;
+  const linhas = fonte.split('\n');
+  const inicio = linhas.findIndex((l) => l.startsWith(d.inicio));
+  if (inicio < 0) return false;
+  const depois = semComentario(linhas.slice(inicio + 1));
+  const recusa = depois.indexOf(d.recusa);
+  return recusa >= 0 && JSON.stringify(depois.slice(0, recusa)) === JSON.stringify(d.antes);
+}
+
+/** Tudo o que faria uma rota escapar da trava: lista vazia quando o código está em ordem. */
+function violacoes(f: Fontes): string[] {
+  const v: string[] = [];
+  const corpo = entre(f.app, '  return (req, res, url) => {', '  };', 'app.ts');
+  for (const l of corpo) if (/^ {4}\}./.test(l)) v.push(`instrução colada a um fechamento de bloco: ${l.trim()}`);
+
+  const todas = corpo.filter(ehInstrucao).map((l) => l.trim());
+  for (const i of todas) if (!rotaDe(i) && !PASSOS.includes(i)) v.push(`instrução sem classe: ${i}`);
+  for (const cabeca of Object.keys(ROTAS)) {
+    const vezes = todas.filter((i) => i.startsWith(cabeca)).length;
+    if (vezes !== 1) v.push(`rota ${vezes === 0 ? 'que não existe' : 'repetida'}: ${cabeca}`);
+  }
+  for (const p of PASSOS) if (!todas.includes(p)) v.push(`passo que não existe: ${p}`);
+
   const blocos = blocosDeRota(corpo);
+  for (const [cabeca, c] of Object.entries(ROTAS)) {
+    const bloco = blocos.get(c.tipo === 'trava' ? (c.noBlocoDe ?? cabeca) : cabeca) ?? '';
+    if (c.tipo === 'trava' && !(c.prova ?? /terminalOn\(\)/).test(bloco)) v.push(`rota sem a trava: ${cabeca}`);
+    if (c.tipo === 'leitura' && (!/!isRead\b|method !== 'GET'/.test(bloco) || /method === '(?:POST|PUT|PATCH|DELETE)'/.test(bloco))) {
+      v.push(`rota de leitura que não recusa escrita: ${cabeca}`);
+    }
+    if (c.tipo === 'delegada' && !delegadaRecusaAntes(f.delegadas[c.arquivo] ?? '', c.arquivo)) {
+      v.push(`rota delegada que atende algo antes de recusar escrita: ${c.arquivo}`);
+    }
+  }
 
-  it('toda instrução de primeiro nível do handler é uma rota classificada ou um passo conhecido', () => {
-    const semClasse = instrucoes(corpo).filter((i) => !rotaDe(i) && !PASSOS.includes(i));
-    expect(semClasse).toEqual([]);
+  const pedido = semComentario(entre(f.index, "server.on('request', (req, res) => {", '});', 'index.ts'));
+  if (JSON.stringify(pedido) !== JSON.stringify(PEDIDO) || f.index.split("server.on('request'").length !== 2) {
+    v.push('o tratamento do pedido em index.ts não é só guard, API e o resto');
+  }
+  return v;
+}
+
+function trocar(fonte: string, alvo: string, novo: string): string {
+  if (!fonte.includes(alvo)) throw new Error(`alvo da quebra não encontrado: ${alvo}`);
+  return fonte.replace(alvo, novo);
+}
+
+const NOVA = "      office.setDemo(true);\n      return true;\n    }\n";
+const DEMO = "    if (path === '/api/demo') {";
+const naApp = (alvo: string, novo: string): Fontes => ({ ...FONTES, app: trocar(FONTES.app, alvo, novo) });
+const noTema = (alvo: string, novo: string): Fontes => ({ ...FONTES, delegadas: { ...FONTES.delegadas, 'tema.ts': trocar(FONTES.delegadas['tema.ts']!, alvo, novo) } });
+
+// Cada jeito conhecido de uma rota nova passar sem trava, aplicado a uma cópia do código.
+const QUEBRAS: Record<string, () => Fontes> = {
+  'rota nova com o método na condição': () => naApp(DEMO, `    if (method === 'POST' && path === '/api/novo') {\n${NOVA}${DEMO}`),
+  'rota nova por regex': () => naApp(DEMO, `    if (/^\\/api\\/novo\\//.test(path)) {\n${NOVA}${DEMO}`),
+  'rota delegada nova': () => naApp(DEMO, `    if (deps.extra?.(req, res, url)) return true;\n${DEMO}`),
+  'rota colada ao fim do bloco anterior': () => naApp(`    }\n${DEMO}`, `    } else if (path === '/api/novo') {\n${NOVA}${DEMO}`),
+  'escrita aninhada em rota de leitura': () =>
+    naApp("    if (path.startsWith('/api/agents/')) {\n", "    if (path.startsWith('/api/agents/')) {\n      if (method === 'POST') {\n        office.setDemo(true);\n        return true;\n      }\n"),
+  'rota de leitura sem recusar escrita': () => naApp("    if (path === '/api/snapshot') {\n      if (!isRead) methodNotAllowed(res, 'GET');\n      else ", "    if (path === '/api/snapshot') {\n      "),
+  'começo de rota repetido antes da rota de verdade': () => naApp("    if (path === '/api/rooms/rename') {", "    if (path === '/api/rooms/rename') return true;\n    if (path === '/api/rooms/rename') {"),
+  'rota com trava sem a trava': () => {
+    const [antes, bloco, depois] = FONTES.app.split(/( {4}if \(path === '\/api\/rooms\/rename'\) \{[\s\S]*?\n {4}\}\n)/);
+    if (!bloco?.includes('terminalOn()')) throw new Error('bloco de renomear sala não encontrado');
+    return { ...FONTES, app: `${antes}${bloco.replace('terminalOn()', 'true')}${depois}` };
+  },
+  'rota na delegada antes da recusa de escrita': () => noTema("    if (req.method !== 'GET' && req.method !== 'HEAD') {", "    if (path === '/api/tema/gravar') {\n      return true;\n    }\n    if (req.method !== 'GET' && req.method !== 'HEAD') {"),
+  'delegada sem a recusa de escrita': () => noTema("if (req.method !== 'GET' && req.method !== 'HEAD') {", 'if (false) {'),
+  'rota em index.ts, antes do handler da API': () => ({ ...FONTES, index: trocar(FONTES.index, '    if (guard(req, res)) return;\n', "    if (guard(req, res)) return;\n    if (url.pathname === '/api/novo') return;\n") }),
+};
+
+describe('toda rota que age sobre sessões ou grava estado confere a trava de publicação', () => {
+  it('o código atual não tem rota fora da tabela nem rota sem a prova da classe dela', () => {
+    expect(violacoes(FONTES)).toEqual([]);
   });
 
-  it('a tabela só cita rotas e passos que existem', () => {
-    const todas = instrucoes(corpo);
-    const rotasInexistentes = Object.keys(ROTAS).filter((c) => !blocos.has(c));
-    const passosInexistentes = PASSOS.filter((p) => !todas.includes(p));
-    expect([...rotasInexistentes, ...passosInexistentes]).toEqual([]);
-  });
-
-  it('cada rota "trava" confere a trava no próprio bloco (ou no bloco que a atende)', () => {
-    const faltando = Object.entries(ROTAS)
-      .filter(([, c]) => c.tipo === 'trava')
-      .filter(([cabeca, c]) => {
-        const k = c as Extract<Classe, { tipo: 'trava' }>;
-        const corpoDoBloco = blocos.get(k.noBlocoDe ?? cabeca) ?? '';
-        return !(k.prova ?? /terminalOn\(\)/).test(corpoDoBloco);
-      })
-      .map(([cabeca]) => cabeca);
-    expect(faltando).toEqual([]);
-  });
-
-  it('cada rota delegada só atende leitura (GET e HEAD) no arquivo que a recebe', () => {
-    const escrevem = Object.values(ROTAS)
-      .filter((c): c is Extract<Classe, { tipo: 'delegada' }> => c.tipo === 'delegada')
-      .filter((c) => {
-        const fonte = readFileSync(join(__dirname, '../http', c.arquivo), 'utf8');
-        return !/(req\.)?method !== 'GET' && (req\.)?method !== 'HEAD'/.test(fonte);
-      })
-      .map((c) => c.arquivo);
-    expect(escrevem).toEqual([]);
+  it.each(Object.keys(QUEBRAS))('acusa: %s', (nome) => {
+    expect(violacoes(QUEBRAS[nome]!())).not.toEqual([]);
   });
 });
