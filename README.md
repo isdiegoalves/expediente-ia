@@ -278,6 +278,14 @@ de áudio) e baixinhos: o teclado de quem trabalha nas salas à vista, o "ding" 
 embora, o sino quando alguém precisa de você, o estalo de tarefa concluída e o pingue-pongue e o fliperama das rodas.
 Há volume geral e cada categoria liga e desliga à parte. Com a aba oculta, só o sino toca.
 
+### Tema do escritório
+
+Em **Configurações › Aparência › Tema do escritório** dá para decorar o escritório: **Automático** mantém o visual
+original (não há troca por data), **Natal** e **Halloween** vestem os personagens, enfeitam paredes, tapetes, plantas e
+elevadores e põem neve nas janelas (a neve para com movimento reduzido). A troca é imediata e fica salva só neste
+navegador; caminhos, atividades e animações dos agentes não mudam, e o ciclo dia/noite segue independente. As cores
+da decoração são o bloco `paleta.sazonal` do `tema.json`; um tema de marca sem ele usa o do tema padrão.
+
 ### Terminal somente leitura
 
 Clique num agente e use **Abrir terminal** para ver a conversa da sessão como o Claude Code mostra: os prompts, as

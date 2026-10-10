@@ -13,6 +13,11 @@ A leitura dos subagentes com nome (teammates) vem do fork
 igorvallest/asgard-codetown (bb014ee, Igor Tavares), licenciado sob a licença
 MIT, com a autoria original preservada no commit.
 
+Os temas sazonais (Natal e Halloween) e a escolha do tema do escritório vêm
+do fork anacsimonel/habblaud (ramo feat/temas-natal-halloween, Ana Clara
+Simonel), licenciado sob a licença MIT, com a autoria original preservada nos
+commits (ad6bfa7, 36ea3d6, 3d4bebc, da044e8, aa0b7be).
+
 Os arquivos herdados do Habblaud foram modificados no Expediente.
 
 O aviso de copyright e o texto da licença MIT (arquivo LICENSE) acompanham
