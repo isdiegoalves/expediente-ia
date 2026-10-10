@@ -51,6 +51,11 @@ const CONTROL = /(?![\u200c\u200d])[\p{Cc}\p{Cf}\u2028\u2029]/u;
 const CONTROL_ALL = new RegExp(CONTROL.source, 'gu');
 const FORMAT = /(?![\u200c\u200d])\p{Cf}/u;
 
+/** O texto tem controle, direção ou invisível (os mesmos que `parseCharacterName` recusa). */
+export function hasControl(text: string): boolean {
+  return CONTROL.test(text);
+}
+
 /** O texto sem os caracteres de controle e de direção que `parseCharacterName` recusa. */
 export function stripControl(text: string): string {
   return text.replace(CONTROL_ALL, '');

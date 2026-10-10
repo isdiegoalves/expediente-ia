@@ -8,6 +8,7 @@ import { tempDir } from './fixtures';
 
 const EXP = { ultima: '1.2.0', publicadaEm: '2026-10-01T12:00:00Z', url: 'https://github.com/isdiegoalves/expediente-ia/releases/tag/v1.2.0' };
 const ORIGEM = { nome: 'Projeto X', ultima: '0.9.0', publicadaEm: '2026-09-30T10:00:00Z', url: 'https://example.com/x/releases/v0.9.0', analise: 'https://example.com/analise' };
+const OK_URL = 'https://example.com/analise';
 const arquivo = (o: unknown) => JSON.stringify(o);
 
 describe('compararSemver', () => {
@@ -58,6 +59,49 @@ describe('lerVersao', () => {
     expect(lerVersao(arquivo({ origem: { ...ORIGEM, analise: 'file:///etc/passwd' } }), '1.0.0').origem).toEqual(semAnalise);
   });
 });
+
+describe('lerVersao: tamanho e caracteres invisíveis de cada campo', () => {
+  const RUINS = ['a\nb', 'a\u001bb', 'a\u007fb', 'a\u202eb', 'a\u200bb', 'a\ufeffb', 'a\u2028b'];
+  const origemCom = (campo: string, valor: string) => lerVersao(arquivo({ origem: { ...ORIGEM, [campo]: valor } }), '1.0.0').origem;
+  const expedienteCom = (campo: string, valor: string) => lerVersao(arquivo({ expediente: { ...EXP, [campo]: valor } }), '1.0.0').ultima;
+
+  it('origem.nome e origem.ultima: controle, direção e invisível derrubam o bloco; tamanho também', () => {
+    for (const campo of ['nome', 'ultima']) {
+      for (const ruim of RUINS) expect(origemCom(campo, ruim), `${campo} ${JSON.stringify(ruim)}`).toBeUndefined();
+    }
+    expect(origemCom('nome', 'x'.repeat(120))?.nome).toHaveLength(120);
+    expect(origemCom('nome', 'x'.repeat(121))).toBeUndefined();
+    expect(origemCom('ultima', 'x'.repeat(40))?.ultima).toHaveLength(40);
+    expect(origemCom('ultima', 'x'.repeat(41))).toBeUndefined();
+  });
+
+  it('ZWNJ e ZWJ continuam valendo (emoji composto, algumas escritas)', () => {
+    expect(origemCom('nome', 'a\u200db')?.nome).toBe('a\u200db');
+  });
+
+  it('datas, url e analise: controle e tamanho', () => {
+    for (const ruim of ['2026-10-01T12:00:00Z\u202e', '2026-10-01T12:00:00Z\n', `2026-10-01T12:00:00Z${' '.repeat(40)}`]) {
+      expect(expedienteCom('publicadaEm', ruim)).toBeUndefined();
+      expect(origemCom('publicadaEm', ruim)).toBeUndefined();
+    }
+    const comprida = `https://example.com/${'a'.repeat(300)}`;
+    expect(expedienteCom('url', comprida)).toBeUndefined();
+    expect(origemCom('url', comprida)).toBeUndefined();
+    for (const ruim of ['https://example.com/a\u202eb', 'https://example.com/a\nb', 'https://example.com/a\u200bb']) {
+      expect(expedienteCom('url', ruim)).toBeUndefined();
+      expect(origemCom('url', ruim)).toBeUndefined();
+      expect(origemCom('analise', ruim)?.analise).toBeUndefined();
+    }
+    expect(origemCom('analise', comprida)?.analise).toBeUndefined();
+    expect(origemCom('analise', OK_URL)?.analise).toBe(OK_URL);
+  });
+
+  it('verificadoEm com controle ou direção é ignorado', () => {
+    for (const ruim of ['2026-10-02T08:00:00Z\u202e', '2026-10-02T08:00:00Z\n']) expect(lerVersao(arquivo({ verificadoEm: ruim }), '1.0.0').verificadoEm).toBeUndefined();
+  });
+});
+
+
 
 describe('createVersaoReader', () => {
   let tmp: ReturnType<typeof tempDir>;

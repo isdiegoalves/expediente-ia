@@ -1,5 +1,6 @@
 // Aviso de versão nova. Quem consulta o GitHub é o script do host (scripts/versao.ts), nunca o servidor: o
 // servidor só lê o versao.json que ele grava na ponte e compara com a versão em uso.
+import { hasControl } from './appearance';
 
 export interface VersaoPublicada {
   /** Sem o "v" (1.2.0). */
@@ -44,7 +45,7 @@ export function compararSemver(a: string, b: string): number | null {
 }
 
 function textoCurto(v: unknown, max = TEXTO_MAX): string | null {
-  return typeof v === 'string' && v.trim() && v.length <= max && !/[\u0000-\u001f\u007f]/.test(v) ? v.trim() : null;
+  return typeof v === 'string' && v.trim() && v.length <= max && !hasControl(v) ? v.trim() : null;
 }
 
 function data(v: unknown): string | null {
