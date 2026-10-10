@@ -435,7 +435,14 @@ mkdirSync(saida, { recursive: true });
 const casa = mkdtempSync(resolve(tmpdir(), 'medir-escala-casa-'));
 const perfil = mkdtempSync(resolve(tmpdir(), 'medir-escala-chr-'));
 const servidor = await abrirServidor(casa);
-const navegador = await abrirNavegador(perfil);
+const navegador = await abrirNavegador(perfil).catch((erro) => {
+  try {
+    process.kill(servidor.pid);
+  } catch {}
+  rmSync(casa, { recursive: true, force: true });
+  rmSync(perfil, { recursive: true, force: true });
+  throw erro;
+});
 const info = await navegador.cdp.enviar('SystemInfo.getInfo');
 const gpu = { versaoDoNavegador: navegador.versao, modo: 'chrome-headless-shell (headless)', dispositivos: info.gpu.devices.map((d) => `${d.vendorString} ${d.deviceString}`.trim()), recursos: info.gpu.featureStatus ?? null };
 const ambienteGeral = { node: process.version, plataforma: `${process.platform}-${process.arch}`, nucleos: cpus().length, dpr, janela: `${largura}x${altura}`, portaDoServidor: servidor.porta, gpu, inicio: new Date().toISOString() };
