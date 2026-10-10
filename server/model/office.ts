@@ -148,13 +148,13 @@ export interface CommitResult {
 
 type NoticeKind = 'arrive' | 'room' | 'wait' | 'deliver' | 'done' | 'leave' | 'shell' | 'shellDone' | 'github';
 
-/** Pergunta ainda sem resposta (o balão dela já diz que o agente espera você). */
 /** Id de agente principal = `<conta>:<pid>`. */
 function pidDoId(id: string): number | undefined {
   const m = /^[^:\s]+:([1-9]\d{0,9})$/.exec(id);
   return m ? Number(m[1]) : undefined;
 }
 
+/** Pergunta ainda sem resposta (o balão dela já diz que o agente espera você). */
 function isOpenQuestion(a: Activity | undefined): boolean {
   return a?.kind === 'ask' && a.text !== SPECIAL.answered().text;
 }
