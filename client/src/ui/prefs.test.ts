@@ -97,10 +97,9 @@ describe('preferências', () => {
 describe('migração do nome antigo (CodeTown)', () => {
   it('move as chaves para o prefixo novo e apaga as antigas', () => {
     const prefs = JSON.stringify({ ...DEFAULT_PREFS, bubbles: 'none' });
-    const wallets = JSON.stringify({ v: 1, wallets: { a1: { name: 'Ana', coins: 250 } } });
-    const st = listableStorage({ 'codetown:prefs': prefs, 'codetown:update-seen': '0.3.2', 'codetown.wallets.v1': wallets });
-    expect(migrateLegacyKeys(st)).toBe(3);
-    expect(Object.fromEntries(st.data)).toEqual({ 'expediente:prefs': prefs, 'expediente:update-seen': '0.3.2', 'expediente.wallets.v1': wallets });
+    const st = listableStorage({ 'codetown:prefs': prefs, 'codetown:update-seen': '0.3.2' });
+    expect(migrateLegacyKeys(st)).toBe(2);
+    expect(Object.fromEntries(st.data)).toEqual({ 'expediente:prefs': prefs, 'expediente:update-seen': '0.3.2' });
     expect(loadPrefs(st).bubbles).toBe('none');
   });
   it('não sobrescreve a chave nova que já existe, mas apaga a antiga', () => {
@@ -108,10 +107,11 @@ describe('migração do nome antigo (CodeTown)', () => {
     expect(migrateLegacyKeys(st)).toBe(0);
     expect(Object.fromEntries(st.data)).toEqual({ [PREFS_KEY]: '{"bubbles":"all"}' });
   });
-  it('ignora chaves sem o prefixo antigo', () => {
-    const st = listableStorage({ 'outra:coisa': '1', codetown: '2', 'codetownx:prefs': '3', 'meu.codetown:prefs': '4' });
+  it('ignora chaves sem o prefixo antigo, e as moedinhas que ficavam no navegador não vêm junto', () => {
+    const outras = { 'outra:coisa': '1', codetown: '2', 'codetownx:prefs': '3', 'meu.codetown:prefs': '4', 'codetown.wallets.v1': '{"v":1,"wallets":{}}' };
+    const st = listableStorage(outras);
     expect(migrateLegacyKeys(st)).toBe(0);
-    expect(st.data.size).toBe(4);
+    expect(Object.fromEntries(st.data)).toEqual(outras);
     expect(migrateLegacyKeys(listableStorage())).toBe(0);
   });
   it('não quebra sem armazenamento ou quando ele lança exceção', () => {

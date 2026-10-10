@@ -114,16 +114,15 @@ export function safeLocalStorage(): Storage | null {
 
 /**
  * Migração do nome antigo (CodeTown, até a 0.3.2): as chaves eram `codetown:prefs`,
- * `codetown:update-seen`, `codetown.wallets.v1`... e passaram a começar com `expediente`.
+ * `codetown:update-seen`... e passaram a começar com `expediente:`.
  */
-const LEGACY_NAME = 'codetown';
-const LEGACY_PREFIXES = [`${LEGACY_NAME}:`, `${LEGACY_NAME}.`];
-const NAME = 'expediente';
+const LEGACY_PREFIX = 'codetown:';
+const PREFIX = 'expediente:';
 
 type ListableStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem' | 'key' | 'length'>;
 
 /**
- * Renomeia as chaves do nome antigo para quem atualiza não perder as preferências nem as moedinhas.
+ * Renomeia as chaves do nome antigo para quem atualiza não perder as preferências.
  * Roda no boot, antes de qualquer leitura. Se a chave nova já existe, ela vale e a antiga só é apagada.
  * Retorna quantas chaves copiou.
  */
@@ -134,7 +133,7 @@ export function migrateLegacyKeys(storage: ListableStorage | null): number {
     // Lista antes de mexer: apagar durante a varredura muda os índices de key(i).
     for (let i = 0; i < storage.length; i++) {
       const key = storage.key(i);
-      if (key && LEGACY_PREFIXES.some((p) => key.startsWith(p))) legacy.push(key);
+      if (key?.startsWith(LEGACY_PREFIX)) legacy.push(key);
     }
   } catch {
     return 0;
@@ -143,7 +142,7 @@ export function migrateLegacyKeys(storage: ListableStorage | null): number {
   for (const old of legacy) {
     try {
       const value = storage.getItem(old);
-      const key = NAME + old.slice(LEGACY_NAME.length);
+      const key = PREFIX + old.slice(LEGACY_PREFIX.length);
       if (value !== null && storage.getItem(key) === null) {
         storage.setItem(key, value);
         copied++;
