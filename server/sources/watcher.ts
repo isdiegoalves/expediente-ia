@@ -916,6 +916,7 @@ export class ClaudeWatcher {
       if (sub.meta?.teammate && !finished) {
         const idle = sub.state.ended && now - sub.tail.mtimeMs >= END_TURN_QUIET_MS;
         office.setStatus(sub.id, idle ? 'idle' : 'working');
+        this.syncStalled(sub, !idle && verdict !== 'running');
         continue;
       }
       const done = finished || verdict === 'concluded';

@@ -269,6 +269,62 @@ describe('ClaudeWatcher', () => {
     expect(c.agent('sess-a:asonda-1')).toBeUndefined();
   });
 
+  it('teammate no meio do trabalho e calado há 120 s fica parado e não é dado por concluído', () => {
+    bootWithSession();
+    const t0 = c.now();
+    c.subFile('sess-a', 'asonda-2', { agentType: 'sonda', description: 'Sonda', name: 'sonda', taskKind: 'in_process_teammate' }, [
+      L.prompt('<teammate-message teammate_id="team-lead">\nMapeie\n</teammate-message>', { agentId: 'asonda-2', at: t0 }),
+      L.assistant([L.tool('tb1', 'Bash', { command: 'npm ls' })], { agentId: 'asonda-2', at: t0, stop: 'tool_use' }),
+    ]);
+    c.poll();
+    expect(c.agent('sess-a:asonda-2')!.parado).toBeUndefined();
+    c.advance(121_000);
+    c.poll();
+    expect(c.agent('sess-a:asonda-2')).toMatchObject({ status: 'working', parado: { pendente: 'Bash' } });
+    c.advance(40 * 60_000);
+    c.poll();
+    expect(c.agent('sess-a:asonda-2')).toMatchObject({ status: 'working', parado: { pendente: 'Bash' } });
+  });
+
+  it('teammate à toa não conta como parado nem como concluído; o subagente sem nome ao lado conclui', () => {
+    bootWithSession();
+    const t0 = c.now();
+    const fim = (id: string) => [
+      L.prompt('Faça', { agentId: id, at: t0 }),
+      L.assistant([L.text('Pronto.')], { agentId: id, at: t0, stop: 'end_turn' }),
+    ];
+    c.subFile('sess-a', 'asonda-3', { agentType: 'sonda', description: 'Sonda', name: 'r1-sonda', teamName: 'time', taskKind: 'in_process_teammate' }, fim('asonda-3'));
+    c.subFile('sess-a', 'avulso', { agentType: 'Explore', description: 'Avulso', name: 'r1-avulso', teamName: 'time' }, fim('avulso'));
+    c.poll();
+    c.advance(6_000);
+    c.poll();
+    c.advance(40 * 60_000);
+    c.poll();
+    expect(c.agent('sess-a:asonda-3')).toMatchObject({ status: 'idle' });
+    expect(c.agent('sess-a:asonda-3')!.parado).toBeUndefined();
+    expect(c.agent('sess-a:avulso')?.status).not.toBe('working');
+    expect(c.office.commit().snapshot.equipes).toEqual([
+      { key: expect.stringContaining('time'), concluidos: 1, total: 2, paradosPorVoce: 0, rodadas: [{ n: 1, concluidos: 1, total: 2 }] },
+    ]);
+  });
+
+  it('teammate que já estava à toa quando o servidor subiu aparece à toa; o subagente sem nome nessa situação não aparece', () => {
+    const t0 = c.now();
+    writeLines(c.transcript('sess-a'), [L.prompt('oi', { at: t0 })]);
+    const fim = (id: string) => [
+      L.prompt('Faça', { agentId: id, at: t0 }),
+      L.assistant([L.text('Pronto.')], { agentId: id, at: t0, stop: 'end_turn' }),
+    ];
+    c.subFile('sess-a', 'asonda-4', { agentType: 'sonda', description: 'Sonda', name: 'sonda', taskKind: 'in_process_teammate' }, fim('asonda-4'));
+    c.subFile('sess-a', 'avulso-2', { agentType: 'Explore', description: 'Avulso', name: 'avulso' }, fim('avulso-2'));
+    c.advance(30_000);
+    c.openSession(100, 'sess-a');
+    c.watcher.boot();
+    c.poll();
+    expect(c.agent('sess-a:asonda-4')).toMatchObject({ kind: 'sub', status: 'idle' });
+    expect(c.agent('sess-a:avulso-2')).toBeUndefined();
+  });
+
   it('subagente conclui por end_turn + 5 s de silêncio', () => {
     bootWithSession();
     c.subFile('sess-a', 'e1', { agentType: 'Plan', description: 'Planejar', toolUseId: 'toolu_x' }, [

@@ -27,6 +27,10 @@ do meio (0.**3**.0).
 
 ### Corrigido
 
+- **Subagentes com nome (teammates) no escritório.** O subagente lançado com nome no Claude Code (que vira teammate)
+  não aparecia, ou entrava e saía na hora com "Concluiu em 0s". Agora ele entra trabalhando, fica à toa no escritório
+  entre um turno e outro, volta à mesa quando recebe mensagem e só vai embora quando é encerrado ou a sessão fecha. Se
+  calar no meio do trabalho, aparece como parado, como qualquer subagente.
 - Quando um arquivo de transcript era apagado e outro, maior, era criado no lugar, o Expediente podia não perceber a
   troca: alguns sistemas de arquivos reaproveitam o número (inode) do arquivo apagado, e só o inode era comparado.
   Agora, quando o sistema informa o momento de criação do arquivo, ele também entra na comparação, e a leitura

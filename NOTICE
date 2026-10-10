@@ -9,6 +9,10 @@ Três correções do Habblaud 0.7.0 também foram trazidas, com a autoria
 original preservada nos commits: rotação de transcript (e9a5c20, Lucas Alves;
 3aed0fe, Márcio Junior) e package-lock.json (48c95fa, Rafael Silveira de Souza).
 
+A leitura dos subagentes com nome (teammates) vem do fork
+igorvallest/asgard-codetown (bb014ee, Igor Tavares), licenciado sob a licença
+MIT, com a autoria original preservada no commit.
+
 Os arquivos herdados do Habblaud foram modificados no Expediente.
 
 O aviso de copyright e o texto da licença MIT (arquivo LICENSE) acompanham
