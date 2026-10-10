@@ -296,7 +296,7 @@ um **chip colorido com a letra da conta** (C, D…).
 - **Gaveta de detalhes:** clique num personagem (no prédio ou na lista) para ver atividade, tarefas, subagentes,
   linha do tempo e estatísticas (ferramentas, tokens, custo, linhas alteradas, modelo, branch).
 - **Feed:** as últimas atividades de todo o escritório.
-- **Configurações (⚙):** nomes, balões, quanto os ociosos passeiam, ciclo dia/noite, sons, notificações do navegador,
+- **Configurações (⚙):** nomes, balões, quanto os ociosos passeiam e se juntam em rodas (vale para todas as abas), ciclo dia/noite, sons, notificações do navegador,
   modo demonstração e **Sobre** (versão em uso, versão nova, link do que mudou e última verificação). **Ajuda (?):** legenda completa e atalhos.
 - **Meu dia (📊):** para onde foi o tempo do dia (veja [Meu dia](#meu-dia)). **Timelapse** e **Histórico** (os relógios
   da barra superior): veja [Timelapse do dia](#timelapse-do-dia) e [Terminal somente leitura](#terminal-somente-leitura).
@@ -530,8 +530,10 @@ no host); as demais ficam fixas dentro do container. Opções: `npm run docker:u
 - **Vida social:** as rodas, as personalidades e as moedinhas são simulação, sem nenhum efeito nos agentes de verdade.
   O servidor decide quem entra em que roda, quando e com que resultado (`shared/social/agenda.ts`) e manda as rodas e
   as carteiras no snapshot; cada aba só anima (`client/src/world/social/`), então duas abas mostram a mesma roda e o
-  mesmo saldo, que também aparece no `/escritorio` do mod. As carteiras ficam em `social.json`, na pasta de dados. A
-  personalidade sai da semente de cada agente (é a mesma em qualquer navegador).
+  mesmo saldo, que também aparece no `/escritorio` do mod. O ritmo (Configurações › Movimento pelo escritório: Calmo,
+  Normal ou Agitado) também é do servidor e muda a frequência das rodas e dos passeios em todas as abas; sem servidor
+  (simulação, timelapse) vale só na aba. Carteiras e ritmo ficam em `social.json`, na pasta de dados. A personalidade
+  sai da semente de cada agente (é a mesma em qualquer navegador).
 - **O que cada um está fazendo:** o servidor acompanha o fim dos transcripts (`.jsonl`) das sessões abertas e traduz
   cada chamada de ferramenta numa atividade em português, com ícone. Dali também saem tarefas, título, modelo e
   estatísticas.
@@ -570,6 +572,7 @@ mod/      o mod do Expediente e o plugin de permissões (plugins do Claude Code;
 | `GET /api/health` | Saúde: versão, demonstração, Docker, terminal, responder pelo escritório, fontes e status de uso de cada conta. |
 | `POST /api/demo` | `{"enabled": true \| false}` liga ou desliga os agentes simulados. |
 | `POST /api/rooms/rename` | `{"id": sala, "name": nome}` renomeia a sala (vazio volta ao nome da pasta); o nome fica em `rooms.json`, na pasta de dados. Só com acesso local. |
+| `POST /api/social/ritmo` | `{"ritmo": "calm" \| "normal" \| "lively"}` muda o ritmo do escritório para todas as abas; fica em `social.json`, na pasta de dados. Só com acesso local. |
 | `GET /api/mod/summary` | Para o mod do Claude Code: versão, quantos agentes, quantos trabalham e quem precisa de você (sem o demo e, com `?account=&session=`, sem a própria sessão). |
 | `/api/permissions…` | Responder pelo escritório: o hook de permissão registra o pedido e espera; a página busca o detalhe e decide. Só com acesso local. |
 

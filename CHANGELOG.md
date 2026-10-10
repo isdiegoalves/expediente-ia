@@ -27,6 +27,9 @@ do meio (0.**3**.0).
 
 ### Alterado
 
+- **Movimento pelo escritório vale para todas as abas.** Calmo, Normal e Agitado, em Configurações, voltam a mudar quantas
+  rodas acontecem (além dos passeios sozinhos) e a escolha fica no servidor, igual em todas as abas e depois de
+  reiniciar; a escolha antiga, guardada no navegador, deixa de valer. Na simulação e no timelapse, vale só na aba.
 - Escritório parado gasta menos do computador: com todos os agentes ociosos há um minuto e sem você mexer na janela, o
   desenho cai para 10 quadros por segundo, e volta ao máximo na hora em que chega um alerta, um agente começa a trabalhar
   ou você mexe o mouse ou o teclado. Com a aba oculta, o escritório deixa de se atualizar e se põe em dia ao voltar.

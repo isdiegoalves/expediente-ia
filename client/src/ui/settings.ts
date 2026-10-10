@@ -7,6 +7,7 @@ import type { UiPrefs } from './prefs';
 import { SoundSettingsGroup } from './settings-sound';
 import type { SoundControl } from './sound';
 import { AboutGroup } from './version';
+import type { WorldOptions } from '../world/api';
 import { MAQUETE_DICA, opcaoMaquete, webgl2Disponivel } from '../world/render/maquete';
 
 type BoolPref = { [K in keyof UiPrefs]: UiPrefs[K] extends boolean ? K : never }[keyof UiPrefs];
@@ -60,7 +61,8 @@ export class SettingsPopover implements UiComponent {
   readonly el: HTMLElement;
   private switches = new Map<BoolPref | 'demo', SwitchRefs>();
   private bubbles: ReturnType<typeof segmented<UiPrefs['bubbles']>>;
-  private liveliness: ReturnType<typeof segmented<UiPrefs['liveliness']>>;
+  private liveliness: ReturnType<typeof segmented<WorldOptions['liveliness']>>;
+  private livelinessHint: HTMLElement;
   private daylight: ReturnType<typeof segmented<UiPrefs['daylight']>>;
   private theme: ReturnType<typeof segmented<UiPrefs['theme']>>;
   private soundGroup: SoundSettingsGroup;
@@ -90,15 +92,20 @@ export class SettingsPopover implements UiComponent {
       ],
       (v) => ctx.updatePrefs({ bubbles: v }),
     );
-    this.liveliness = segmented<UiPrefs['liveliness']>(
+    this.liveliness = segmented<WorldOptions['liveliness']>(
       'Movimento pelo escritório',
       [
         ['calm', 'Calmo'],
         ['normal', 'Normal'],
         ['lively', 'Agitado'],
       ],
-      (v) => ctx.updatePrefs({ liveliness: v }),
+      (v) => {
+        this.liveliness.set(v);
+        void ctx.mudarRitmo(v);
+      },
     );
+    this.livelinessHint = h('span', { class: 'ui-set__hint' });
+    this.liveliness.row.append(this.livelinessHint);
     this.daylight = segmented<UiPrefs['daylight']>(
       'Ciclo dia/noite',
       [
@@ -207,7 +214,9 @@ export class SettingsPopover implements UiComponent {
       r.btn.disabled = key === 'demo' && this.demoBusy;
     }
     this.bubbles.set(p.bubbles);
-    this.liveliness.set(p.liveliness);
+    const ritmo = this.ctx.ritmo();
+    this.liveliness.set(ritmo.ritmo);
+    setText(this.livelinessHint, ritmo.doServidor ? 'Vale para todas as abas: muda as rodas e os passeios de quem está à toa.' : 'Sem servidor (simulação ou timelapse), vale só nesta aba.');
     this.daylight.set(p.daylight);
     this.theme.set(p.theme);
     this.soundGroup.render();

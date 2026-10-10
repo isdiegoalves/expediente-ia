@@ -3,6 +3,7 @@ import type { ActivityKind, AgentKind, AgentStatus, ShellJob } from '../../../..
 import type { ScreenMode } from '../../art/api';
 import type { WorldOptions } from '../api';
 import type { SpotDef } from '../layout/types';
+import { SENTADO_MS } from '../../../../shared/social/regras';
 import { foregroundWaiting } from './shell';
 
 /**
@@ -101,15 +102,9 @@ export function pickIdleActivity(
   return null;
 }
 
-const SIT_RANGE: Record<WorldOptions['liveliness'], [number, number]> = {
-  calm: [16_000, 42_000],
-  normal: [6_000, 20_000],
-  lively: [3_000, 10_000],
-};
-
 /** Quanto tempo o ocioso fica sentado na mesa antes do próximo passeio. */
 export function idleSitMs(rng: () => number, liveliness: WorldOptions['liveliness']): number {
-  const [a, b] = SIT_RANGE[liveliness] ?? SIT_RANGE.normal;
+  const [a, b] = SENTADO_MS[liveliness] ?? SENTADO_MS.normal;
   return a + rng() * (b - a);
 }
 

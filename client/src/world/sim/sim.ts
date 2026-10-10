@@ -126,7 +126,7 @@ export class Sim {
     private readonly art: ArtModule,
     private readonly options: () => WorldOptions,
   ) {
-    this.social = new Social(this);
+    this.social = new Social(this, () => this.options().liveliness);
     this.building = assembleBuilding(columnsFor([]), [], 0);
     this.finder = new PathFinder(this.building.grid);
     this.spots.setSpots(this.building.spots);

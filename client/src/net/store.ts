@@ -185,6 +185,17 @@ export class OfficeStore {
     return res.ok;
   }
 
+  /** Ritmo do escritório para todas as abas (POST /api/social/ritmo). Devolve undefined se deu certo, ou a mensagem de erro. */
+  async setRitmo(ritmo: 'calm' | 'normal' | 'lively'): Promise<string | undefined> {
+    let res: Response;
+    try {
+      res = await fetch('/api/social/ritmo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ritmo }) });
+    } catch {
+      return 'Sem conexão com o Expediente.';
+    }
+    return res.ok ? undefined : this.errorOf(res, `Não foi possível mudar o ritmo (erro ${res.status}).`);
+  }
+
   // ---------------------------------------------------------------- timelapse
 
   /** Snapshots vêm de uma fonte alternativa (o timelapse), não do SSE. */
@@ -286,14 +297,18 @@ export class OfficeStore {
     } catch {
       return 'Sem conexão com o Expediente.';
     }
-    if (res.ok) return undefined;
+    return res.ok ? undefined : this.errorOf(res, `Não foi possível salvar o personagem (erro ${res.status}).`);
+  }
+
+  /** A mensagem `error` da resposta; sem JSON (ex.: guard), a padrão. */
+  private async errorOf(res: Response, fallback: string): Promise<string> {
     try {
       const data = (await res.json()) as { error?: unknown };
       if (typeof data.error === 'string') return data.error;
     } catch {
-      // Resposta sem JSON (ex.: guard): usa a mensagem padrão.
+      // segue com a padrão
     }
-    return `Não foi possível salvar o personagem (erro ${res.status}).`;
+    return fallback;
   }
 
   // ---------------------------------------------------------------- internos

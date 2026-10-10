@@ -19,7 +19,7 @@ import { isLongIdle } from '../sim/behavior';
 import { facing, type Character } from '../sim/character';
 import type { Sim } from '../sim/sim';
 import type { Step } from '../sim/steps';
-import { active, GESTURE_ICON, KINDS, MATCH_WHAT, ownerTag, pickGesture, players, PROGRAM_SEED, rpsResult, TARGET, type Gathering, type GatherKind, type Member, type Role } from './gathering';
+import { active, GESTURE_ICON, KINDS, MATCH_WHAT, ownerTag, pickGesture, players, PROGRAM_SEED, rpsResult, TARGET, type Gathering, type GatherKind, type Member, type Ritmo, type Role } from './gathering';
 import * as L from './lines';
 import { bondBetween, hasTrait, personaFor, TRAITS, type Persona, type TraitId } from './persona';
 
@@ -93,7 +93,10 @@ export class Social {
   private nextStep = 0;
   private nextTry = 0;
 
-  constructor(private readonly sim: Sim) {}
+  constructor(
+    private readonly sim: Sim,
+    private readonly ritmo: () => Ritmo,
+  ) {}
 
   // =================================================================== disponibilidade
 
@@ -141,6 +144,7 @@ export class Social {
   private step(now: number): void {
     if (!this.motor) return;
     this.nextStep = now + PASSO_MS;
+    this.motor.mudarRitmo(this.ritmo());
     this.motor.passo(now, this.agentes);
     const e = this.motor.estado();
     this.rodas = e.rodas;

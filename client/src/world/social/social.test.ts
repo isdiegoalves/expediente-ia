@@ -2,11 +2,11 @@
 // carteiras que vêm do servidor, quem é chamado de volta ao trabalho, apostas, moedinhas pelo
 // trabalho e quem espera shell.
 import { describe, expect, it } from 'vitest';
-import { montarRoda } from '../../../../shared/social/agenda';
+import { montarRoda, MotorSocial } from '../../../../shared/social/agenda';
 import { START_COINS, TASK_REWARD, TURN_REWARD, type CarteiraInfo } from '../../../../shared/social/carteiras';
 import type { AgentInfo, OfficeSnapshot, RodaAgendada, RoomInfo } from '../../../../shared/types';
 import type { Appearance, ArtModule, RoomTheme } from '../../art/api';
-import { DEFAULT_WORLD_OPTIONS } from '../api';
+import { DEFAULT_WORLD_OPTIONS, type WorldOptions } from '../api';
 import { Sim } from '../sim/sim';
 import { active, KINDS, type Gathering } from './gathering';
 import { CALLED } from './lines';
@@ -101,8 +101,8 @@ function run(sim: Sim, clock: { now: number }, seconds: number, until?: () => bo
   }
 }
 
-function newSim(): Sim {
-  return new Sim(art, () => ({ ...DEFAULT_WORLD_OPTIONS, liveliness: 'lively' }));
+function newSim(liveliness: WorldOptions['liveliness'] = 'lively'): Sim {
+  return new Sim(art, () => ({ ...DEFAULT_WORLD_OPTIONS, liveliness }));
 }
 
 const ROOMS = [room('/a', 0), room('/b', 1)];
@@ -322,5 +322,49 @@ describe('vida social', () => {
     expect([gb.winner, gb.loser, gb.rematches]).toEqual([ga.winner, ga.loser, 1]);
     expect(ga.rematches).toBe(1);
     expect(gb.lance).toBe(roda.jogadas!.length);
+  });
+
+  it('duas abas com os mesmos snapshots, depois de o servidor trocar o ritmo, chegam às mesmas rodas', () => {
+    const agents = ['ana', 'bia', 'caio', 'davi', 'edu', 'fabi'].map((id, i) => agent(id, i % 2 ? '/b' : '/a', 'idle', { statusSince: T0 - 60_000 }));
+    const servidor = new MotorSocial(42);
+    // como a interface faz: o mundo das duas abas segue o ritmo que o servidor publica
+    let publicado: WorldOptions['liveliness'] = 'normal';
+    const abas = [0, 1].map(() => new Sim(art, () => ({ ...DEFAULT_WORLD_OPTIONS, liveliness: publicado })));
+    const clock = { now: T0 };
+    const retratos: ReturnType<typeof retrato>[][] = [[], []];
+    const ritmos = new Set<string | undefined>();
+    for (let s = 0; s < 360; s++) {
+      if (s === 120) servidor.mudarRitmo('lively');
+      servidor.passo(clock.now, agents);
+      const social = servidor.estado();
+      ritmos.add(social.ritmo);
+      publicado = social.ritmo ?? 'normal';
+      for (const sim of abas) sim.applySnapshot({ ...snap(ROOMS, agents, s + 1), social: structuredClone(social) }, clock.now);
+      for (let f = 0; f < 10; f++) {
+        clock.now += 100;
+        for (const sim of abas) sim.update(0.1, clock.now);
+      }
+      abas.forEach((sim, k) => retratos[k].push(...[...sim.social.gatherings].filter((g) => !g.local).map(retrato)));
+    }
+    expect([...ritmos]).toEqual(['normal', 'lively']);
+    expect(retratos[0].length).toBeGreaterThan(50);
+    expect(retratos[1]).toEqual(retratos[0]);
+  });
+
+  it('sem servidor, a agenda da aba segue o ritmo das opções: calmo tem menos rodas que agitado', () => {
+    const agents = ['ana', 'bia', 'caio', 'davi', 'edu', 'fabi'].map((id, i) => agent(id, i % 2 ? '/b' : '/a', 'idle', { statusSince: T0 - 60_000 }));
+    const contar = (liveliness: WorldOptions['liveliness']) => {
+      const sim = newSim(liveliness);
+      const clock = { now: T0 };
+      sim.applySnapshot(snap(ROOMS, agents), clock.now);
+      const vistas = new Set<string>();
+      for (let f = 0; f < 900 * 10; f++) {
+        clock.now += 100;
+        sim.update(0.1, clock.now);
+        if (f % 10 === 0) for (const g of sim.social.gatherings) if (!g.local) vistas.add(g.plano.id);
+      }
+      return vistas.size;
+    };
+    expect(contar('calm')).toBeLessThan(contar('lively'));
   });
 });

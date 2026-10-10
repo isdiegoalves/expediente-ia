@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_PREFS, loadPrefs, migrateLegacyKeys, PREFS_KEY, sanitizePrefs, savePrefs, worldOptionsFrom } from './prefs';
+import type { OfficeSnapshot } from '../../../shared/types';
+import { DEFAULT_PREFS, loadPrefs, migrateLegacyKeys, PREFS_KEY, ritmoEmVigor, sanitizePrefs, savePrefs, worldOptionsFrom } from './prefs';
 
 function memoryStorage(initial: Record<string, string> = {}) {
   const data = new Map(Object.entries(initial));
@@ -32,7 +33,8 @@ describe('preferências', () => {
     const p = sanitizePrefs({ showNames: false, bubbles: 'muitos', liveliness: 'lively', sound: 'sim', hiddenAccounts: ['.claude', 3] });
     expect(p.showNames).toBe(false);
     expect(p.bubbles).toBe(DEFAULT_PREFS.bubbles);
-    expect(p.liveliness).toBe('lively');
+    // o ritmo deixou o navegador: a preferência antiga some na próxima gravação
+    expect('liveliness' in p).toBe(false);
     expect(p.sound).toBe(false);
     expect(p.hiddenAccounts).toEqual(['.claude']);
   });
@@ -54,7 +56,7 @@ describe('preferências', () => {
     expect(() => savePrefs(broken, DEFAULT_PREFS)).not.toThrow();
   });
   it('extrai só as opções do mundo', () => {
-    expect(worldOptionsFrom({ ...DEFAULT_PREFS, daylight: 'day' })).toEqual({ showNames: true, bubbles: 'important', liveliness: 'normal', dayNight: false, daylight: 'day', theme: 'auto', maquete: false });
+    expect(worldOptionsFrom({ ...DEFAULT_PREFS, daylight: 'day' })).toEqual({ showNames: true, bubbles: 'important', dayNight: false, daylight: 'day', theme: 'auto', maquete: false });
     expect(worldOptionsFrom({ ...DEFAULT_PREFS, daylight: 'night' })).toMatchObject({ dayNight: true, daylight: 'night' });
   });
   it('ciclo dia/noite: valida o modo e migra o interruptor antigo', () => {
@@ -128,5 +130,20 @@ describe('migração do nome antigo (CodeTown)', () => {
     };
     expect(migrateLegacyKeys(full)).toBe(0);
     expect(Object.fromEntries(full.data)).toEqual({ 'codetown:prefs': '{}' });
+  });
+});
+
+describe('ritmo do escritório', () => {
+  const comSocial = (ritmo?: 'calm' | 'lively') => ({ social: { semente: 1, rodas: [], carteiras: {}, ...(ritmo ? { ritmo } : {}) } }) as unknown as OfficeSnapshot;
+
+  it('ao vivo vale o do servidor, para todas as abas; servidor sem ritmo vale normal', () => {
+    expect(ritmoEmVigor({ mock: false, replaying: false, snapshot: comSocial('calm') }, 'lively')).toEqual({ ritmo: 'calm', doServidor: true });
+    expect(ritmoEmVigor({ mock: false, replaying: false, snapshot: comSocial() }, 'lively')).toEqual({ ritmo: 'normal', doServidor: true });
+  });
+
+  it('na simulação, no timelapse ou sem as rodas do servidor, vale o desta aba', () => {
+    expect(ritmoEmVigor({ mock: true, replaying: false, snapshot: comSocial('calm') }, 'lively')).toEqual({ ritmo: 'lively', doServidor: false });
+    expect(ritmoEmVigor({ mock: false, replaying: true, snapshot: comSocial('calm') }, 'lively')).toEqual({ ritmo: 'lively', doServidor: false });
+    expect(ritmoEmVigor({ mock: false, replaying: false, snapshot: null }, 'calm')).toEqual({ ritmo: 'calm', doServidor: false });
   });
 });

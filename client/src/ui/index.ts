@@ -11,7 +11,7 @@ import './styles.css';
 import type { OfficeStore } from '../net/store';
 import { enviarPresencaHttp, novaAba, PresencaDaAba } from '../net/presenca';
 import { buscarVersaoHttp, mockVersao, VersaoFeed } from '../net/versao';
-import type { Selection, WorldApi } from '../world/api';
+import type { Selection, WorldApi, WorldOptions } from '../world/api';
 import type { PanelName, UiComponent, UiContext } from './context';
 import { DayLauncher } from './daystats-launcher';
 import { RoomRenamer } from './roomrename';
@@ -26,7 +26,7 @@ import { Notifier } from './notify';
 import { ConnectionBanner, EmptyState, Splash } from './overlays';
 import { ResumoPanel } from './resumo';
 import { focusPermission, nextPermissionAgent } from './permission';
-import { loadPrefs, safeLocalStorage, savePrefs, worldOptionsFrom, type UiPrefs } from './prefs';
+import { loadPrefs, ritmoEmVigor, safeLocalStorage, savePrefs, worldOptionsFrom, type UiPrefs } from './prefs';
 import { SettingsPopover } from './settings';
 import { Sidebar } from './sidebar';
 import { SoundControl } from './sound';
@@ -75,6 +75,17 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi,
   let uiSelecting = false;
 
   const versao = new VersaoFeed(store.mock ? async () => mockVersao(new URLSearchParams(location.search).get('versao'), Date.now()) : buscarVersaoHttp);
+
+  /** Sem servidor, o ritmo vive aqui; ao vivo, acompanha o do servidor (é o ponto de partida do timelapse). */
+  let ritmoLocal: WorldOptions['liveliness'] = 'normal';
+  let ritmoDoMundo: WorldOptions['liveliness'] | null = null;
+  const aplicarRitmo = () => {
+    const { ritmo, doServidor } = ritmoEmVigor(store, ritmoLocal);
+    if (doServidor) ritmoLocal = ritmo;
+    if (ritmo === ritmoDoMundo) return;
+    ritmoDoMundo = ritmo;
+    world.setOptions({ liveliness: ritmo });
+  };
 
   const ctx: UiContext = {
     store,
@@ -153,6 +164,17 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi,
       timelapse.toggle();
     },
     isTimelapseOpen: () => timelapse.isOpen,
+    ritmo: () => ritmoEmVigor(store, ritmoLocal),
+    async mudarRitmo(ritmo) {
+      if (!ctx.ritmo().doServidor) {
+        ritmoLocal = ritmo;
+        aplicarRitmo();
+      } else {
+        const erro = await store.setRitmo(ritmo);
+        if (erro) ctx.announce(erro);
+      }
+      invalidate();
+    },
   };
 
   // ---------------------------------------------------------------- componentes
@@ -253,6 +275,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi,
   store.on('snapshot', (snap) => {
     // No timelapse o "agora" da interface é o instante reproduzido (serverTime do snapshot reconstruído).
     if (store.connection === 'open' || store.replaying) skew = snap.serverTime - Date.now();
+    aplicarRitmo();
     invalidate();
   });
   store.on('connection', () => invalidate());
@@ -395,6 +418,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi,
 
   // ---------------------------------------------------------------- início
   world.setOptions(worldOptionsFrom(prefs));
+  aplicarRitmo();
   applyLayout();
   renderAll();
 }

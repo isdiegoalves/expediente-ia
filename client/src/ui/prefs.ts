@@ -1,6 +1,7 @@
 // Preferências da interface, persistidas em localStorage ('expediente:prefs').
 // Puro: o armazenamento é injetado (testável em node).
 import { DEFAULT_SOUND_SETTINGS, sanitizeSoundSettings, type SoundSettings } from '../audio/scheduler';
+import type { OfficeSnapshot } from '../../../shared/types';
 import type { DaylightMode, WorldOptions } from '../world/api';
 import { DEFAULT_WORLD_OPTIONS } from '../world/api';
 
@@ -9,7 +10,6 @@ export const PREFS_KEY = 'expediente:prefs';
 export interface UiPrefs {
   showNames: boolean;
   bubbles: WorldOptions['bubbles'];
-  liveliness: WorldOptions['liveliness'];
   /** Ciclo dia/noite: automático (hora local), sempre dia ou sempre noite. */
   daylight: DaylightMode;
   theme: NonNullable<WorldOptions['theme']>;
@@ -30,7 +30,6 @@ export interface UiPrefs {
 export const DEFAULT_PREFS: UiPrefs = {
   showNames: DEFAULT_WORLD_OPTIONS.showNames,
   bubbles: DEFAULT_WORLD_OPTIONS.bubbles,
-  liveliness: DEFAULT_WORLD_OPTIONS.liveliness,
   daylight: 'auto',
   theme: 'auto',
   maquete: false,
@@ -55,7 +54,6 @@ export function sanitizePrefs(raw: unknown): UiPrefs {
   return {
     showNames: bool(o.showNames, d.showNames),
     bubbles: oneOf(o.bubbles, ['all', 'important', 'none'] as const, d.bubbles),
-    liveliness: oneOf(o.liveliness, ['calm', 'normal', 'lively'] as const, d.liveliness),
     // preferências antigas: o interruptor "dia e noite" desligado vira "sempre dia"
     daylight: oneOf(o.daylight, ['auto', 'day', 'night'] as const, o.dayNight === false ? 'day' : d.daylight),
     theme: oneOf(o.theme, ['auto', 'christmas', 'halloween'] as const, d.theme),
@@ -90,7 +88,19 @@ export function savePrefs(storage: StorageLike | null, prefs: UiPrefs): void {
 
 /** Parte das preferências que o mundo (canvas) consome. */
 export function worldOptionsFrom(p: UiPrefs): Partial<WorldOptions> {
-  return { showNames: p.showNames, bubbles: p.bubbles, liveliness: p.liveliness, dayNight: p.daylight !== 'day', daylight: p.daylight, theme: p.theme, maquete: p.maquete };
+  return { showNames: p.showNames, bubbles: p.bubbles, dayNight: p.daylight !== 'day', daylight: p.daylight, theme: p.theme, maquete: p.maquete };
+}
+
+/**
+ * Ritmo do escritório em vigor: ao vivo, o do servidor (vale para todas as abas); sem servidor (simulação,
+ * timelapse), o desta aba, que fica só em memória.
+ */
+export function ritmoEmVigor(
+  store: { mock: boolean; replaying: boolean; snapshot: OfficeSnapshot | null },
+  local: WorldOptions['liveliness'],
+): { ritmo: WorldOptions['liveliness']; doServidor: boolean } {
+  const social = store.mock || store.replaying ? undefined : store.snapshot?.social;
+  return social ? { ritmo: social.ritmo ?? 'normal', doServidor: true } : { ritmo: local, doServidor: false };
 }
 
 /** localStorage com proteção contra navegadores que lançam exceção ao acessá-lo. */

@@ -2,7 +2,7 @@
 import type { AccountInfo, AgentInfo } from '../../../shared/types';
 import type { OfficeStore } from '../net/store';
 import type { VersaoFeed } from '../net/versao';
-import type { Selection, WorldApi } from '../world/api';
+import type { Selection, WorldApi, WorldOptions } from '../world/api';
 import type { UiPrefs } from './prefs';
 
 export interface UiComponent {
@@ -57,4 +57,8 @@ export interface UiContext {
   /** Abre/fecha o timelapse do dia (ui/timelapse.ts). */
   toggleTimelapse(): void;
   isTimelapseOpen(): boolean;
+  /** Ritmo do escritório em vigor (ver ritmoEmVigor). */
+  ritmo(): { ritmo: WorldOptions['liveliness']; doServidor: boolean };
+  /** Troca o ritmo: no servidor (todas as abas) ou, sem servidor, só nesta aba. */
+  mudarRitmo(ritmo: WorldOptions['liveliness']): Promise<void>;
 }

@@ -80,6 +80,7 @@ festa) ou 10 min. Push só avisa. O mesmo CI visto de novo em 2 min não repete 
 | `GET /api/versao` | `{emUso, verificadoEm?, ultima?:{versao, publicadaEm, url}, nova, origem?:{nome, ultima, publicadaEm, url, analise?}}`, lido de `versao.json` na pasta da ponte (`~/.expediente/host`; no Docker `/host`, só leitura). Quem grava é o `npm run versao`, no host; o servidor só lê, valida e compara por semver, sem rede. Arquivo ausente ou torto dá só `{emUso, nova:false}` |
 | `GET /api/health` | `{ok, version, demo, docker, terminal, permissions, sources, accounts:[{id, usageStatus}]}` |
 | `POST /api/demo` | `{enabled: boolean}` liga/desliga agentes simulados (misturados aos reais) |
+| `POST /api/social/ritmo` | `{ritmo: 'calm' \| 'normal' \| 'lively'}` muda o ritmo das rodas e dos passeios para todas as abas; trava do terminal e Host local |
 | `GET /api/mod/summary?account=&session=` | `ModSummary` para o mod do Claude Code: `{version, agents, working, waiting:[{id, name, room, account, waitingFor, since, answerable}], usage:[{id, name, context?, compactions, lastCompaction?, cost?, coins?}], self?}`, sem o demo e sem a sessão de quem pergunta (ver abaixo) |
 | `POST /api/agentes/:id/focar` | `{n}`: pede o foco do painel da sessão de terminal viva (as travas do `/ir?abrir=1`: Host local, `Origin` e `Sec-Fetch-Site` da mesma origem, JSON, nonce de uso único preso ao agente). Responde `{token}`; 409 se o agente não é terminal viva com pid |
 | `GET /api/focos/:token` | `{estado}` do pedido: `pendente`, `assumido`, `focado`, `sem-painel`, `nao-e-claude`, `cancelado` ou `vencido`; 404 se desconhecido (pedidos somem 60 s depois de criados) |
@@ -194,9 +195,15 @@ andamento e as carteiras de quem está presente saem no snapshot (`social`); o n
 mostram a mesma roda. A aposta é paga no fim previsto, se os dois jogadores seguirem à toa até lá (W.O. não paga).
 Tarefa concluída, pedido atendido e entrega de subagente pagam no servidor, uma vez.
 
-- **Arquivo:** `<dataDir>/social.json` (`{v: 1, semente, carteiras}`), gravado a cada 5 s quando algo mudou e ao
-  encerrar (temporário + `rename`). Ilegível ou cortado: aviso no log e as carteiras recomeçam; erro de disco só gera
-  aviso. Carteira de quem não aparece há 3 dias é esquecida.
+O ritmo (Calmo, Normal, Agitado) é o tempo que cada um fica na mesa antes da próxima vontade de companhia
+(`SENTADO_MS` em `shared/social/regras.ts`, o mesmo dos passeios sozinhos do navegador). Ele sai no snapshot
+(`social.ritmo`) e muda por `POST /api/social/ritmo`; na troca, as vontades pendentes são sorteadas de novo, e as
+rodas já decididas e as carteiras ficam como estão.
+
+- **Arquivo:** `<dataDir>/social.json` (`{v: 1, semente, ritmo, carteiras}`), gravado a cada 5 s quando algo mudou, na
+  troca de ritmo e ao encerrar (temporário + `rename`). Ilegível ou cortado: aviso no log, as carteiras recomeçam e o
+  ritmo volta a normal (também quando o valor está fora da lista); erro de disco só gera aviso. Carteira de quem não
+  aparece há 3 dias é esquecida.
 - **Mod:** `GET /api/mod/summary` leva o saldo (`coins`) de cada agente; o `/escritorio` mostra `🪙 N`.
 
 ## Histórico de sessões
