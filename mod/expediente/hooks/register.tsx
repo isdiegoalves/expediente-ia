@@ -589,8 +589,9 @@ async function atenderFocos($: EngineInterface): Promise<void> {
   }
 }
 
-function ligarFocos($: EngineInterface): void {
-  focosTimer ??= $.clock.every(FOCO_POLL_MS, () => {
+async function ligarFocos($: EngineInterface): Promise<void> {
+  if (focosTimer || !(await $.session.surfaces()).includes('terminal')) return
+  focosTimer = $.clock.every(FOCO_POLL_MS, () => {
     void atenderFocos($)
   })
 }
@@ -634,7 +635,7 @@ export const register: Register = (on) => {
       // sem o aviso embaixo do prompt, o resto segue
     }
     try {
-      ligarFocos($)
+      await ligarFocos($)
     } catch {
       // sem o foco pelo navegador, o resto segue
     }

@@ -49,11 +49,15 @@ function mundo(on: On, m: Mundo = {}) {
   const chamadas: Chamada[] = []
   const rodados: string[][] = []
   const copiados: string[] = []
+  let superficiesLidas = 0
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('command.register', (_$, e) => ({ value: { command: e.name } }))
   on('session.usage', () => ({ value: { startedAt: NOW, context: { window: 200_000, tokens: 1, percent: 0 }, rateLimits: [] } }))
   on('session.id', () => ({ value: 'sess-propria' }))
-  on('session.surfaces', () => ({ value: m.superficies ?? ['terminal'] }))
+  on('session.surfaces', () => {
+    superficiesLidas++
+    return { value: m.superficies ?? ['terminal'] }
+  })
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('ui.toast', () => ({ value: undefined }))
   on('ui.status', () => ({ value: undefined }))
@@ -83,7 +87,7 @@ function mundo(on: On, m: Mundo = {}) {
     const usage = [{ id: '.claude:507', name: 'Ana', kind: 'main', status: 'idle', room: 'loja', compactions: 0 }]
     return { value: resposta(200, JSON.stringify({ version: '1', agents: 1, working: 0, waiting: [], usage })) }
   })
-  return { clock, chamadas, rodados, copiados }
+  return { clock, chamadas, rodados, copiados, superficiesLidas: () => superficiesLidas }
 }
 
 const noClaude = (argv: readonly string[]) => /^ps -o comm= -p \d+$/.test(argv.join(' '))
@@ -122,6 +126,16 @@ describe('foco pedido pelo navegador', () => {
     await w.clock.advance(1_000)
     expect(w.chamadas).toHaveLength(2)
   })
+
+  for (const superficies of [[], ['desktop']] as const) {
+    test(`sessão sem terminal (${JSON.stringify(superficies)}) nem liga o timer de 1 s (antes do aviso de 4 s só ele lê as superfícies)`, async ($, on) => {
+      const w = mundo(on, { superficies })
+      await $.session.start(START)
+      const aposLigar = w.superficiesLidas()
+      await w.clock.advance(3 * FOCO_POLL_MS)
+      expect(w.superficiesLidas()).toBe(aposLigar)
+    })
+  }
 
   test('só onde a sessão tem terminal', async ($, on) => {
     const w = mundo(on, { superficies: ['desktop'] })
