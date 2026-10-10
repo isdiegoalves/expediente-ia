@@ -426,13 +426,36 @@ describe('instalar.ts (CLI falso, HOME falso)', () => {
     expect(installedCommit(copia())).toBe(git(root, 'rev-parse', 'HEAD'));
   });
 
-  it('uma conta nova, ainda sem sessão, é detectada e recebe o mod; pasta sem configuração não', async () => {
+  it('pastas ~/.claude* que não são conta (só settings.json, só plugins/) não recebem o mod', async () => {
+    mkdirSync(join(home, '.claude-mem'));
+    writeFileSync(join(home, '.claude-mem', 'settings.json'), '{}');
+    mkdirSync(join(home, '.claude-code-router', 'plugins', 'x'), { recursive: true });
+    writeFileSync(join(home, '.claude-code-router', 'plugins', 'x', 'a.js'), '');
+    expect(await exec('install', { dryRun: true })).toBe(0);
+    expect(await exec('install')).toBe(0);
+    for (const c of fake.calls) expect(c.configDir).not.toMatch(/claude-mem|claude-code-router/);
+    expect(out.join('\n')).not.toMatch(/claude-mem|claude-code-router/);
+  });
+
+  it('o worktree irmão fora do lugar sobrevive ao install e ao uninstall', async () => {
+    const irmao = join(tmp.dir, 'irmao');
+    git(root, 'worktree', 'add', '--detach', irmao, 'HEAD');
+    const movido = join(tmp.dir, 'irmao-movido');
+    renameSync(irmao, movido);
+    mkdirSync(join(home, '.expediente'), { recursive: true });
+    git(root, 'worktree', 'add', '--detach', copia(), 'HEAD');
+    expect(await exec('install')).toBe(0);
+    expect(git(root, 'worktree', 'list')).toContain(irmao);
+    expect(git(root, 'worktree', 'list')).not.toContain('mod-instalado');
+    expect(await exec('uninstall')).toBe(0);
+    expect(git(root, 'worktree', 'list')).toContain(irmao);
+  });
+
+  it('uma conta nova, ainda sem sessão, é detectada e recebe o mod', async () => {
     mkdirSync(join(home, '.claude-nova'));
     writeFileSync(join(home, '.claude-nova', '.claude.json'), '{}');
-    mkdirSync(join(home, '.claude-mem'));
     expect(await exec('install')).toBe(0);
     expect(installed('.claude-nova')[MOD_PLUGIN]).toBeDefined();
-    expect(fake.accounts.has(join(home, '.claude-mem'))).toBe(false);
     expect(out.join('\n')).toContain('.claude-nova');
   });
 

@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 
 export type GitRunner = (args: string[], cwd: string) => { code: number | null; stdout: string; stderr: string };
 
@@ -14,6 +14,22 @@ export function installedCommit(dir: string): string | undefined {
     return readFileSync(join(dir, COMMIT_MARKER), 'utf8').trim() || undefined;
   } catch {
     return undefined;
+  }
+}
+
+/** Apaga só o registro, no repositório, do worktree antigo desta cópia; os de outras pastas ficam como estão. */
+function forgetWorktree(git: GitRunner, root: string, dir: string): void {
+  const common = git(['rev-parse', '--git-common-dir'], root);
+  if (common.code !== 0 || !common.stdout) return;
+  const admin = join(resolve(root, common.stdout), 'worktrees');
+  try {
+    const alvo = join(realpathSync(dir), '.git');
+    for (const nome of readdirSync(admin)) {
+      const gitdir = readFileSync(join(admin, nome, 'gitdir'), 'utf8').trim();
+      if (resolve(gitdir) === alvo) rmSync(join(admin, nome), { recursive: true, force: true });
+    }
+  } catch {
+    // sem worktrees registrados
   }
 }
 
@@ -39,6 +55,7 @@ export function syncCopy(git: GitRunner, root: string, dir: string, commit: stri
     if (tar.status !== 0) return fail(tar.stderr || 'tar falhou');
     rmSync(tarFile, { force: true });
     writeFileSync(join(stage, COMMIT_MARKER), `${commit}\n`);
+    forgetWorktree(git, root, dir);
     const antiga = `${dir}.antiga`;
     rmSync(antiga, { recursive: true, force: true });
     if (existsSync(dir)) renameSync(dir, antiga);
@@ -47,17 +64,16 @@ export function syncCopy(git: GitRunner, root: string, dir: string, commit: stri
   } catch (err) {
     return fail((err as Error).message);
   }
-  git(['worktree', 'prune'], root);
   return undefined;
 }
 
 /** Remove a cópia fixa (e, se era um worktree antigo, o registro dele no repositório). */
 export function removeCopy(git: GitRunner, root: string, dir: string): string | undefined {
   try {
+    forgetWorktree(git, root, dir);
     rmSync(dir, { recursive: true, force: true });
   } catch (err) {
     return (err as Error).message;
   }
-  git(['worktree', 'prune'], root);
   return undefined;
 }
