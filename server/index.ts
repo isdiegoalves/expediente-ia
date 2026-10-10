@@ -28,6 +28,7 @@ import { SessoesAppReader } from './sources/sessoes-app';
 import { ClaudeWatcher } from './sources/watcher';
 import { createBuildReader } from './build';
 import { carregarTema } from './tema/carregar';
+import { createVersaoReader } from './versao';
 
 const config = loadConfig();
 usarArquivoDoDono(join(config.hostDir, 'precos.json'));
@@ -145,6 +146,7 @@ const api = createApiHandler({
   timeline: createTimelineHandler({ dir: timelineDir, recording: !!timeline }),
   permissions: permissions ? createPermissionRoutes(permissions) : undefined,
   stats,
+  versao: createVersaoReader(join(config.hostDir, 'versao.json'), config.version),
   tema: createTemaHandler(pastasDoTema, temaAtivo, sendJson),
 });
 

@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 const ROOT = resolve(__dirname, '../..');
 
-const PODEM_CITAR_HABBLAUD = new Set(['LICENSE', 'NOTICE', 'README.md', 'scripts/renomear-fork.mjs', 'scripts/instalar.ts', 'server/test/instalar.test.ts', 'server/test/nomes.test.ts', 'server/http/guard.test.ts']);
+const PODEM_CITAR_HABBLAUD = new Set(['LICENSE', 'NOTICE', 'README.md', 'CHANGELOG.md', 'scripts/renomear-fork.mjs', 'scripts/instalar.ts', 'server/test/instalar.test.ts', 'server/test/nomes.test.ts', 'server/test/identidade.test.ts', 'server/http/guard.test.ts']);
 const PODEM_CITAR_4747 = new Set(['scripts/renomear-fork.mjs', 'server/test/nomes.test.ts']);
 const REPOSITORIO_ORIGINAL = /marmottajr\/habblaud/gi;
 const PODEM_CITAR_REPOSITORIO = new Set(['LICENSE', 'NOTICE', 'README.md', 'CHANGELOG.md']);

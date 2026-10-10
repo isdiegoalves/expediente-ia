@@ -131,8 +131,8 @@ ela, e o endereço antigo apaga e é desmontado. Assim o prédio não fica com b
 ### 1. Baixe o projeto
 
 ```bash
-git clone https://github.com/marmottajr/habblaud.git
-cd expediente
+git clone https://github.com/isdiegoalves/expediente-ia.git
+cd expediente-ia
 npm install
 ```
 
@@ -170,8 +170,8 @@ npm run instalar -- --com-permissoes     # também o plugin de permissões (resp
 
 O Expediente traz um [mod](https://code.claude.com/docs/en/plugins/mods/overview) (um plugin que roda dentro do
 Claude Code) e o instala em cada conta **só pelo `claude plugin`**, a partir de uma **cópia fixa** do commit (`~/.expediente/mod-instalado`, um worktree destacado): o instalador nunca edita o
-`settings.json` de ninguém, nunca desinstala plugin do Habblaud e recusa o `expediente-permissoes` na conta onde o
-`habblaud-permissoes` estiver ativo (os dois responderiam o mesmo pedido). Com o mod:
+`settings.json` de ninguém, nunca desinstala o plugin do projeto de origem (o Habblaud) e recusa o `expediente-permissoes` na conta onde o
+`habblaud-permissoes` dele estiver ativo (os dois responderiam o mesmo pedido). Com o mod:
 
 - o **uso de 5 horas e semanal** de cada conta aparece ao vivo no Expediente;
 - o terminal mostra uma linha quando **outra sessão precisa de você** (permissão ou resposta);
@@ -192,11 +192,45 @@ abertas carregam o mod com `/reload-plugins` (ou ao reabrir). Confira com `npm r
 
 ### Atualizar
 
-A versão em uso aparece na barra superior, ao lado de "Conectado", e em **Configurações › Sobre**. A cada 6 horas o
-Expediente confere no GitHub se saiu uma versão nova (as [releases](https://github.com/marmottajr/habblaud/releases)
-deste repositório). Quando sai, aparece o selo verde **Nova versão** no lugar do número, com um aviso e um ponto no
-botão de configurações. Em **Sobre** ficam o link do que mudou e o botão **Verificar agora** (as notas de cada
-versão também estão no [`CHANGELOG.md`](CHANGELOG.md)). Para atualizar:
+A versão em uso aparece na barra superior, ao lado de "Conectado", e em **Configurações › Sobre**. O servidor não
+acessa a internet: quem confere se saiu versão nova é um script no seu computador, que você roda quando quiser
+(as notas de cada versão também estão no [`CHANGELOG.md`](CHANGELOG.md)):
+
+```bash
+npm run versao           # consulta a última release do Expediente no GitHub e grava ~/.expediente/host/versao.json
+```
+
+É uma chamada anônima à API pública do GitHub, com tempo limite; se falhar, o arquivo anterior fica como estava. Não é
+automático: só roda quando você manda (opt-in). Para agendar, ponha o mesmo comando no `cron` (macOS e Linux) ou no
+`launchd` (macOS), por exemplo uma vez por dia:
+
+```
+0 9 * * * cd /caminho/do/expediente-ia && PATH=/caminho/do/node/bin:/usr/bin:/bin /caminho/do/node/bin/npm run versao >> $HOME/.expediente/versao.log 2>&1
+```
+
+O `cron` e o `launchd` rodam com um `PATH` mínimo, sem o do seu terminal: se o Node vem do `nvm` ou do Homebrew, o `npm` não
+é achado. Por isso a linha leva o caminho absoluto do `npm` e o `PATH` com a pasta do Node; descubra a pasta com
+`dirname "$(command -v node)"` num terminal onde o `npm run` funciona.
+
+No `launchd` (macOS), um agente em `~/Library/LaunchAgents` com o mesmo comando e o mesmo `PATH`:
+
+```xml
+<key>ProgramArguments</key>
+<array>
+  <string>/bin/sh</string><string>-c</string>
+  <string>cd /caminho/do/expediente-ia &amp;&amp; /caminho/do/node/bin/npm run versao</string>
+</array>
+<key>EnvironmentVariables</key>
+<dict><key>PATH</key><string>/caminho/do/node/bin:/usr/bin:/bin</string></dict>
+<key>StartCalendarInterval</key>
+<dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
+```
+
+O servidor relê o arquivo sozinho, sem reiniciar (no Docker, o `~/.expediente/host` já é montado em `/host`, só leitura).
+
+Quando a última release é maior que a versão em uso, aparece o selo **Nova versão** no lugar do número e um aviso (uma vez por versão). Em **Configurações › Sobre**
+ficam a versão nova com a data, o link **Ver o que mudou**, como atualizar e há quanto tempo foi a última verificação
+(ou "Nunca verificado"). Para atualizar:
 
 ```bash
 git pull
@@ -209,7 +243,7 @@ npm run docker:up        # ou: npm run build && npm start (e depois npm run inst
 > arquivo.
 
 O mod não é atualizado sozinho: rode `npm run instalar` depois de atualizar (o `docker:up` só lembra, se ele não
-estiver instalado). Para não consultar o GitHub, use `EXPEDIENTE_UPDATE_CHECK=0` (no `.env`, para o Docker).
+estiver instalado).
 
 ### Desinstalar
 
@@ -247,14 +281,14 @@ um **chip colorido com a letra da conta** (C, D…).
 
 - **Topo:** contadores (salas, agentes, trabalhando, subagentes, shells rodando, precisam de você) e um cartão de
   **uso por conta**. O de shells só aparece enquanto algum comando está rodando; clique nele para ir até quem espera.
-  Embaixo do logo ficam a conexão e a versão em uso, que vira o selo **Nova versão** quando sai uma versão nova (veja
-  [Atualizar](#atualizar)).
+  Embaixo do logo ficam a conexão e a versão em uso, que vira o selo **Nova versão** quando o `versao.json` do host
+  indica uma release maior (veja [Atualizar](#atualizar)).
 - **Painel lateral:** busca, filtro por conta e a lista de salas com seus agentes e subagentes.
 - **Gaveta de detalhes:** clique num personagem (no prédio ou na lista) para ver atividade, tarefas, subagentes,
   linha do tempo e estatísticas (ferramentas, tokens, custo, linhas alteradas, modelo, branch).
 - **Feed:** as últimas atividades de todo o escritório.
 - **Configurações (⚙):** nomes, balões, quanto os ociosos passeiam, ciclo dia/noite, sons, notificações do navegador,
-  modo demonstração e **Sobre** (versão em uso e versão nova). **Ajuda (?):** legenda completa e atalhos.
+  modo demonstração e **Sobre** (versão em uso, versão nova, link do que mudou e última verificação). **Ajuda (?):** legenda completa e atalhos.
 - **Meu dia (📊):** para onde foi o tempo do dia (veja [Meu dia](#meu-dia)). **Timelapse** e **Histórico** (os relógios
   da barra superior): veja [Timelapse do dia](#timelapse-do-dia) e [Terminal somente leitura](#terminal-somente-leitura).
 
@@ -465,11 +499,9 @@ Tudo funciona sem configurar nada. Se precisar ajustar, use variáveis de ambien
 | `EXPEDIENTE_USAGE_DIR` | `~/.expediente/host/uso` | Onde o mod (ou o tap de statusline) grava o uso. |
 | `EXPEDIENTE_DEMO` | desligado | `1` liga o modo demonstração ao iniciar. |
 | `EXPEDIENTE_TERMINAL` | ligado | `0` desliga o terminal somente leitura. |
-| `EXPEDIENTE_UPDATE_CHECK` | ligado | `0` desliga a verificação de versão nova (uma consulta às releases do repositório no GitHub a cada 6 h). |
 | `EXPEDIENTE_ACCOUNTS` | — | JSON para personalizar nome, letra ou cor, casado pelo nome da pasta da conta. Ex.: `[{"id":".claude-conta2","name":"Trabalho","short":"T","color":"#5cc97b"}]`. |
 
-**No Docker**, valem `EXPEDIENTE_DEMO`, `EXPEDIENTE_TERMINAL` e
-`EXPEDIENTE_UPDATE_CHECK` (no `.env` ou no ambiente) e `EXPEDIENTE_CLAUDE_DIRS`, `EXPEDIENTE_USAGE_DIR` e `EXPEDIENTE_ACCOUNTS` (lidas pelo `docker:up`
+**No Docker**, valem `EXPEDIENTE_DEMO` e `EXPEDIENTE_TERMINAL` (no `.env` ou no ambiente) e `EXPEDIENTE_CLAUDE_DIRS`, `EXPEDIENTE_USAGE_DIR` e `EXPEDIENTE_ACCOUNTS` (lidas pelo `docker:up`
 no host); as demais ficam fixas dentro do container. Opções: `npm run docker:up -- --no-build` (sobe sem reconstruir),
 `npm run docker:down` (para) e `npm run docker:logs` (acompanha os logs).
 
@@ -563,10 +595,10 @@ das contas (letra, e-mail, organização) são lidos no host pelo `docker:up` e 
   `127.0.0.1`. Não lê a conversa, não chama o modelo e não envia nada para fora do computador. Ele é lido desta
   pasta: o que estiver nela (inclusive depois de um `git pull`) é o que roda.
 - **Só local, por padrão:** o servidor só aceita conexões do próprio computador e não há opção para liberar a rede.
-  Não há telemetria. A única chamada externa é a verificação de versão nova: a cada 6 horas, uma consulta anônima,
-  sem token, à API pública do GitHub (`api.github.com/repos/marmottajr/habblaud/releases/latest`). Ela não envia nada
-  sobre as suas sessões; o GitHub vê só o seu IP e a versão em uso, que vai no `User-Agent`.
-  `EXPEDIENTE_UPDATE_CHECK=0` desliga a consulta.
+  Não há telemetria, e o servidor não faz nenhuma chamada de rede de saída (há um teste que proíbe módulo de rede em
+  `server/` e `shared/`). A única consulta externa é o `npm run versao`, que você roda no seu computador, por opção:
+  uma chamada anônima, sem token, à API pública do GitHub (`api.github.com/repos/isdiegoalves/expediente-ia/releases/latest`).
+  Ela não envia nada sobre as suas sessões; o GitHub vê só o seu IP e o `User-Agent` `expediente-versao`.
 - **Sem credenciais:** o Expediente não lê senhas nem tokens de acesso. Do `.claude.json` de cada conta aproveita só o
   e-mail, a organização e o cache do `/usage`; o uso ao vivo vem do mod (ou do tap de statusline).
 - **Segredos mascarados:** tokens e senhas com formato conhecido (`Bearer`, `-u usuário:senha`, `TOKEN=`, chaves
@@ -647,8 +679,8 @@ trabalho, anote as mudanças em "Não lançado". Para lançar:
 2. Troque "Não lançado" pela versão e a data (`## [0.3.0] - AAAA-MM-DD`), deixe um "Não lançado" vazio em cima e
    atualize os links do fim. O `npm test` falha se a versão do `package.json` não tiver seção.
 3. Faça o merge na `main` e rode `npm run release` (precisa do [`gh`](https://cli.github.com/) autenticado; `-- --dry-run`
-   só mostra as notas). O script cria a tag `v0.3.0` e a release com o texto da seção. A partir daí, quem usa o
-   Expediente vê o selo **Nova versão**.
+   só mostra as notas). O script cria a tag `v0.3.0` e a release com o texto da seção. A partir daí, quem rodar
+   `npm run versao` passa a ver o selo **Nova versão**.
 
 ## Solução de problemas
 
