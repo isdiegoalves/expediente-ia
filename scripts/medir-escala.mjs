@@ -374,7 +374,7 @@ try {
   }
 } finally {
   try {
-    await navegador.cdp.enviar('Browser.close');
+    await Promise.race([navegador.cdp.enviar('Browser.close'), dormir(2_000)]);
   } catch {}
   await dormir(1_000);
   for (const pid of [navegador.pid, servidor.pid]) {
@@ -395,3 +395,4 @@ const resumo = [
 ].join('\n');
 writeFileSync(resolve(saida, `resumo-dpr${dpr}.md`), resumo + '\n');
 console.log(resumo);
+process.exit(0);
