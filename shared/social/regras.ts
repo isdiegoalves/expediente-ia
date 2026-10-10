@@ -32,6 +32,22 @@ export const KINDS: Readonly<Record<GatherKind, KindInfo>> = {
   mirror: { label: 'Se arrumando no espelho', emoji: '💄', min: 1, max: 2, solo: true },
 };
 
+/** Ritmo do escritório (Calmo, Normal, Agitado): quanto tempo cada um fica na mesa antes de sair de novo. */
+export type Ritmo = 'calm' | 'normal' | 'lively';
+export const RITMOS: readonly Ritmo[] = ['calm', 'normal', 'lively'];
+
+/** Valor de fora (arquivo, pedido) que não é um ritmo vale `normal`. */
+export function lerRitmo(v: unknown): Ritmo {
+  return RITMOS.includes(v as Ritmo) ? (v as Ritmo) : 'normal';
+}
+
+/** Na mesa entre um passeio e outro, em cada ritmo: vale para as rodas da agenda e para os passeios sozinhos. */
+export const SENTADO_MS: Readonly<Record<Ritmo, readonly [number, number]>> = {
+  calm: [16_000, 42_000],
+  normal: [6_000, 20_000],
+  lively: [3_000, 10_000],
+};
+
 /** O que se perde/ganha em cada jogo (texto do extrato: "Perdeu no jokenpô para Rafaela"). */
 export const MATCH_WHAT: Partial<Record<GatherKind, string>> = {
   rps: 'no jokenpô',

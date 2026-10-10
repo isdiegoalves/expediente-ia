@@ -9,7 +9,7 @@ import { hash32, mulberry32 } from '../hash';
 import type { AgentInfo, RodaAgendada, SocialSnapshot } from '../types';
 import { DELIVERY_REWARD, TURN_REWARD, Wallets, type CarteiraInfo } from './carteiras';
 import { bondBetween, hasTrait, personaFor, type Persona } from './persona';
-import { betFor, KINDS, MATCH_WHAT, partnerScore, pickGesture, pickKind, pickProgram, rpsResult, TARGET, winChance, type GatherKind, type Gesture } from './regras';
+import { betFor, KINDS, MATCH_WHAT, partnerScore, pickGesture, pickKind, pickProgram, rpsResult, SENTADO_MS, TARGET, winChance, type GatherKind, type Gesture, type Ritmo } from './regras';
 
 /** Quem espera um shell só sai da mesa depois disto (antes, pipoca na mesa). */
 export const SHELL_SOCIAL_MIN_MS = 40_000;
@@ -20,10 +20,8 @@ export const CAMINHADA_MS = 15_000;
 /** Comemoração e despedida depois da última batida de cada roda. */
 export const FINAL_MS: Readonly<Record<GatherKind, number>> = { tv: 1_400, kitchen: 900, talk: 900, mirror: 1_600, videogame: 3_400, arcade: 3_400, pingpong: 3_400, rps: 2_900 };
 
-/** Na mesa entre um passeio e outro (o ritmo "normal" da simulação). */
-const SENTADO_MS: readonly [number, number] = [6_000, 20_000];
-/** Quem não puxou roda foi passear sozinho: a próxima vontade vem depois do passeio. */
-const PASSEIO_MS: readonly [number, number] = [12_000, 35_000];
+/** Quem não puxou roda foi passear sozinho: a próxima vontade vem depois do passeio e de outro tempo na mesa. */
+const PASSEIO_MS: readonly [number, number] = [6_000, 15_000];
 /** Roda com menos tempo que isso pela frente não aceita mais ninguém. */
 const ENTRADA_MIN_MS = 10_000;
 /** Rodas que dividem o mesmo lugar e quantas cabem ao mesmo tempo. */
@@ -186,13 +184,27 @@ export class MotorSocial {
   private vistos = new Map<string, { atividade: string | undefined; status: AgentInfo['status'] }>();
   /** Agentes do último snapshot (os que saíram inclusive: a gaveta deles ainda mostra a carteira). */
   private listados: string[] = [];
+  private ritmoAtual: Ritmo;
   private sementes = new Map<string, number>();
 
   constructor(
     readonly semente: number,
     carteirasSalvas?: unknown,
+    ritmo: Ritmo = 'normal',
   ) {
     this.carteiras = new Wallets(carteirasSalvas);
+    this.ritmoAtual = ritmo;
+  }
+
+  get ritmo(): Ritmo {
+    return this.ritmoAtual;
+  }
+
+  /** Troca o ritmo: as vontades pendentes são sorteadas de novo; rodas já decididas e carteiras ficam como estão. */
+  mudarRitmo(ritmo: Ritmo): void {
+    if (ritmo === this.ritmoAtual) return;
+    this.ritmoAtual = ritmo;
+    this.quer.clear();
   }
 
   /** Avança até `agora`: carteiras de quem chegou, pagamentos pelo trabalho, rodas que acabaram e rodas novas. */
@@ -225,7 +237,7 @@ export class MotorSocial {
       const c = this.carteiras.info(id);
       if (c) carteiras[id] = c;
     }
-    return { semente: this.semente, rodas: this.rodas.map((r) => r.roda), carteiras };
+    return { semente: this.semente, ritmo: this.ritmoAtual, rodas: this.rodas.map((r) => r.roda), carteiras };
   }
 
   // ------------------------------------------------------------------ trabalho
@@ -291,7 +303,7 @@ export class MotorSocial {
 
   private planejar(agora: number, livres: Map<string, Livre>): void {
     for (const [id, l] of livres) {
-      if (!this.quer.has(id) && !l.sonolento) this.quer.set(id, agora + entre(sorteio(this.semente, 'senta', id, agora), SENTADO_MS) * (l.shell ? 1.3 : 1));
+      if (!this.quer.has(id) && !l.sonolento) this.quer.set(id, agora + entre(sorteio(this.semente, 'senta', id, agora), SENTADO_MS[this.ritmoAtual]) * (l.shell ? 1.3 : 1));
     }
     const vez = [...this.quer].filter(([, t]) => t <= agora).sort((x, y) => x[1] - y[1] || (x[0] < y[0] ? -1 : 1));
     for (const [id, t] of vez) {
@@ -300,7 +312,7 @@ export class MotorSocial {
       const rng = sorteio(this.semente, 'vontade', id, t);
       const comPar = [...livres.keys()].some((o) => o !== id) || this.aberta(l, agora, () => 1) !== null;
       if (comPar && rng() < (l.shell ? 0.5 : 0.45) + l.p.sociability * 0.4 && this.puxar(l, agora, livres, rng)) continue;
-      this.quer.set(id, agora + entre(rng, PASSEIO_MS) * (l.shell ? 1.3 : 1));
+      this.quer.set(id, agora + (entre(rng, PASSEIO_MS) + entre(rng, SENTADO_MS[this.ritmoAtual])) * (l.shell ? 1.3 : 1));
     }
   }
 

@@ -1,10 +1,11 @@
 // Vida social no servidor: avança a agenda das rodas (shared/social/agenda.ts) a cada segundo com os
-// agentes do snapshot, publica rodas e carteiras no snapshot e guarda o livro das carteiras em
-// <dataDir>/social.json, para que todas as abas e o mod vejam o mesmo saldo e um reinício não o zere.
+// agentes do snapshot, publica rodas, carteiras e o ritmo no snapshot e guarda o livro das carteiras e o
+// ritmo em <dataDir>/social.json, para que todas as abas e o mod vejam o mesmo e um reinício não o zere.
 import { randomInt } from 'node:crypto';
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { MotorSocial } from '../../shared/social/agenda';
+import { lerRitmo, type Ritmo } from '../../shared/social/regras';
 import type { AgentInfo, SocialSnapshot } from '../../shared/types';
 import { errMsg, log } from '../log';
 
@@ -33,7 +34,7 @@ export class LivroSocial {
   constructor(private readonly o: LivroSocialOpcoes) {
     this.now = o.now ?? Date.now;
     const salvo = this.ler();
-    this.motor = new MotorSocial(salvo.semente ?? randomInt(1, 2 ** 31), salvo.carteiras);
+    this.motor = new MotorSocial(salvo.semente ?? randomInt(1, 2 ** 31), salvo.carteiras, salvo.ritmo);
     this.atual = this.motor.estado();
   }
 
@@ -57,12 +58,7 @@ export class LivroSocial {
   passo(): void {
     const agora = this.now();
     this.motor.passo(agora, this.o.agentes());
-    this.atual = this.motor.estado();
-    const assinatura = JSON.stringify(this.atual);
-    if (assinatura !== this.assinatura) {
-      this.assinatura = assinatura;
-      this.o.mudou();
-    }
+    this.publicar();
     if (agora >= this.gravarEm) {
       this.gravarEm = agora + GRAVAR_MS;
       if (this.motor.carteiras.takeDirty()) this.gravar();
@@ -73,6 +69,21 @@ export class LivroSocial {
     return this.atual;
   }
 
+  /** Ritmo escolhido nas Configurações: vale já para todas as abas e fica gravado. */
+  mudarRitmo(ritmo: Ritmo): void {
+    this.motor.mudarRitmo(ritmo);
+    this.publicar();
+    this.gravar();
+  }
+
+  private publicar(): void {
+    this.atual = this.motor.estado();
+    const assinatura = JSON.stringify(this.atual);
+    if (assinatura === this.assinatura) return;
+    this.assinatura = assinatura;
+    this.o.mudou();
+  }
+
   /** Troca o arquivo inteiro de uma vez (temporário + rename): um corte no meio nunca deixa meio livro. */
   gravar(): void {
     const arquivo = this.o.arquivo;
@@ -80,7 +91,7 @@ export class LivroSocial {
     try {
       mkdirSync(dirname(arquivo), { recursive: true });
       const tmp = `${arquivo}.${process.pid}.tmp`;
-      writeFileSync(tmp, JSON.stringify({ v: 1, semente: this.motor.semente, carteiras: this.motor.carteiras.toJSON() }));
+      writeFileSync(tmp, JSON.stringify({ v: 1, semente: this.motor.semente, ritmo: this.motor.ritmo, carteiras: this.motor.carteiras.toJSON() }));
       renameSync(tmp, arquivo);
       log.clearOnce('social-gravar');
     } catch (err) {
@@ -88,14 +99,14 @@ export class LivroSocial {
     }
   }
 
-  private ler(): { semente?: number; carteiras?: unknown } {
+  private ler(): { semente?: number; ritmo?: Ritmo; carteiras?: unknown } {
     if (!this.o.arquivo) return {};
     try {
-      const j = JSON.parse(readFileSync(this.o.arquivo, 'utf8')) as { semente?: unknown; carteiras?: unknown } | null;
+      const j = JSON.parse(readFileSync(this.o.arquivo, 'utf8')) as { semente?: unknown; ritmo?: unknown; carteiras?: unknown } | null;
       const semente = typeof j?.semente === 'number' && Number.isSafeInteger(j.semente) && j.semente > 0 ? j.semente : undefined;
-      return { semente, carteiras: j?.carteiras };
+      return { semente, ritmo: lerRitmo(j?.ritmo), carteiras: j?.carteiras };
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') log.warn(`${this.o.arquivo} ilegível (${errMsg(err)}); as carteiras começam do zero.`);
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') log.warn(`${this.o.arquivo} ilegível (${errMsg(err)}); as carteiras começam do zero e o ritmo volta a normal.`);
       return {};
     }
   }

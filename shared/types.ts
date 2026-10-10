@@ -6,7 +6,7 @@
 
 import type { AppearanceParts } from './appearance';
 import type { CarteiraInfo } from './social/carteiras';
-import type { GatherKind, Gesture, Program } from './social/regras';
+import type { GatherKind, Gesture, Program, Ritmo } from './social/regras';
 
 export type AgentKind = 'main' | 'sub';
 
@@ -392,6 +392,8 @@ export interface OfficeSnapshot {
 
 export interface SocialSnapshot {
   semente: number;
+  /** Ritmo do escritório escolhido nas Configurações (vale para todas as abas). */
+  ritmo?: Ritmo;
   /** Rodas em andamento (a agenda tira cada uma no fim dela). */
   rodas: RodaAgendada[];
   /** Carteira de cada agente do snapshot. */

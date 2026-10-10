@@ -28,6 +28,7 @@ const ROTAS: Record<string, Classe> = {
   'const characterMatch = CHARACTER_ROUTE.exec(path)': { tipo: 'trava' },
   "if (path.startsWith('/api/agents/'))": { tipo: 'leitura' },
   "if (path === '/api/rooms/rename')": { tipo: 'trava' },
+  "if (path === '/api/social/ritmo')": { tipo: 'trava' },
   "if (path === '/api/stats' || path.startsWith('/api/stats/'))": { tipo: 'leitura' },
   "if (path === '/api/demo')": { tipo: 'sem-trava', motivo: 'liga e desliga o modo demonstração, preferência da tela que não age sobre sessões' },
 };

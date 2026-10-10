@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { contextView, costView } from '../../shared/stats';
 import { NAME_MAX, parseAppearanceParts, parseCharacterName, parseSeed } from '../../shared/appearance';
 import { montarResumo } from '../../shared/resumo';
+import { RITMOS, type Ritmo } from '../../shared/social/regras';
 import type { VersaoView } from '../../shared/versao';
 import type { AgentInfo, ModAgentUsage, ModSummary, OfficeSnapshot, SourceInfo } from '../../shared/types';
 import type { AccountsService } from '../accounts/service';
@@ -40,6 +41,8 @@ export interface ApiDeps {
   permissions?: (req: IncomingMessage, res: ServerResponse, path: string) => void;
   /** Renomeia a sala (POST /api/rooms/rename {id, name}; vazio volta ao padrão). Devolve o nome em uso, ou undefined se a sala não existe. */
   renameRoom?: (id: string, name: string) => string | undefined;
+  /** Ritmo do escritório para todas as abas (POST /api/social/ritmo {ritmo}; LivroSocial.mudarRitmo). */
+  mudarRitmo?: (ritmo: Ritmo) => void;
   /** Estatísticas do "Meu dia" (GET /api/stats, http/stats.ts). */
   stats?: DayStatsService;
   /** Tema ativo: GET /api/tema e /temas/<id>/<arquivo> (http/tema.ts); devolve false para o resto. */
@@ -422,6 +425,23 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
             const name = deps.renameRoom?.(b.id, b.name);
             if (name === undefined) throw new HttpError(404, 'sala não encontrada');
             sendJson(res, 200, { name });
+          })
+          .catch((err) => fail(res, err));
+      return true;
+    }
+    if (path === '/api/social/ritmo') {
+      const mudarRitmo = deps.mudarRitmo;
+      if (method !== 'POST') methodNotAllowed(res, 'POST');
+      else if (!mudarRitmo) sendJson(res, 404, { error: 'rota desconhecida' });
+      else if (!terminalOn()) sendJson(res, 403, { error: 'mudar o ritmo do escritório desligado: só funciona com o Expediente acessível apenas pelo próprio computador' });
+      else if (!isLoopbackHost(req.headers.host)) sendJson(res, 403, { error: 'mudar o ritmo do escritório só pelo próprio computador (http://localhost)' });
+      else
+        readJson(req)
+          .then((body) => {
+            const ritmo = (body as { ritmo?: unknown } | null)?.ritmo;
+            if (!RITMOS.includes(ritmo as Ritmo)) throw new HttpError(400, `esperado {ritmo}, um de: ${RITMOS.join(', ')}`);
+            mudarRitmo(ritmo as Ritmo);
+            sendJson(res, 200, { ritmo });
           })
           .catch((err) => fail(res, err));
       return true;

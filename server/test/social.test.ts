@@ -103,6 +103,31 @@ describe('livro das carteiras em <dataDir>/social.json', () => {
     expect(existsSync(join(dir, 'arquivo', SOCIAL_ARQUIVO))).toBe(false);
   });
 
+  it('o ritmo sobrevive ao reinício; valor fora da lista ou arquivo cortado volta a normal', () => {
+    const arquivo = join(dir, SOCIAL_ARQUIVO);
+    const agentes = () => [agente('ana')];
+    const primeiro = new LivroSocial({ arquivo, agentes, mudou: () => undefined, now: () => T0 });
+    primeiro.mudarRitmo('calm');
+    expect(new LivroSocial({ arquivo, agentes, mudou: () => undefined, now: () => T0 }).estado().ritmo).toBe('calm');
+    writeFileSync(arquivo, JSON.stringify({ v: 1, semente: 9, ritmo: 'turbo', carteiras: {} }));
+    expect(new LivroSocial({ arquivo, agentes, mudou: () => undefined, now: () => T0 }).estado().ritmo).toBe('normal');
+    writeFileSync(arquivo, '{"v":1,"semente":9,"ritmo":"calm","carteiras":{"ana":{"coi');
+    expect(new LivroSocial({ arquivo, agentes, mudou: () => undefined, now: () => T0 }).estado().ritmo).toBe('normal');
+  });
+
+  it('trocar o ritmo no meio do dia avisa as abas na hora e não mexe nas carteiras', () => {
+    let avisos = 0;
+    const livro = new LivroSocial({ arquivo: null, agentes: () => [agente('ana')], mudou: () => avisos++, now: () => T0 });
+    livro.passo();
+    const carteiras = livro.estado().carteiras;
+    livro.mudarRitmo('lively');
+    expect(avisos).toBe(2);
+    expect(livro.estado().ritmo).toBe('lively');
+    expect(livro.estado().carteiras).toEqual(carteiras);
+    livro.mudarRitmo('lively');
+    expect(avisos).toBe(2);
+  });
+
   it('avisa o snapshot só quando rodas ou carteiras mudam', () => {
     let avisos = 0;
     let agora = T0;
@@ -116,46 +141,75 @@ describe('livro das carteiras em <dataDir>/social.json', () => {
   });
 });
 
+interface Servidor {
+  base: string;
+  office: Office;
+  livro: LivroSocial;
+  fechar: () => Promise<void>;
+}
+
+/** Office, Hub, livro e a API de verdade, atrás do guard, numa porta livre do loopback. */
+async function subir(terminal: boolean): Promise<Servidor> {
+  const accounts = new AccountsService({ dirs: [], home: dir, env: {}, onChange: () => undefined });
+  const late: { livro?: LivroSocial } = {};
+  const office = new Office({
+    names: new NameStore(null),
+    version: 't',
+    startedAt: 0,
+    accounts: () => [],
+    sources: () => [],
+    accountName: () => undefined,
+    social: () => late.livro?.estado(),
+  });
+  const hub = new Hub(office, { throttleMs: 10 });
+  hub.start();
+  const livro = new LivroSocial({ arquivo: join(dir, SOCIAL_ARQUIVO), agentes: () => hub.current().agents, mudou: () => office.markDirty() });
+  late.livro = livro;
+  const api = createApiHandler({ office, hub, accounts, sources: () => [], version: 't', inDocker: false, terminal, mudarRitmo: (r) => livro.mudarRitmo(r) });
+  const guard = createRequestGuard();
+  const server = http.createServer((req, res) => {
+    if (guard(req, res)) return;
+    api(req, res, new URL(req.url ?? '/', 'http://x'));
+  });
+  await new Promise<void>((ok) => server.listen(0, '127.0.0.1', ok));
+  return {
+    base: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+    office,
+    livro,
+    fechar: async () => {
+      hub.stop();
+      server.closeAllConnections();
+      await new Promise((ok) => server.close(ok));
+    },
+  };
+}
+
+/** Pedido com cabeçalhos que o fetch não deixa mandar (Host forjado). */
+function pedir(base: string, path: string, opts: { method?: string; headers?: Record<string, string>; body?: string } = {}): Promise<{ status: number; body: string }> {
+  const u = new URL(base);
+  return new Promise((ok, fail) => {
+    const req = http.request({ host: u.hostname, port: u.port, path, method: opts.method ?? 'GET', headers: opts.headers }, (res) => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (c: string) => (body += c));
+      res.on('end', () => ok({ status: res.statusCode ?? 0, body }));
+    });
+    req.on('error', fail);
+    req.end(opts.body);
+  });
+}
+
+const JSON_HEADERS = { 'Content-Type': 'application/json' };
+
 describe('o mesmo saldo no snapshot e no resumo do mod', () => {
-  let server: http.Server;
-  let base: string;
-  let office: Office;
-  let hub: Hub;
-  let livro: LivroSocial;
-
+  let srv: Servidor;
   beforeEach(async () => {
-    const accounts = new AccountsService({ dirs: [], home: dir, env: {}, onChange: () => undefined });
-    const late: { livro?: LivroSocial } = {};
-    office = new Office({
-      names: new NameStore(null),
-      version: 't',
-      startedAt: 0,
-      accounts: () => [],
-      sources: () => [],
-      accountName: () => undefined,
-      social: () => late.livro?.estado(),
-    });
-    hub = new Hub(office, { throttleMs: 10 });
-    hub.start();
-    livro = new LivroSocial({ arquivo: join(dir, SOCIAL_ARQUIVO), agentes: () => hub.current().agents, mudou: () => office.markDirty() });
-    late.livro = livro;
-    const api = createApiHandler({ office, hub, accounts, sources: () => [], version: 't', inDocker: false });
-    const guard = createRequestGuard();
-    server = http.createServer((req, res) => {
-      if (guard(req, res)) return;
-      api(req, res, new URL(req.url ?? '/', 'http://x'));
-    });
-    await new Promise<void>((ok) => server.listen(0, '127.0.0.1', ok));
-    base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    srv = await subir(false);
   });
-
-  afterEach(async () => {
-    hub.stop();
-    server.closeAllConnections();
-    await new Promise((ok) => server.close(ok));
-  });
+  afterEach(() => srv.fechar());
 
   it('o snapshot leva as carteiras e o /api/mod/summary (e o texto do /escritorio) mostra o mesmo saldo', async () => {
+    const { base, office, livro } = srv;
     office.addMain({ id: 'a:1', account: 'a', sessionId: 's1', cwd: '/p/loja', role: 'Agente principal', startedAt: 1, status: 'idle' });
     office.addMain({ id: 'a:2', account: 'a', sessionId: 's2', cwd: '/p/app', role: 'Agente principal', startedAt: 1, status: 'working' });
     livro.passo();
@@ -169,5 +223,55 @@ describe('o mesmo saldo no snapshot e no resumo do mod', () => {
     ]);
     const texto = summaryText(parseSummary(JSON.stringify(resumo))!, 'http://localhost:4848');
     expect(texto).toContain(`🪙 ${START_COINS.main}`);
+  });
+});
+
+describe('ritmo do escritório (POST /api/social/ritmo)', () => {
+  const ritmoDoSnapshot = async (base: string) => ((await (await fetch(`${base}/api/snapshot`)).json()) as OfficeSnapshot).social?.ritmo;
+
+  it('grava o ritmo para todas as abas: a resposta confirma, o snapshot leva e o arquivo guarda', async () => {
+    const srv = await subir(true);
+    try {
+      expect(await ritmoDoSnapshot(srv.base)).toBe('normal');
+      const res = await fetch(`${srv.base}/api/social/ritmo`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ ritmo: 'lively' }) });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ritmo: 'lively' });
+      expect(await ritmoDoSnapshot(srv.base)).toBe('lively');
+      expect(JSON.parse(readFileSync(join(dir, SOCIAL_ARQUIVO), 'utf8')).ritmo).toBe('lively');
+    } finally {
+      await srv.fechar();
+    }
+  });
+
+  it('recusa Host forjado, Origin de fora, corpo sem JSON, ritmo fora da lista e GET; o ritmo não muda', async () => {
+    const srv = await subir(true);
+    try {
+      const port = new URL(srv.base).port;
+      const corpo = JSON.stringify({ ritmo: 'calm' });
+      const casos: Array<[string, Parameters<typeof pedir>[2], number]> = [
+        ['Host de fora', { method: 'POST', headers: { ...JSON_HEADERS, Host: `evil.example:${port}` }, body: corpo }, 403],
+        ['Host de IP da rede', { method: 'POST', headers: { ...JSON_HEADERS, Host: `192.168.0.9:${port}` }, body: corpo }, 403],
+        ['Origin de fora', { method: 'POST', headers: { ...JSON_HEADERS, Origin: 'http://evil.example' }, body: corpo }, 403],
+        ['sem JSON', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: corpo }, 415],
+        ['ritmo fora da lista', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ ritmo: 'turbo' }) }, 400],
+        ['sem ritmo', { method: 'POST', headers: JSON_HEADERS, body: '{}' }, 400],
+        ['GET', { method: 'GET' }, 405],
+      ];
+      for (const [nome, opts, status] of casos) expect((await pedir(srv.base, '/api/social/ritmo', opts)).status, nome).toBe(status);
+      expect(await ritmoDoSnapshot(srv.base)).toBe('normal');
+    } finally {
+      await srv.fechar();
+    }
+  });
+
+  it('com o terminal desligado (Expediente exposto além do computador) recusa com 403', async () => {
+    const srv = await subir(false);
+    try {
+      const res = await fetch(`${srv.base}/api/social/ritmo`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ ritmo: 'calm' }) });
+      expect(res.status).toBe(403);
+      expect(await ritmoDoSnapshot(srv.base)).toBe('normal');
+    } finally {
+      await srv.fechar();
+    }
   });
 });

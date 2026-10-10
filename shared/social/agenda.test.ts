@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type { AgentInfo, RodaAgendada } from '../types';
 import { disponivel, montarRoda, MotorSocial, partidas, SHELL_SOCIAL_MIN_MS, type AgenteSocial } from './agenda';
 import { DELIVERY_REWARD, START_COINS, TASK_REWARD, TURN_REWARD } from './carteiras';
-import { KINDS, rpsResult } from './regras';
+import { KINDS, rpsResult, type Ritmo } from './regras';
 
 const T0 = 1_700_000_000_000;
 
@@ -43,6 +43,46 @@ describe('agenda das rodas', () => {
     const vistas = [...rodar(new MotorSocial(7), 600).values()];
     expect(vistas.length).toBeGreaterThanOrEqual(15);
     expect(new Set(vistas.map((r) => r.tipo)).size).toBeGreaterThanOrEqual(5);
+  });
+
+  it('o ritmo muda a frequência: calmo tem menos rodas que normal, e normal menos que agitado, no mesmo intervalo', () => {
+    const contar = (ritmo: Ritmo) => [5, 6, 7].reduce((n, semente) => n + rodar(new MotorSocial(semente, undefined, ritmo), 900).size, 0);
+    const [calmo, normal, agitado] = [contar('calm'), contar('normal'), contar('lively')];
+    expect(calmo).toBeLessThan(normal);
+    expect(normal).toBeLessThan(agitado);
+  });
+
+  it('mesma semente, mesmo relógio e a mesma troca de ritmo: as mesmas rodas; o que já estava decidido termina igual', () => {
+    const troca = T0 + 300_000;
+    const a = new MotorSocial(21);
+    const b = new MotorSocial(21);
+    const seguir = (m: MotorSocial) => {
+      const antes = rodar(m, 300);
+      const decididas = m.estado().rodas.map((r) => structuredClone(r));
+      const carteiras = structuredClone(m.estado().carteiras);
+      m.mudarRitmo('lively');
+      expect(m.estado().carteiras).toEqual(carteiras);
+      const depois = rodar(m, 300, () => OCIOSOS, troca + 1000);
+      // quem chega com a roda andando pode entrar depois da troca; o resto da roda fica como estava
+      const semTardios = (r: RodaAgendada | undefined) => r && { ...r, tardios: undefined };
+      for (const r of decididas) expect(semTardios(depois.get(r.id) ?? antes.get(r.id))).toEqual(semTardios(r));
+      return [...antes.values(), ...depois.values()];
+    };
+    const ra = seguir(a);
+    expect(seguir(b)).toEqual(ra);
+    expect(a.estado().ritmo).toBe('lively');
+    expect(ra.some((r) => r.inicio > troca)).toBe(true);
+  });
+
+  it('trocar de calmo para agitado vale na hora: as vontades pendentes são sorteadas de novo no ritmo novo', () => {
+    // no calmo, a primeira vontade de cada um vem 16 s depois, no mínimo
+    for (const semente of [1, 2, 3, 4, 5]) {
+      const m = new MotorSocial(semente, undefined, 'calm');
+      m.passo(T0, OCIOSOS);
+      m.mudarRitmo('lively');
+      const vistas = rodar(m, 14, () => OCIOSOS, T0 + 1000);
+      expect([...vistas.values()].some((r) => r.inicio < T0 + 16_000), `semente ${semente}`).toBe(true);
+    }
   });
 
   it('ninguém fica em duas rodas ao mesmo tempo e cada lugar respeita a lotação', () => {

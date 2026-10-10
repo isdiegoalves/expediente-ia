@@ -143,6 +143,7 @@ const api = createApiHandler({
     office.refreshRoomNames();
     return office.roomName(id);
   },
+  mudarRitmo: (ritmo) => social.mudarRitmo(ritmo),
   office,
   hub,
   accounts,
