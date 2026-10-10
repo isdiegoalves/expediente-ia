@@ -20,6 +20,7 @@ import type {
   PermissionRequestInfo,
   RoomInfo,
   ShellJob,
+  SocialSnapshot,
   SourceInfo,
   TaskItem,
 } from '../../shared/types';
@@ -72,6 +73,8 @@ export interface OfficeDeps {
   permissions?: () => ReadonlyMap<string, PermissionRequestInfo>;
   /** cliSessionId -> `local_<uuid>` das sessões do app desktop (SessoesAppReader.read). */
   sessoesApp?: () => ReadonlyMap<string, string>;
+  /** Rodas e carteiras (LivroSocial.estado), postas no snapshot. */
+  social?: () => SocialSnapshot | undefined;
   now?: () => number;
 }
 
@@ -1079,6 +1082,7 @@ export class Office {
     const sessions = new Map<string, number>();
     for (const a of real) if (a.kind === 'main' && a.status !== 'offline') sessions.set(a.account, (sessions.get(a.account) ?? 0) + 1);
     const equipes = this.equipes();
+    const social = this.deps.social?.();
     return {
       rev: this.rev,
       serverTime: now,
@@ -1086,6 +1090,7 @@ export class Office {
       agents: [...real, ...(this.demoSnap?.agents ?? [])].map(trim),
       ...(equipes.length ? { equipes } : {}),
       accounts: [...this.deps.accounts(sessions), ...(this.demoSnap?.accounts ?? [])],
+      ...(social ? { social } : {}),
       meta: {
         demo: this.isDemo(),
         sources: this.deps.sources(),

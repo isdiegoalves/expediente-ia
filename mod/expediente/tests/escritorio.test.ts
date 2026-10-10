@@ -20,6 +20,8 @@ describe('lerUso', () => {
     expect(lerUso({ id: '.claude:1' })).toBeUndefined()
     expect(lerUso({ id: 'x', name: 'n', kind: 'main', status: 'working', room: 'r', compactions: -1 })).toMatchObject({ compactions: 0 })
     expect(lerUso('texto')).toBeUndefined()
+    expect(lerUso({ id: 'x', name: 'n', kind: 'main', status: 'idle', room: 'r', compactions: 0, coins: 137.9 })).toMatchObject({ coins: 137 })
+    expect(lerUso({ id: 'x', name: 'n', kind: 'main', status: 'idle', room: 'r', compactions: 0, coins: -3 })?.coins).toBeUndefined()
   })
 })
 
@@ -54,6 +56,10 @@ describe('listaTexto', () => {
       'Ociosas (1)',
       '  Caio · loja',
     ])
+  })
+
+  test('o saldo de moedinhas entra no detalhe de cada sessão', () => {
+    expect(listaTexto([uso('a:1', 'idle', { name: 'Ana', coins: 137 })], uso('a:9', 'working', { coins: 0 }))).toEqual(['Ociosas (1)', '  Ana · loja', '    🪙 137', 'Esta sessão: 🪙 0'])
   })
 
   test('a própria sessão vem numa linha à parte, com contexto e custo', () => {

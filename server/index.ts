@@ -25,6 +25,7 @@ import { RoomAliases } from './model/room-aliases';
 import { openMainAgent, SessionHistory } from './sources/history';
 import { createPermissionRoutes } from './permissions/http';
 import { PermissionRegistry } from './permissions/registry';
+import { LivroSocial, SOCIAL_ARQUIVO } from './social/livro';
 import { SessoesAppReader } from './sources/sessoes-app';
 import { ClaudeWatcher } from './sources/watcher';
 import { createBuildReader } from './build';
@@ -45,7 +46,7 @@ roomAliases.load();
 
 // Office, contas e watcher se referenciam (avisos de mudança / fontes): ligação tardia.
 const sessoesApp = new SessoesAppReader(config.sessoesAppFile);
-const late: { office?: Office; watcher?: ClaudeWatcher; permissions?: PermissionRegistry } = {};
+const late: { office?: Office; watcher?: ClaudeWatcher; permissions?: PermissionRegistry; social?: LivroSocial } = {};
 const accounts = new AccountsService({
   dirs: config.claudeDirs,
   home: config.home,
@@ -66,11 +67,15 @@ const office = new Office({
   terminal: gate.on,
   permissions: () => late.permissions?.snapshot() ?? new Map(),
   sessoesApp: () => sessoesApp.read(Date.now()),
+  social: () => late.social?.estado(),
 });
 const watcher = new ClaudeWatcher({ accounts, office, inDocker: config.inDocker });
 late.office = office;
 late.watcher = watcher;
 const hub = new Hub(office);
+// Rodas e carteiras: a agenda roda aqui, todas as abas animam as mesmas rodas e o livro fica em <dataDir>/social.json.
+const social = new LivroSocial({ arquivo: join(config.dataDir, SOCIAL_ARQUIVO), agentes: () => hub.current().agents, mudou: () => office.markDirty() });
+late.social = social;
 // "Meu dia": amostra o escritório a cada segundo e persiste em <dataDir>/stats/ (ver history/daystats.ts).
 const stats = new DayStatsService({ dir: join(config.dataDir, 'stats'), snapshot: () => hub.current() });
 stats.load();
@@ -102,6 +107,7 @@ if (config.demo) office.setDemo(true);
 watcher.start();
 accounts.start();
 hub.start();
+social.start();
 if (timeline) {
   timeline.start();
   timeline.ingest(hub.current());
@@ -236,6 +242,7 @@ function shutdown(signal: string): void {
   terminals?.stop();
   timeline?.stop();
   permissions?.stop();
+  social.stop();
   names.flush();
   void closeVite?.();
   server.close(() => process.exit(0));

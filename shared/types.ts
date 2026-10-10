@@ -5,6 +5,8 @@
 // Renomear/remover campos quebra servidor, mundo e UI ao mesmo tempo.
 
 import type { AppearanceParts } from './appearance';
+import type { CarteiraInfo } from './social/carteiras';
+import type { GatherKind, Gesture, Program } from './social/regras';
 
 export type AgentKind = 'main' | 'sub';
 
@@ -368,6 +370,8 @@ export interface OfficeSnapshot {
   equipes?: EquipeResumo[];
   /** Contas do Claude detectadas (com uso de 5h/semanal quando disponível). */
   accounts: AccountInfo[];
+  /** Rodas agendadas e carteiras (shared/social/agenda.ts); ausente no modo mock e no timelapse. */
+  social?: SocialSnapshot;
   meta: {
     demo: boolean;
     sources: SourceInfo[];
@@ -384,6 +388,37 @@ export interface OfficeSnapshot {
      */
     terminal?: boolean;
   };
+}
+
+export interface SocialSnapshot {
+  semente: number;
+  /** Rodas em andamento (a agenda tira cada uma no fim dela). */
+  rodas: RodaAgendada[];
+  /** Carteira de cada agente presente. */
+  carteiras: Record<string, CarteiraInfo>;
+}
+
+/** Uma roda decidida pela agenda: quem vai, quando e o resultado; o navegador só anima. */
+export interface RodaAgendada {
+  id: string;
+  tipo: GatherKind;
+  /** Hora (epoch ms) em que os participantes saem para a roda. */
+  inicio: number;
+  /** Fim previsto; a aposta é paga nesta hora se os dois jogadores seguirem à toa até lá. */
+  fim: number;
+  /** Anfitrião primeiro; nas partidas, os dois primeiros jogam e o resto torce. */
+  participantes: string[];
+  /** Quem chega com a roda andando (TV, copa, torcida). */
+  tardios?: { id: string; em: number }[];
+  /** Moedinhas em jogo (0 = só pela honra). */
+  aposta: number;
+  programa?: Program;
+  /** Quem faz cada ponto ou rodada (0 = primeiro jogador): pingue-pongue, videogame e fliperama. */
+  pontos?: (0 | 1)[];
+  /** Jokenpô: os gestos de cada rodada, empates inclusive. */
+  jogadas?: [Gesture, Gesture][];
+  /** Jokenpô: depois da primeira vitória, quem perdeu pede revanche valendo isto. */
+  revanche?: { aposta: number };
 }
 
 export interface FeedItem {
@@ -463,6 +498,8 @@ export interface ModAgentUsage {
   /** A compactação mais recente, com os tokens de `compactMetadata`. */
   lastCompaction?: { preTokens: number; postTokens: number };
   cost?: { usd?: number; estimated: boolean; unpriced: string[] };
+  /** Saldo de moedinhas (o mesmo da gaveta). */
+  coins?: number;
 }
 
 export interface ModWaitingAgent {

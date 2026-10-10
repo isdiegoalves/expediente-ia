@@ -137,6 +137,7 @@ export function modSummary(
 ): ModSummary {
   const byId = new Map(snap.agents.map((a) => [a.id, a]));
   const rooms = new Map(snap.rooms.map((r) => [r.id, r.name]));
+  const coins = (id: string) => snap.social?.carteiras[id]?.coins;
   const isOwn = (a: AgentInfo): boolean => {
     if (!own.session || (own.account && a.account !== own.account)) return false;
     let cur: AgentInfo | undefined = a;
@@ -165,13 +166,14 @@ export function modSummary(
     agents: present.length,
     working: present.filter((a) => a.status === 'working').length,
     waiting,
-    usage: present.map((a) => usageOf(a, rooms)),
-    ...(self ? { self: usageOf(self, rooms) } : {}),
+    usage: present.map((a) => usageOf(a, rooms, coins(a.id))),
+    ...(self ? { self: usageOf(self, rooms, coins(self.id)) } : {}),
   };
 }
 
-function usageOf(a: AgentInfo, rooms: ReadonlyMap<string, string>): ModAgentUsage {
+function usageOf(a: AgentInfo, rooms: ReadonlyMap<string, string>, coins: number | undefined): ModAgentUsage {
   const out: ModAgentUsage = { id: a.id, name: a.name, kind: a.kind, status: a.status, room: rooms.get(a.roomId) ?? a.roomId, compactions: a.stats.compactionCount ?? 0 };
+  if (coins !== undefined) out.coins = coins;
   if (a.title) out.title = a.title;
   if (a.origin) out.origin = a.origin;
   const context = contextView(a.stats);

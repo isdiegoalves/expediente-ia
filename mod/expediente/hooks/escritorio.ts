@@ -13,6 +13,7 @@ export interface UsoAgente {
   compactions: number
   lastCompaction?: { preTokens: number; postTokens: number }
   cost?: { usd?: number; estimated: boolean; unpriced: string[] }
+  coins?: number
 }
 
 export interface IrView {
@@ -76,6 +77,8 @@ export function lerUso(v: unknown): UsoAgente | undefined {
     const usd = numero(k.usd)
     u.cost = { estimated: k.estimated === true, unpriced, ...(usd !== undefined ? { usd } : {}) }
   }
+  const coins = numero(r.coins)
+  if (coins !== undefined) u.coins = Math.floor(coins)
   return u
 }
 
@@ -109,6 +112,7 @@ export function detalheTexto(u: UsoAgente): string {
   if (u.compactions) partes.push(`compactou ${u.compactions}×`)
   const custo = u.cost ? custoTexto(u.cost) : ''
   if (custo) partes.push(custo)
+  if (u.coins !== undefined) partes.push(`🪙 ${u.coins}`)
   return partes.join(' · ')
 }
 
