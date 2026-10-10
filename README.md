@@ -131,8 +131,8 @@ ela, e o endereço antigo apaga e é desmontado. Assim o prédio não fica com b
 ### 1. Baixe o projeto
 
 ```bash
-git clone https://github.com/marmottajr/habblaud.git
-cd expediente
+git clone https://github.com/isdiegoalves/expediente-ia.git
+cd expediente-ia
 npm install
 ```
 
@@ -170,8 +170,8 @@ npm run instalar -- --com-permissoes     # também o plugin de permissões (resp
 
 O Expediente traz um [mod](https://code.claude.com/docs/en/plugins/mods/overview) (um plugin que roda dentro do
 Claude Code) e o instala em cada conta **só pelo `claude plugin`**, a partir de uma **cópia fixa** do commit (`~/.expediente/mod-instalado`, um worktree destacado): o instalador nunca edita o
-`settings.json` de ninguém, nunca desinstala plugin do Habblaud e recusa o `expediente-permissoes` na conta onde o
-`habblaud-permissoes` estiver ativo (os dois responderiam o mesmo pedido). Com o mod:
+`settings.json` de ninguém, nunca desinstala o plugin do projeto de origem (o Habblaud) e recusa o `expediente-permissoes` na conta onde o
+`habblaud-permissoes` dele estiver ativo (os dois responderiam o mesmo pedido). Com o mod:
 
 - o **uso de 5 horas e semanal** de cada conta aparece ao vivo no Expediente;
 - o terminal mostra uma linha quando **outra sessão precisa de você** (permissão ou resposta);
