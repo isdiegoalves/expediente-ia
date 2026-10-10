@@ -77,6 +77,7 @@ festa) ou 10 min. Push só avisa. O mesmo CI visto de novo em 2 min não repete 
 | `GET /api/stats/days?tz=<IANA>` | `StatsDaysResponse`: dias com dados reais (e do demo, se ligado), mais recente primeiro |
 | `GET /api/timeline/days` | `{recording, days:[{day, bytes, from, to}]}`: dias gravados para o timelapse, do mais recente ao mais antigo |
 | `GET /api/timeline/:dia` | o arquivo do dia (`AAAA-MM-DD`) em JSONL (`application/x-ndjson`, gzip se aceito); 400 para dia inválido, 404 sem gravação |
+| `GET /api/versao` | `{emUso, verificadoEm?, ultima?:{versao, publicadaEm, url}, nova, origem?:{nome, ultima, publicadaEm, url, analise?}}`, lido de `versao.json` na pasta da ponte (`~/.expediente/host`; no Docker `/host`, só leitura). Quem grava é o `npm run versao`, no host; o servidor só lê, valida e compara por semver, sem rede. Arquivo ausente ou torto dá só `{emUso, nova:false}` |
 | `GET /api/health` | `{ok, version, demo, docker, terminal, permissions, sources, accounts:[{id, usageStatus}]}` |
 | `POST /api/demo` | `{enabled: boolean}` liga/desliga agentes simulados (misturados aos reais) |
 | `GET /api/mod/summary?account=&session=` | `ModSummary` para o mod do Claude Code: `{version, agents, working, waiting:[{id, name, room, account, waitingFor, since, answerable}], usage:[{id, name, context?, compactions, lastCompaction?, cost?}], self?}`, sem o demo e sem a sessão de quem pergunta (ver abaixo) |
@@ -267,7 +268,7 @@ Regras:
 | `EXPEDIENTE_PORT` | `4848` | porta HTTP no modo Node (o Docker publica sempre `127.0.0.1:4848`) |
 | `EXPEDIENTE_TERMINAL` | — | `0` desliga o terminal somente leitura |
 | `EXPEDIENTE_CLAUDE_DIRS` | — | config dirs separados por vírgula; substitui a detecção (`~/.claude*` com `projects/` ou `sessions/` + `CLAUDE_CONFIG_DIR`) |
-| `EXPEDIENTE_DATA_DIR` | `~/.expediente` (Docker: `/data`) | estado do Expediente (nomes e personagens dos projetos persistidos em `names.json`, linha do tempo em `timeline/`, estatísticas do Meu dia em `stats/`, última verificação de versão em `updates.json`) |
+| `EXPEDIENTE_DATA_DIR` | `~/.expediente` (Docker: `/data`) | estado do Expediente (nomes e personagens dos projetos persistidos em `names.json`, linha do tempo em `timeline/`, estatísticas do Meu dia em `stats/`) |
 | `EXPEDIENTE_TIMELINE` | ligado | `0` desliga a gravação da linha do tempo do timelapse |
 | `EXPEDIENTE_DEMO` | desligado | `1` liga o modo demonstração ao iniciar |
 | `EXPEDIENTE_ACCOUNTS` | — | JSON com metadados das contas vindos do host (Docker): `[{id, configDir, mountDir, short, name, email, organization, plan, color, cachedUsage}]`, casados por `id`, `mountDir` ou `configDir` |
