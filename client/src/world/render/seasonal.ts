@@ -1,7 +1,9 @@
 import type { CharacterFrameRequest, FurnitureKind, Sprite, WallStyle } from '../../art/api';
-import { mix } from '../../art/core/color';
+import { mix, withAlpha } from '../../art/core/color';
 import { hash32 } from '../../../../shared/hash';
 import { renderSeasonalProp, type SeasonalProp } from '../../art/seasonal';
+import { reducedMotion } from './github-fx';
+import { sazonal } from '../../tema';
 import type { OfficeTheme } from '../api';
 import type { AreaLayout, WallSegment } from '../layout/types';
 
@@ -38,12 +40,18 @@ export function seasonalFurniture(theme: OfficeTheme, kind: FurnitureKind, area:
 }
 
 export function seasonalRugColor(theme: OfficeTheme, original: string): string {
-  return theme === 'christmas' ? '#a93649' : theme === 'halloween' ? '#60416f' : original;
+  return theme === 'christmas' ? sazonal().natal.tapete : theme === 'halloween' ? sazonal().halloween.tapete : original;
 }
 
 export function seasonalWallStyle(theme: OfficeTheme, original: WallStyle): WallStyle {
   if (theme === 'auto' || original.pattern === 'glass') return original;
-  return { ...original, base: mix(original.base, theme === 'christmas' ? '#ffe3b4' : '#bc97d1', 0.18), trim: theme === 'christmas' ? '#4e7756' : '#725486' };
+  const { natal, halloween } = sazonal();
+  const natalTema = theme === 'christmas';
+  return {
+    ...original,
+    base: mix(original.base, natalTema ? natal.paredeMistura : halloween.paredeMistura, 0.18),
+    trim: natalTema ? natal.paredeFriso : halloween.paredeFriso,
+  };
 }
 
 /** Motivos de tapete (cacheados junto com o piso). */
@@ -52,7 +60,9 @@ export function decorateSeasonalRug(ctx: CanvasRenderingContext2D, theme: Office
   const x = Math.round(rug.x), y = Math.round(rug.y), w = Math.floor(rug.w), h = Math.floor(rug.h);
   if (w < 25 || h < 16) return;
   ctx.save();
-  ctx.fillStyle = theme === 'christmas' ? '#ddb66e' : '#e5a457';
+  const { natal, halloween } = sazonal();
+  const motivo = theme === 'christmas' ? natal.tapeteMotivo : halloween.tapeteMotivo;
+  ctx.fillStyle = motivo;
   ctx.fillRect(x + 4, y + 4, w - 8, 1);
   ctx.fillRect(x + 4, y + h - 5, w - 8, 1);
   for (let cx = x + 14; cx < x + w - 10; cx += 28) {
@@ -67,10 +77,10 @@ export function decorateSeasonalRug(ctx: CanvasRenderingContext2D, theme: Office
     } else {
       ctx.fillRect(cx - 3, cy - 2, 7, 5);
       ctx.fillRect(cx, cy - 4, 1, 2);
-      ctx.fillStyle = '#60416f';
+      ctx.fillStyle = halloween.tapete;
       ctx.fillRect(cx - 2, cy - 1, 1, 1);
       ctx.fillRect(cx + 2, cy - 1, 1, 1);
-      ctx.fillStyle = '#e5a457';
+      ctx.fillStyle = motivo;
     }
   }
   ctx.restore();
@@ -80,22 +90,23 @@ export function decorateSeasonalRug(ctx: CanvasRenderingContext2D, theme: Office
 export function decorateSeasonalWall(ctx: CanvasRenderingContext2D, theme: OfficeTheme, wall: WallSegment): void {
   if (theme === 'auto' || wall.kind !== 'face') return;
   ctx.save();
+  const { natal, halloween } = sazonal();
   const x0 = Math.round(wall.x + 3), end = Math.floor(wall.x + wall.w - 3), y = Math.round(wall.y + 5);
   for (let x = x0; x < end; x++) {
     if (wall.doorways?.some((d) => x >= d.x - 1 && x < d.x + d.w + 1)) continue;
     const sag = Math.round(Math.sin(((x - x0) % 48) / 48 * Math.PI) * 3);
-    ctx.fillStyle = theme === 'christmas' ? '#347653' : '#584068';
+    ctx.fillStyle = theme === 'christmas' ? natal.folhagem : halloween.guirlanda;
     ctx.fillRect(x, y + sag, 1, theme === 'christmas' ? 3 : 1);
     if ((x - x0) % 12 === 6) {
-      ctx.fillStyle = theme === 'christmas' ? '#f5d491' : '#eea24d';
+      ctx.fillStyle = theme === 'christmas' ? natal.lampada : halloween.lanterna;
       ctx.fillRect(x, y + sag + 3, 2, 3);
-      ctx.fillStyle = theme === 'christmas' ? '#fff0be' : '#ffd78a';
+      ctx.fillStyle = theme === 'christmas' ? natal.lampadaBrilho : halloween.lanternaBrilho;
       ctx.fillRect(x, y + sag + 3, 1, 1);
     }
   }
   if (theme === 'halloween') {
     // Teias pequenas nos cantos; não cobrem os equipamentos.
-    ctx.strokeStyle = '#d6bfdd';
+    ctx.strokeStyle = halloween.teia;
     ctx.lineWidth = 1;
     for (const side of [1, -1]) {
       const x = side === 1 ? x0 : end;
@@ -134,8 +145,9 @@ function glowSprite(theme: OfficeTheme): HTMLCanvasElement {
     canvas.width = canvas.height = 34;
     const ctx = canvas.getContext('2d')!;
     const glow = ctx.createRadialGradient(17, 17, 1, 17, 17, 17);
-    glow.addColorStop(0, theme === 'christmas' ? '#ffd58b' : '#d8a5ed');
-    glow.addColorStop(1, 'rgba(255,220,180,0)');
+    const cor = theme === 'christmas' ? sazonal().natal.brilho : sazonal().halloween.brilho;
+    glow.addColorStop(0, cor);
+    glow.addColorStop(1, withAlpha(cor, 0));
     ctx.fillStyle = glow;
     ctx.fillRect(0, 0, 34, 34);
     glows.set(theme, canvas);
@@ -158,7 +170,7 @@ export function drawSeasonalLights(ctx: CanvasRenderingContext2D, theme: OfficeT
       ctx.globalAlpha = light * 0.3;
       ctx.drawImage(glowSprite(theme), Math.round(x - 17), wall.y - 8);
       ctx.globalAlpha = light * 0.85;
-      ctx.fillStyle = theme === 'christmas' ? '#ffe4a9' : '#ffd181';
+      ctx.fillStyle = theme === 'christmas' ? sazonal().natal.luzDeParede : sazonal().halloween.luzDeParede;
       ctx.fillRect(Math.round(x), wall.y + 9, 2, 2);
     }
     ctx.restore();
@@ -172,12 +184,12 @@ export function drawSeasonalWindow(ctx: CanvasRenderingContext2D, theme: OfficeT
   ctx.beginPath();
   ctx.rect(glass.x, glass.y, glass.w, glass.h);
   ctx.clip();
-  ctx.fillStyle = '#edf3f3';
+  ctx.fillStyle = sazonal().natal.neve;
   ctx.globalAlpha *= 0.7;
   ctx.fillRect(glass.x, glass.y + glass.h - 2, glass.w, 2);
   for (let i = 0; i < 12; i++) {
     const x = ((seed >>> 0) + i * 17) % Math.max(1, Math.floor(glass.w));
-    const y = (Math.floor(now / 180) + i * 11) % Math.max(1, Math.floor(glass.h));
+    const y = ((reducedMotion() ? 0 : Math.floor(now / 180)) + i * 11) % Math.max(1, Math.floor(glass.h));
     ctx.fillRect(Math.floor(glass.x + x), Math.floor(glass.y + y), 1, 1);
   }
   ctx.restore();

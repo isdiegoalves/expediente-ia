@@ -11,6 +11,8 @@ const ARQUIVOS = [
   'client/src/art/surfaces/floor.ts',
   'client/src/world/render/renderer.ts',
   'client/src/ui/icons.ts',
+  'client/src/art/seasonal.ts',
+  'client/src/world/render/seasonal.ts',
 ];
 const LITERAL_DE_COR = /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/g;
 

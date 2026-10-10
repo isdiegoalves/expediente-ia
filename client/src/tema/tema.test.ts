@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { razao, rgbaDe, type Tema } from '../../../shared/tema/validar';
+import esquema from '../../../shared/tema/tema.schema.json';
+import { CHAVES_HALLOWEEN, CHAVES_NATAL, razao, rgbaDe, type Tema } from '../../../shared/tema/validar';
 import { aplicarPaleta, variaveisCss } from './aplicar';
 import { derivar } from './cores';
-import { problemasDoTema, TEMA_PADRAO } from './index';
+import { definirTema, problemasDoTema, sazonal, TEMA_PADRAO } from './index';
 
 const padrao = (): Tema => structuredClone(TEMA_PADRAO);
 const rgb = (hex: string) => {
@@ -62,5 +63,46 @@ describe('cores do canvas derivadas dos tokens', () => {
     const t = padrao();
     t.paleta.status.esperando = '#ff00aa';
     expect(derivar(t).balao.alert.fundo).not.toBe(derivar(padrao()).balao.alert.fundo);
+  });
+});
+
+describe('cores sazonais do tema', () => {
+  it('o padrão declara toda chave, em hexadecimal, e o schema exige exatamente as mesmas', () => {
+    const { natal, halloween } = TEMA_PADRAO.paleta.sazonal!;
+    expect(Object.keys(natal).sort()).toEqual([...CHAVES_NATAL].sort());
+    expect(Object.keys(halloween).sort()).toEqual([...CHAVES_HALLOWEEN].sort());
+    for (const cor of [...Object.values(natal), ...Object.values(halloween)]) expect(cor).toMatch(/^#[0-9a-f]{6}$/i);
+    const exigidas = esquema.properties.paleta.properties.sazonal.properties;
+    expect([...exigidas.natal.required].sort()).toEqual([...CHAVES_NATAL].sort());
+    expect([...exigidas.halloween.required].sort()).toEqual([...CHAVES_HALLOWEEN].sort());
+  });
+
+  it('tema sem o bloco continua válido e usa as cores do padrão; bloco incompleto ou com cor ruim é recusado', () => {
+    const t = padrao();
+    delete t.paleta.sazonal;
+    expect(problemasDoTema(t)).toEqual([]);
+    definirTema(t, '/temas/padrao/');
+    try {
+      expect(sazonal()).toBe(TEMA_PADRAO.paleta.sazonal);
+    } finally {
+      definirTema(TEMA_PADRAO, '/temas/padrao/');
+    }
+    const faltando = padrao();
+    delete (faltando.paleta.sazonal!.natal as Partial<Record<string, string>>).neve;
+    expect(problemasDoTema(faltando)).not.toEqual([]);
+    const ruim = padrao();
+    ruim.paleta.sazonal!.halloween.teia = 'red';
+    expect(problemasDoTema(ruim)).not.toEqual([]);
+  });
+
+  it('o tema ativo manda: trocar a cor do tema troca a cor da decoração', () => {
+    const t = padrao();
+    t.paleta.sazonal!.natal.tapete = '#010203';
+    definirTema(t, '/temas/padrao/');
+    try {
+      expect(sazonal().natal.tapete).toBe('#010203');
+    } finally {
+      definirTema(TEMA_PADRAO, '/temas/padrao/');
+    }
   });
 });

@@ -31,6 +31,9 @@ export interface Sala {
   cadeira: string;
 }
 
+export const CHAVES_NATAL = ['sombra', 'gorroVermelho', 'gorroTopo', 'gorroPonta', 'pelo', 'peloSombra', 'tronco', 'arvoreEscuro', 'arvoreMedio', 'arvoreClaro', 'estrela', 'estrelaMiolo', 'bola', 'bolaBrilho', 'luzArvore', 'caixaVinho', 'fitaDourada', 'caixaDourada', 'fitaVinho', 'presenteVermelho', 'presenteTopo', 'presenteFita', 'presenteLaco', 'folhagem', 'coroaFruto', 'lacoCoroa', 'lacoCoroaBrilho', 'tapete', 'tapeteMotivo', 'paredeMistura', 'paredeFriso', 'lampada', 'lampadaBrilho', 'luzDeParede', 'brilho', 'neve'] as const;
+export const CHAVES_HALLOWEEN = ['sombra', 'bruxaChapeuEscuro', 'bruxaChapeu', 'bruxaFaixa', 'bruxaAba', 'bruxaFivela', 'aboboraCaule', 'aboboraCasca', 'aboboraSombra', 'aboboraGomo', 'aboboraBase', 'capa', 'capaFundo', 'decoCaule', 'decoCasca', 'decoCascaClara', 'decoGomo', 'decoOlho', 'decoBrilho', 'fantasma', 'fantasmaClaro', 'fantasmaOlho', 'morcego', 'morcegoOlho', 'tapete', 'tapeteMotivo', 'paredeMistura', 'paredeFriso', 'guirlanda', 'lanterna', 'lanternaBrilho', 'teia', 'luzDeParede', 'brilho'] as const;
+
 export interface Tema {
   versao: 1;
   id: string;
@@ -46,6 +49,7 @@ export interface Tema {
     piso: Record<'carpete' | 'xadrez' | 'azulejo' | 'grama' | 'rua' | 'madeira', string[]>;
     canvas: Record<'rotuloFundo' | 'rotuloTexto' | 'rotuloSombra' | 'rotuloContorno' | 'compactoFundo' | 'compactoTexto', string>;
     mundo: { fundoExterno: string; anelSelecao: string; anelHover: string; telhado: string[] };
+    sazonal?: { natal: Record<(typeof CHAVES_NATAL)[number], string>; halloween: Record<(typeof CHAVES_HALLOWEEN)[number], string> };
   };
   contraste: { texto: string; fundo: string; sobre?: string; min: number }[];
   textos: {

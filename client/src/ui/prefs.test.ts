@@ -75,6 +75,13 @@ describe('preferências', () => {
       expect(worldOptionsFrom(loadPrefs(st)).theme).toBe(theme);
     }
   });
+  it('tema do escritório: guardado sob a chave do Expediente; formato errado volta ao padrão', () => {
+    const st = memoryStorage();
+    savePrefs(st, { ...DEFAULT_PREFS, theme: 'halloween' });
+    expect(JSON.parse(st.data.get('expediente:prefs')!).theme).toBe('halloween');
+    for (const theme of [5, null, ['christmas'], { a: 1 }, 'Natal', 'CHRISTMAS', '']) expect(sanitizePrefs({ theme }).theme).toBe('auto');
+    expect(loadPrefs(memoryStorage({ [PREFS_KEY]: JSON.stringify({ theme: 'natal' }) })).theme).toBe('auto');
+  });
   it('sons: desligados por padrão; volume e categorias validados', () => {
     expect(DEFAULT_PREFS.sound).toBe(false);
     const p = sanitizePrefs({ sound: true, sounds: { volume: 3, keys: false, elevator: 'sim' } });

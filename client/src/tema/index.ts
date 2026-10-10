@@ -15,6 +15,13 @@ export function tema(): Tema {
   return ativo;
 }
 
+type Sazonal = NonNullable<Tema['paleta']['sazonal']>;
+
+/** Cores da decoração sazonal: as do tema ativo, ou as do padrão quando o tema de marca não declara as suas. */
+export function sazonal(): Sazonal {
+  return ativo.paleta.sazonal ?? TEMA_PADRAO.paleta.sazonal!;
+}
+
 /** URL de um arquivo do tema ativo (PNG ou fonte). */
 export function urlDoTema(arquivo: string): string {
   return base + arquivo;

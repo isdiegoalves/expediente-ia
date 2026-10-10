@@ -5,6 +5,7 @@ import type { Appearance, CharacterFrameRequest, HeldItem, Pose } from '../api';
 import { luminance, mix, ramp, shade, type Ramp } from '../core/color';
 import { PixelBuf, type Palette } from '../core/pixbuf';
 import type { BufSprite } from '../core/sprite';
+import { sazonal } from '../../tema';
 import { HAIR, HEAD_BASE, TEXTURED, type HeadView, type Tpl } from './hair';
 
 export const CHAR_W = 24;
@@ -1487,33 +1488,34 @@ function itemPos(dc: Dc): Pt | null {
 function drawCostume(dc: Dc, costume: CharacterFrameRequest['costume']): void {
   if (!costume) return;
   const { b, r } = dc;
+  const { natal: n, halloween: h } = sazonal();
   const x = HX + r.lean;
   const y = HY + r.ub + r.hd;
   if (costume === 'santa') {
-    b.rect(x + 2, y, 9, 4, '#c93945');
-    b.rect(x + 4, y - 2, 5, 2, '#e95452');
-    b.rect(x + 9, y - 1, 3, 3, '#a82436');
-    b.rect(x + 11, y + 1, 3, 3, '#fff3d9');
-    b.rect(x + 1, y + 4, 11, 2, '#fff3d9');
-    b.hline(x + 2, x + 10, y + 5, '#ddd9cb');
+    b.rect(x + 2, y, 9, 4, n.gorroVermelho);
+    b.rect(x + 4, y - 2, 5, 2, n.gorroTopo);
+    b.rect(x + 9, y - 1, 3, 3, n.gorroPonta);
+    b.rect(x + 11, y + 1, 3, 3, n.pelo);
+    b.rect(x + 1, y + 4, 11, 2, n.pelo);
+    b.hline(x + 2, x + 10, y + 5, n.peloSombra);
   } else if (costume === 'witch') {
-    b.rect(x + 6, y - 2, 2, 2, '#50336f');
-    b.rect(x + 5, y, 4, 2, '#69428e');
-    b.rect(x + 3, y + 2, 7, 3, '#50336f');
-    b.hline(x + 3, x + 9, y + 4, '#e9a548');
-    b.rect(x - 1, y + 5, 15, 2, '#372641');
-    b.set(x + 7, y + 4, '#ffe0a3');
+    b.rect(x + 6, y - 2, 2, 2, h.bruxaChapeuEscuro);
+    b.rect(x + 5, y, 4, 2, h.bruxaChapeu);
+    b.rect(x + 3, y + 2, 7, 3, h.bruxaChapeuEscuro);
+    b.hline(x + 3, x + 9, y + 4, h.bruxaFaixa);
+    b.rect(x - 1, y + 5, 15, 2, h.bruxaAba);
+    b.set(x + 7, y + 4, h.bruxaFivela);
   } else if (costume === 'pumpkin') {
-    b.rect(x + 6, y - 2, 2, 3, '#47754b');
-    b.rect(x + 2, y + 1, 10, 4, '#ed963c');
-    b.rect(x + 1, y + 2, 12, 3, '#dc792e');
-    b.vline(x + 4, y + 1, y + 4, '#f9ae48');
-    b.vline(x + 8, y + 1, y + 4, '#f9ae48');
-    b.hline(x + 2, x + 11, y + 5, '#8d4930');
+    b.rect(x + 6, y - 2, 2, 3, h.aboboraCaule);
+    b.rect(x + 2, y + 1, 10, 4, h.aboboraCasca);
+    b.rect(x + 1, y + 2, 12, 3, h.aboboraSombra);
+    b.vline(x + 4, y + 1, y + 4, h.aboboraGomo);
+    b.vline(x + 8, y + 1, y + 4, h.aboboraGomo);
+    b.hline(x + 2, x + 11, y + 5, h.aboboraBase);
   } else {
     // Gola da capa: rosto e crachá continuam visíveis.
-    b.rect(x, y + 12, 2, 5, '#702743');
-    b.rect(x + 12, y + 12, 2, 5, '#702743');
+    b.rect(x, y + 12, 2, 5, h.capa);
+    b.rect(x + 12, y + 12, 2, 5, h.capa);
   }
 }
 
@@ -1533,8 +1535,8 @@ export function renderCharacter(req: CharacterFrameRequest): BufSprite {
 
   // 1) Atrás de tudo: cabelo longo (frente), item nas costas.
   if (req.costume === 'vampire') {
-    b.rect(5 + r.lean, 18 + r.ub, 14, 8, '#35283e');
-    b.rect(6 + r.lean, 19 + r.ub, 12, 6, '#702743');
+    b.rect(5 + r.lean, 18 + r.ub, 14, 8, sazonal().halloween.capaFundo);
+    b.rect(6 + r.lean, 19 + r.ub, 12, 6, sazonal().halloween.capa);
   }
   drawHair(dc, 'back');
   if (ip && r.itemBehind) drawItem(dc, ip[0], ip[1]);

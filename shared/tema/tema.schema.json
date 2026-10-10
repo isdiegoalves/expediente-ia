@@ -360,6 +360,315 @@
               "$ref": "#/$defs/rampa"
             }
           }
+        },
+        "sazonal": {
+          "description": "Cores da decoração opcional de Natal e Halloween (escolha por navegador em Configurações). Tema sem este bloco usa o do tema padrão.",
+          "type": "object",
+          "required": [
+            "natal",
+            "halloween"
+          ],
+          "additionalProperties": false,
+          "properties": {
+        "natal": {
+          "description": "Gorro, árvore, presentes, guirlandas, tapete e paredes do Natal.",
+          "type": "object",
+          "required": [
+            "sombra",
+            "gorroVermelho",
+            "gorroTopo",
+            "gorroPonta",
+            "pelo",
+            "peloSombra",
+            "tronco",
+            "arvoreEscuro",
+            "arvoreMedio",
+            "arvoreClaro",
+            "estrela",
+            "estrelaMiolo",
+            "bola",
+            "bolaBrilho",
+            "luzArvore",
+            "caixaVinho",
+            "fitaDourada",
+            "caixaDourada",
+            "fitaVinho",
+            "presenteVermelho",
+            "presenteTopo",
+            "presenteFita",
+            "presenteLaco",
+            "folhagem",
+            "coroaFruto",
+            "lacoCoroa",
+            "lacoCoroaBrilho",
+            "tapete",
+            "tapeteMotivo",
+            "paredeMistura",
+            "paredeFriso",
+            "lampada",
+            "lampadaBrilho",
+            "luzDeParede",
+            "brilho",
+            "neve"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "sombra": {
+              "$ref": "#/$defs/cor"
+            },
+            "gorroVermelho": {
+              "$ref": "#/$defs/cor"
+            },
+            "gorroTopo": {
+              "$ref": "#/$defs/cor"
+            },
+            "gorroPonta": {
+              "$ref": "#/$defs/cor"
+            },
+            "pelo": {
+              "$ref": "#/$defs/cor"
+            },
+            "peloSombra": {
+              "$ref": "#/$defs/cor"
+            },
+            "tronco": {
+              "$ref": "#/$defs/cor"
+            },
+            "arvoreEscuro": {
+              "$ref": "#/$defs/cor"
+            },
+            "arvoreMedio": {
+              "$ref": "#/$defs/cor"
+            },
+            "arvoreClaro": {
+              "$ref": "#/$defs/cor"
+            },
+            "estrela": {
+              "$ref": "#/$defs/cor"
+            },
+            "estrelaMiolo": {
+              "$ref": "#/$defs/cor"
+            },
+            "bola": {
+              "$ref": "#/$defs/cor"
+            },
+            "bolaBrilho": {
+              "$ref": "#/$defs/cor"
+            },
+            "luzArvore": {
+              "$ref": "#/$defs/cor"
+            },
+            "caixaVinho": {
+              "$ref": "#/$defs/cor"
+            },
+            "fitaDourada": {
+              "$ref": "#/$defs/cor"
+            },
+            "caixaDourada": {
+              "$ref": "#/$defs/cor"
+            },
+            "fitaVinho": {
+              "$ref": "#/$defs/cor"
+            },
+            "presenteVermelho": {
+              "$ref": "#/$defs/cor"
+            },
+            "presenteTopo": {
+              "$ref": "#/$defs/cor"
+            },
+            "presenteFita": {
+              "$ref": "#/$defs/cor"
+            },
+            "presenteLaco": {
+              "$ref": "#/$defs/cor"
+            },
+            "folhagem": {
+              "$ref": "#/$defs/cor"
+            },
+            "coroaFruto": {
+              "$ref": "#/$defs/cor"
+            },
+            "lacoCoroa": {
+              "$ref": "#/$defs/cor"
+            },
+            "lacoCoroaBrilho": {
+              "$ref": "#/$defs/cor"
+            },
+            "tapete": {
+              "$ref": "#/$defs/cor"
+            },
+            "tapeteMotivo": {
+              "$ref": "#/$defs/cor"
+            },
+            "paredeMistura": {
+              "$ref": "#/$defs/cor"
+            },
+            "paredeFriso": {
+              "$ref": "#/$defs/cor"
+            },
+            "lampada": {
+              "$ref": "#/$defs/cor"
+            },
+            "lampadaBrilho": {
+              "$ref": "#/$defs/cor"
+            },
+            "luzDeParede": {
+              "$ref": "#/$defs/cor"
+            },
+            "brilho": {
+              "$ref": "#/$defs/cor"
+            },
+            "neve": {
+              "$ref": "#/$defs/cor"
+            }
+          }
+        },
+        "halloween": {
+          "description": "Fantasias, abóboras, fantasma, morcego, teias, tapete e paredes do Halloween.",
+          "type": "object",
+          "required": [
+            "sombra",
+            "bruxaChapeuEscuro",
+            "bruxaChapeu",
+            "bruxaFaixa",
+            "bruxaAba",
+            "bruxaFivela",
+            "aboboraCaule",
+            "aboboraCasca",
+            "aboboraSombra",
+            "aboboraGomo",
+            "aboboraBase",
+            "capa",
+            "capaFundo",
+            "decoCaule",
+            "decoCasca",
+            "decoCascaClara",
+            "decoGomo",
+            "decoOlho",
+            "decoBrilho",
+            "fantasma",
+            "fantasmaClaro",
+            "fantasmaOlho",
+            "morcego",
+            "morcegoOlho",
+            "tapete",
+            "tapeteMotivo",
+            "paredeMistura",
+            "paredeFriso",
+            "guirlanda",
+            "lanterna",
+            "lanternaBrilho",
+            "teia",
+            "luzDeParede",
+            "brilho"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "sombra": {
+              "$ref": "#/$defs/cor"
+            },
+            "bruxaChapeuEscuro": {
+              "$ref": "#/$defs/cor"
+            },
+            "bruxaChapeu": {
+              "$ref": "#/$defs/cor"
+            },
+            "bruxaFaixa": {
+              "$ref": "#/$defs/cor"
+            },
+            "bruxaAba": {
+              "$ref": "#/$defs/cor"
+            },
+            "bruxaFivela": {
+              "$ref": "#/$defs/cor"
+            },
+            "aboboraCaule": {
+              "$ref": "#/$defs/cor"
+            },
+            "aboboraCasca": {
+              "$ref": "#/$defs/cor"
+            },
+            "aboboraSombra": {
+              "$ref": "#/$defs/cor"
+            },
+            "aboboraGomo": {
+              "$ref": "#/$defs/cor"
+            },
+            "aboboraBase": {
+              "$ref": "#/$defs/cor"
+            },
+            "capa": {
+              "$ref": "#/$defs/cor"
+            },
+            "capaFundo": {
+              "$ref": "#/$defs/cor"
+            },
+            "decoCaule": {
+              "$ref": "#/$defs/cor"
+            },
+            "decoCasca": {
+              "$ref": "#/$defs/cor"
+            },
+            "decoCascaClara": {
+              "$ref": "#/$defs/cor"
+            },
+            "decoGomo": {
+              "$ref": "#/$defs/cor"
+            },
+            "decoOlho": {
+              "$ref": "#/$defs/cor"
+            },
+            "decoBrilho": {
+              "$ref": "#/$defs/cor"
+            },
+            "fantasma": {
+              "$ref": "#/$defs/cor"
+            },
+            "fantasmaClaro": {
+              "$ref": "#/$defs/cor"
+            },
+            "fantasmaOlho": {
+              "$ref": "#/$defs/cor"
+            },
+            "morcego": {
+              "$ref": "#/$defs/cor"
+            },
+            "morcegoOlho": {
+              "$ref": "#/$defs/cor"
+            },
+            "tapete": {
+              "$ref": "#/$defs/cor"
+            },
+            "tapeteMotivo": {
+              "$ref": "#/$defs/cor"
+            },
+            "paredeMistura": {
+              "$ref": "#/$defs/cor"
+            },
+            "paredeFriso": {
+              "$ref": "#/$defs/cor"
+            },
+            "guirlanda": {
+              "$ref": "#/$defs/cor"
+            },
+            "lanterna": {
+              "$ref": "#/$defs/cor"
+            },
+            "lanternaBrilho": {
+              "$ref": "#/$defs/cor"
+            },
+            "teia": {
+              "$ref": "#/$defs/cor"
+            },
+            "luzDeParede": {
+              "$ref": "#/$defs/cor"
+            },
+            "brilho": {
+              "$ref": "#/$defs/cor"
+            }
+          }
+        }
+          }
         }
       }
     },
