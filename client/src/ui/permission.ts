@@ -58,7 +58,7 @@ export function focusPermission(ctx: UiContext, agentId: string): void {
 /** A página foi aberta pelo próprio computador? (o servidor só aceita respostas assim) */
 export function isLocalHostname(hostname: string): boolean {
   const name = hostname.toLowerCase().replace(/^\[|\]$/g, '');
-  return name === 'localhost' || name.endsWith('.localhost') || name === '::1' || /^127(?:\.\d{1,3}){3}$/.test(name);
+  return name === 'localhost' || name === 'expediente.localhost' || name === '::1' || /^127(?:\.\d{1,3}){3}$/.test(name);
 }
 
 /** Pedido que se responde escolhendo (as perguntas do AskUserQuestion), não aprovando. */

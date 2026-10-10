@@ -8,6 +8,7 @@ import type { DayStatsService } from '../history/daystats';
 import type { Office } from '../model/office';
 import type { SessionHistory } from '../sources/history';
 import { isJsonContentType, isLoopbackHost } from './guard';
+import { FocoStore, handleFocarRoute, handleFocoEstado, handleModFocosRoute } from './focar';
 import { handleIrRoute, NonceStore } from './ir';
 import { handleSessionsRoute } from './sessions';
 import type { Hub } from './sse';
@@ -53,6 +54,10 @@ const IR_ROUTE = /^\/api\/agentes\/([^/]+)\/ir$/;
 /** PUT|DELETE /api/agents/:id/character: personagem do projeto (ver Office.setCharacter). */
 const CHARACTER_ROUTE = /^\/api\/agents\/([^/]+)\/character$/;
 const NOT_EDITABLE = 'agente não encontrado: só o agente principal de uma sessão aberta tem personagem editável';
+/** POST /api/agentes/:id/focar, GET /api/focos/:token e as rotas do mod em /api/mod/focos. */
+const FOCAR_ROUTE = /^\/api\/agentes\/([^/]+)\/focar$/;
+const FOCO_ROUTE = /^\/api\/focos\/([0-9a-f]{32})$/;
+const MOD_FOCOS_ROUTE = /^\/api\/mod\/focos(?:\/([0-9a-f]{32})\/(assumir|resultado))?$/;
 
 const MAX_BODY = 256 * 1024;
 
@@ -175,6 +180,7 @@ function usageOf(a: AgentInfo, rooms: ReadonlyMap<string, string>): ModAgentUsag
 export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: ServerResponse, url: URL) => boolean {
   const { office, hub, accounts } = deps;
   const nonces = new NonceStore(deps.now ?? Date.now);
+  const focos = new FocoStore(deps.now ?? Date.now);
   const terminalOn = () => (typeof deps.terminal === 'function' ? deps.terminal() : deps.terminal === true);
 
   const methodNotAllowed = (res: ServerResponse, allow: string) => {
@@ -291,6 +297,32 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
       }
       return true;
     }
+    const modFocos = MOD_FOCOS_ROUTE.exec(path);
+    const focoMatch = FOCO_ROUTE.exec(path);
+    const focarMatch = FOCAR_ROUTE.exec(path);
+    if ((modFocos || focoMatch || focarMatch) && !terminalOn()) {
+      sendJson(res, 403, { error: 'focar a sessão desligado: só funciona com o Expediente acessível apenas pelo próprio computador' });
+      return true;
+    }
+    if (modFocos) {
+      handleModFocosRoute(req, res, modFocos[1], modFocos[2], { focos }).catch((err) => fail(res, err));
+      return true;
+    }
+    if (focoMatch) {
+      handleFocoEstado(req, res, focoMatch[1], { focos });
+      return true;
+    }
+    if (focarMatch) {
+      let id: string;
+      try {
+        id = decodeURIComponent(focarMatch[1]);
+      } catch {
+        sendJson(res, 400, { error: 'id inválido' });
+        return true;
+      }
+      handleFocarRoute(req, res, id, { office, nonces, focos }).catch((err) => fail(res, err));
+      return true;
+    }
     const irMatch = IR_ROUTE.exec(path);
     if (irMatch) {
       let id: string;
@@ -300,7 +332,7 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
         sendJson(res, 400, { error: 'id inválido' });
         return true;
       }
-      handleIrRoute(req, res, url, id, { office, nonces });
+      handleIrRoute(req, res, url, id, { office, nonces, modAtivo: () => focos.modAtivo() });
       return true;
     }
     const characterMatch = CHARACTER_ROUTE.exec(path);

@@ -160,6 +160,12 @@ export interface CommitResult {
 
 type NoticeKind = 'arrive' | 'room' | 'wait' | 'deliver' | 'done' | 'leave' | 'shell' | 'shellDone' | 'github' | 'character';
 
+/** Id de agente principal = `<conta>:<pid>`. */
+function pidDoId(id: string): number | undefined {
+  const m = /^[^:\s]+:([1-9]\d{0,9})$/.exec(id);
+  return m ? Number(m[1]) : undefined;
+}
+
 /** Pergunta ainda sem resposta (o balão dela já diz que o agente espera você). */
 function isOpenQuestion(a: Activity | undefined): boolean {
   return a?.kind === 'ask' && a.text !== SPECIAL.answered().text;
@@ -309,7 +315,7 @@ export class Office {
    * Dados crus do agente principal para o `/ir` (http/ir.ts): caminho completo e `kind` do registro, que não
    * passam pela saída do escritório. Quem chama mascara. Undefined para subagente, demo ou id desconhecido.
    */
-  irSource(id: string): { cwd: string; sessionId: string; kind?: string; vivo: boolean; origin?: AgentOrigin; appSessionId?: string } | undefined {
+  irSource(id: string): { cwd: string; sessionId: string; kind?: string; vivo: boolean; origin?: AgentOrigin; appSessionId?: string; pid?: number } | undefined {
     const rec = this.agents.get(id);
     const room = rec && this.rooms.get(rec.info.roomId);
     if (!rec || !room || rec.info.kind !== 'main') return undefined;
@@ -321,6 +327,7 @@ export class Office {
       vivo: info.status !== 'offline',
       origin: info.origin,
       appSessionId: info.appSessionId,
+      pid: pidDoId(id),
     };
   }
 

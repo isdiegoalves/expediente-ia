@@ -48,6 +48,12 @@ partir da 2.1.287; a API ainda é "early access" e pode mudar entre versões. A 
   `cd -- '<cwd>' && claude --resume <id>`. No app o comando aparece num bloco para selecionar (ali não há como copiar).
   Para achar o painel, o mod confere com `ps` que o pid ainda é o `claude` (senão não oferece "Focar") e lê do processo da sessão só `ZELLIJ_PANE_ID` e `ZELLIJ_SESSION_NAME`, filtrados na origem.
 
+- **Foco pedido pelo navegador:** em sessão que desenha no terminal e com o Expediente no ar, a cada 1 s pergunta
+  `GET /api/mod/focos`; fora do ar, recua para 10 s. Se há pedido, `POST /api/mod/focos/<token>/assumir` (só o primeiro mod
+  assume; o servidor devolve apenas o pid inteiro), relê o pid na hora (`ps`, o leitor filtrado de `ZELLIJ_*`), confere que
+  ainda é o `claude` e roda o mesmo plano do botão "Focar"; depois `POST .../resultado` com `focado`, `sem-painel` ou
+  `nao-e-claude`. Nada além do pid inteiro vindo do servidor chega ao `$.process`.
+
 - **Ponte do app desktop:** a cada 5 s lê `~/Library/Application Support/Claude/claude-code-sessions/*/*/local_*.json`,
   seleciona por nome `sessionId`, `cliSessionId` e `isArchived` (nada mais do arquivo é copiado) e grava
   `~/.expediente/host/sessoes-app.json` (`{geradoEm, sessoes}`) num `.tmp` trocado por `mv -f`. Só relê o arquivo

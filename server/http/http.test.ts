@@ -440,13 +440,13 @@ describe('guarda de Host/Origin', () => {
 
   it('Host: IPs e localhost sim; domínios de fora não', () => {
     expect(hostAllowed(undefined)).toBe(true);
-    for (const h of ['localhost:4848', 'app.localhost', '127.0.0.1:4848', '[::1]:1', '10.0.0.5:4848']) expect(hostAllowed(h)).toBe(true);
-    for (const h of ['attacker.example:4848', 'meu-mac.local:4848', 'localhost.attacker.example', '127.0.0.1.nip.io', '', 'x y']) expect(hostAllowed(h)).toBe(false);
+    for (const h of ['localhost:4848', 'expediente.localhost', '127.0.0.1:4848', '[::1]:1', '10.0.0.5:4848']) expect(hostAllowed(h)).toBe(true);
+    for (const h of ['attacker.example:4848', 'meu-mac.local:4848', 'localhost.attacker.example', '127.0.0.1.nip.io', 'evil.localhost:4848', '', 'x y']) expect(hostAllowed(h)).toBe(false);
   });
 
-  it('isLoopbackHost: só localhost, *.localhost, 127.x e ::1 (terminal somente leitura)', () => {
-    for (const h of ['localhost:4848', 'LOCALHOST', 'app.localhost:1', '127.0.0.1:4848', '127.8.9.10', '[::1]:4848']) expect(isLoopbackHost(h)).toBe(true);
-    for (const h of [undefined, '', '10.0.0.5:4848', '192.168.0.10', '0.0.0.0:4848', 'expediente.lan', 'meu-mac.local:4848', '[::]:4848', 'localhost.attacker.example', '127.0.0.1.nip.io', 'x y']) {
+  it('isLoopbackHost: só localhost, expediente.localhost, 127.x e ::1 (terminal somente leitura)', () => {
+    for (const h of ['localhost:4848', 'LOCALHOST', 'expediente.localhost:1', '127.0.0.1:4848', '127.8.9.10', '[::1]:4848']) expect(isLoopbackHost(h)).toBe(true);
+    for (const h of [undefined, '', '10.0.0.5:4848', '192.168.0.10', '0.0.0.0:4848', 'expediente.lan', 'meu-mac.local:4848', '[::]:4848', 'localhost.attacker.example', '127.0.0.1.nip.io', 'evil.localhost:4848', 'x y']) {
       expect(isLoopbackHost(h)).toBe(false);
     }
   });

@@ -80,6 +80,12 @@ festa) ou 10 min. Push só avisa. O mesmo CI visto de novo em 2 min não repete 
 | `GET /api/health` | `{ok, version, demo, docker, terminal, permissions, sources, accounts:[{id, usageStatus}]}` |
 | `POST /api/demo` | `{enabled: boolean}` liga/desliga agentes simulados (misturados aos reais) |
 | `GET /api/mod/summary?account=&session=` | `ModSummary` para o mod do Claude Code: `{version, agents, working, waiting:[{id, name, room, account, waitingFor, since, answerable}], usage:[{id, name, context?, compactions, lastCompaction?, cost?}], self?}`, sem o demo e sem a sessão de quem pergunta (ver abaixo) |
+| `POST /api/agentes/:id/focar` | `{n}`: pede o foco do painel da sessão de terminal viva (as travas do `/ir?abrir=1`: Host local, `Origin` e `Sec-Fetch-Site` da mesma origem, JSON, nonce de uso único preso ao agente). Responde `{token}`; 409 se o agente não é terminal viva com pid |
+| `GET /api/focos/:token` | `{estado}` do pedido: `pendente`, `assumido`, `focado`, `sem-painel`, `nao-e-claude`, `cancelado` ou `vencido`; 404 se desconhecido (pedidos somem 60 s depois de criados) |
+| `DELETE /api/focos/:token` | o navegador desistiu: um pedido ainda não assumido deixa de poder ser assumido (`{cancelado: true}`; `false` se já assumido) |
+| `GET /api/mod/focos` | (mod) `{focos:[{token, pid}]}`: pedidos ainda não assumidos e dentro dos 10 s de validade |
+| `POST /api/mod/focos/:token/assumir` | (mod) o primeiro recebe `{pid}`; os demais 409 (já assumido), 410 (vencido) ou 404 |
+| `POST /api/mod/focos/:token/resultado` | (mod) `{resultado: 'focado' \| 'sem-painel' \| 'nao-e-claude'}`, só de quem assumiu e uma vez (senão 409) |
 | `POST /api/permissions` | (hook) registra um pedido de permissão: `201 {id, expiresAt}` ou `200 {skip}`; só com bind local (ver abaixo) |
 | `GET /api/permissions/:id/wait` | (hook) long-poll de até 25 s (`?timeout=` em segundos): `{status: 'pending' \| 'decided' \| 'released', ...}` |
 | `GET /api/permissions/:id` | (página) detalhe do pedido com os argumentos (`PermissionRequestInfo` com `input`) |
@@ -88,7 +94,7 @@ festa) ou 10 min. Push só avisa. O mesmo CI visto de novo em 2 min não repete 
 O snapshot (SSE e `GET /api/snapshot`) leva só as últimas 8 atividades de cada agente em `recent`; o histórico
 de até 200 (inclusive o começo de transcripts longos, lido em segundo plano) vem de `GET /api/agents/:id`.
 
-Borda (`http/guard.ts`, vale para API, estáticos e Vite): `Host` precisa ser `localhost`/`*.localhost` ou um IP
+Borda (`http/guard.ts`, vale para API, estáticos e Vite): `Host` precisa ser `localhost`/`expediente.localhost` ou um IP
 (contra DNS rebinding) → senão 403; `X-Forwarded-For` com endereço fora do loopback → 403; `POST` em `/api/*` exige
 `Content-Type: application/json` (415) e `Origin` da mesma origem do `Host` (403), contra CSRF. Respostas JSON
 saem com `nosniff` e `Cross-Origin-Resource-Policy: same-origin`, sem CORS.
@@ -115,7 +121,7 @@ depois que o `docker:up` conferir com `docker inspect` que toda porta publicada 
 desligados (`publicacao.ts`) e ligam sozinhos quando ele aparece. `EXPEDIENTE_TERMINAL=0` desliga sempre
 (`config.ts`, `terminalOffReason`).
 
-Além disso, cada requisição precisa de `Host` local (`localhost`, `*.localhost`, 127.x ou `[::1]`): IPs da rede recebem 403. O estado sai em `meta.terminal` do snapshot e em
+Além disso, cada requisição precisa de `Host` local (`localhost`, `expediente.localhost`, 127.x ou `[::1]`): IPs da rede recebem 403. O estado sai em `meta.terminal` do snapshot e em
 `terminal` no `/api/health`. Erros antes do stream respondem JSON `{error}`: 403 (desligado ou acesso que não é
 local), 404 (agente ou transcript desconhecido), 405 (método que não é `GET`), 429 (terminais demais) e 500
 (transcript ilegível).
@@ -304,6 +310,16 @@ O repositório é também um marketplace de plugins do Claude Code (`.claude-plu
   dela (o `sessionId` deles é o da sessão que os disparou; por garantia, também quem tem um ancestral dela).
   `answerable` = há pedido de permissão para responder pelo escritório (`AgentInfo.permission`). Sem parâmetros,
   nada é excluído (é o que o `/escritorio` usa, para os números baterem com a tela). Só `GET`/`HEAD` (senão 405).
+
+### Focar a sessão pelo navegador
+
+`GET /api/agentes/:id/ir` traz `focar: true` quando o agente é uma sessão de terminal viva (origem `terminal`, id
+`<conta>:<pid>`) e algum mod perguntou por pedidos nos últimos 3 s; sem mod, o navegador vai direto à cópia. O navegador então chama `POST /api/agentes/:id/focar` e consulta `GET /api/focos/:token`. O pedido
+(`http/focar.ts`, em memória, um por agente) guarda `{token, agentId, pid, criadoEm}` e vale 4 s (a espera de 3 s do navegador mais uma consulta do mod, `shared/foco.ts`); o `pid` sai do id do
+próprio agente, nunca do cliente, e o servidor não recebe argv nem caminho. O mod do Claude Code, que roda na máquina,
+busca os pedidos, assume um e executa o foco (ver [`mod/README.md`](../mod/README.md)). Todas as rotas de foco exigem a trava de publicação do terminal (403 com
+ela desligada) e Host local, como as de permissão, e as do mod só atendem loopback: qualquer processo local pode chamá-las (risco aceito; fecha com o token local de uma
+fatia futura). Se ninguém assume em 3 s, o navegador cancela o pedido (`DELETE`) e copia o comando.
 
 ## Contexto e custo por agente
 

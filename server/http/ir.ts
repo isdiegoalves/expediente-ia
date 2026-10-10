@@ -63,7 +63,7 @@ function entreAspas(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
-function montar(src: NonNullable<ReturnType<Office['irSource']>>): Omit<IrInfo, 'nonce'> | undefined {
+function montar(src: NonNullable<ReturnType<Office['irSource']>>, modAtivo: boolean): Omit<IrInfo, 'nonce'> | undefined {
   if (!ID_SESSAO.test(src.sessionId)) return undefined;
   const { sessionId, vivo, origin } = src;
   const cwd = maskSecrets(src.cwd);
@@ -72,8 +72,8 @@ function montar(src: NonNullable<ReturnType<Office['irSource']>>): Omit<IrInfo, 
   const links = cwdLimpo
     ? [
         noApp
-          ? { rotulo: 'Abrir o projeto no app', href: `claude://code/new?folder=${encodeURIComponent(cwd)}` }
-          : { rotulo: 'Abrir o projeto no terminal', href: `claude-cli://open?cwd=${encodeURIComponent(cwd)}` },
+          ? { rotulo: 'Nova sessão neste projeto', href: `claude://code/new?folder=${encodeURIComponent(cwd)}` }
+          : { rotulo: 'Nova sessão neste projeto', href: `claude-cli://open?cwd=${encodeURIComponent(cwd)}` },
       ]
     : [];
   const direto = vivo && noApp && src.appSessionId && ID_APP.test(src.appSessionId) ? `claude://code/continue?session=${src.appSessionId}` : undefined;
@@ -84,16 +84,19 @@ function montar(src: NonNullable<ReturnType<Office['irSource']>>): Omit<IrInfo, 
     return { ...base, comando: `${cwdLimpo ? `cd -- ${entreAspas(cwd)} && ` : ''}claude --resume ${sessionId}`, links };
   }
   if (!noApp && (src.kind === 'bg' || src.kind === 'background')) return { ...base, comando: `claude attach ${sessionId}`, links };
-  return { ...base, comando: `claude --resume ${sessionId} --fork-session`, aviso: AVISO_FORK, links };
+  const focar = modAtivo && origin === 'terminal' && src.pid !== undefined ? { focar: true as const } : {};
+  return { ...focar, ...base, comando: `claude --resume ${sessionId} --fork-session`, aviso: AVISO_FORK, links };
 }
 
 export interface IrDeps {
   office: Office;
   nonces: NonceStore;
+  /** Algum mod do Claude Code perguntou por pedidos de foco há pouco. */
+  modAtivo: () => boolean;
 }
 
 /** `GET /api/agentes/:id/ir` (JSON) e `?abrir=1&n=<nonce>` (302). */
-export function handleIrRoute(req: IncomingMessage, res: ServerResponse, url: URL, id: string, { office, nonces }: IrDeps): void {
+export function handleIrRoute(req: IncomingMessage, res: ServerResponse, url: URL, id: string, { office, nonces, modAtivo }: IrDeps): void {
   if (req.method !== 'GET') {
     res.setHeader('Allow', 'GET');
     return sendJson(res, 405, { error: 'método não permitido' });
@@ -102,7 +105,7 @@ export function handleIrRoute(req: IncomingMessage, res: ServerResponse, url: UR
     return sendJson(res, 403, { error: 'o atalho para a sessão só abre pelo próprio computador (http://localhost ou http://127.0.0.1)' });
   }
   const src = office.irSource(id);
-  const ir = src && montar(src);
+  const ir = src && montar(src, modAtivo());
   if (!src || !ir) return sendJson(res, 404, { error: 'agente não encontrado' });
 
   const site = req.headers['sec-fetch-site'];
