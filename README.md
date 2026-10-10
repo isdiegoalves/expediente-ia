@@ -193,7 +193,7 @@ abertas carregam o mod com `/reload-plugins` (ou ao reabrir). Confira com `npm r
 > rode `npm run instalar` uma vez, na pasta onde o repositório está agora: ele troca a cópia e poda o registro antigo.
 >
 > **Conta nova:** crie e abra a conta (`CLAUDE_CONFIG_DIR=~/.claude-nova claude`) e rode `npm run instalar`: toda
-> pasta `~/.claude*` com configuração do Claude Code (`settings.json`, `.claude.json`, `.credentials.json` ou `plugins/`)
+> pasta `~/.claude*` com `projects/`, `sessions/` ou `.claude.json` (o Claude Code já rodou ali)
 > é detectada, mesmo sem nenhuma sessão ainda. Para o mod chegar só a algumas contas, use `-- --conta <pasta>`.
 
 ### Atualizar

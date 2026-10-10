@@ -74,7 +74,7 @@ const USAGE = `Uso: npm run <instalar|desinstalar|instalar:status> [-- opções]
   instalar          instala o mod do Expediente no Claude Code de cada conta, a partir de uma cópia fixa do commit
                     (~/.expediente/mod-instalado, independente deste checkout), só por \`claude plugin\`; o
                     settings.json das contas nunca é editado por este script. Rodar de novo atualiza a cópia e os
-                    plugins; uma conta nova (pasta ~/.claude* com configuração) entra sozinha
+                    plugins; uma conta nova (pasta ~/.claude* com .claude.json) entra sozinha
   desinstalar       tira os plugins e o marketplace do Expediente de cada conta e remove a cópia fixa
   instalar:status   mostra o commit instalado e, por conta, o marketplace e os plugins (e versões)
 
@@ -91,7 +91,7 @@ Precisa do Claude Code ${MIN_CLAUDE_VERSION} ou mais novo; em versões anteriore
 Antes de tocar nas contas, roda \`claude plugin validate --strict\` na cópia.
 
 Contas: as do servidor (~/.claude* com projects/ ou sessions/, CLAUDE_CONFIG_DIR ou EXPEDIENTE_CLAUDE_DIRS) e as
-~/.claude* que já têm configuração (settings.json, .claude.json, .credentials.json ou plugins/), mesmo sem sessão. Uso capturado em EXPEDIENTE_USAGE_DIR (padrão ~/.expediente/host/uso).`;
+~/.claude* com .claude.json (o Claude Code já rodou ali), mesmo sem sessão. Uso capturado em EXPEDIENTE_USAGE_DIR (padrão ~/.expediente/host/uso).`;
 
 // ---------------------------------------------------------------------------------------------
 // O CLI do Claude Code (injetável: os testes nunca chamam o de verdade)
@@ -520,10 +520,8 @@ export function resolveCommit(git: GitRunner, root: string, ref: string | undefi
   return { commit };
 }
 
-const ACCOUNT_MARKERS = ['.claude.json', 'settings.json', '.credentials.json', 'plugins'];
-
 /**
- * Contas onde instalar: as do servidor mais as ~/.claude* que já têm configuração do Claude Code, para a conta
+ * Contas onde instalar: as do servidor mais as ~/.claude* com .claude.json (o Claude Code já rodou ali), para a conta
  * criada há pouco (ainda sem sessão) entrar sem outro passo. EXPEDIENTE_CLAUDE_DIRS manda sozinho, como no servidor.
  */
 export function discoverInstallDirs(env: NodeJS.ProcessEnv, home: string): string[] {
@@ -534,7 +532,7 @@ export function discoverInstallDirs(env: NodeJS.ProcessEnv, home: string): strin
     for (const ent of readdirSync(home, { withFileTypes: true })) {
       if (!ent.name.startsWith('.claude') || !(ent.isDirectory() || ent.isSymbolicLink())) continue;
       const p = join(home, ent.name);
-      if (found.includes(p) || !ACCOUNT_MARKERS.some((m) => existsSync(join(p, m)))) continue;
+      if (found.includes(p) || !existsSync(join(p, '.claude.json'))) continue;
       extra.push(p);
     }
   } catch {
