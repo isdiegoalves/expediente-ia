@@ -259,6 +259,7 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
     if (path === '/api/versao') {
       if (!isRead) methodNotAllowed(res, 'GET');
       else if (!deps.versao) sendJson(res, 404, { error: 'rota desconhecida' });
+      else if (!isLoopbackHost(req.headers.host)) sendJson(res, 403, { error: 'versão só pelo próprio computador (http://localhost)' });
       else sendJson(res, 200, deps.versao());
       return true;
     }
