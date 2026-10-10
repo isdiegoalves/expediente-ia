@@ -152,5 +152,8 @@ describe('agenda das rodas', () => {
     expect(m.estado().carteiras.ana.coins).toBe(START_COINS.main + TASK_REWARD + TURN_REWARD);
     expect(m.estado().carteiras.rui.coins).toBe(START_COINS.sub + DELIVERY_REWARD);
     expect(m.estado().carteiras.rui.ledger[0].text).toBe('Entregou: Revisar');
+    // quem saiu ainda aparece no snapshot (indo embora): a gaveta segue com a carteira dele
+    m.passo(T0 + 5_000, [{ ...pronto, status: 'offline' }]);
+    expect(m.estado().carteiras.ana.coins).toBe(START_COINS.main + TASK_REWARD + TURN_REWARD);
   });
 });

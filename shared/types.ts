@@ -394,7 +394,7 @@ export interface SocialSnapshot {
   semente: number;
   /** Rodas em andamento (a agenda tira cada uma no fim dela). */
   rodas: RodaAgendada[];
-  /** Carteira de cada agente presente. */
+  /** Carteira de cada agente do snapshot. */
   carteiras: Record<string, CarteiraInfo>;
 }
 

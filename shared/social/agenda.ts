@@ -184,7 +184,8 @@ export class MotorSocial {
   private quer = new Map<string, number>();
   /** Última atividade e status vistos de cada agente (para pagar pedido atendido e entrega uma vez). */
   private vistos = new Map<string, { atividade: string | undefined; status: AgentInfo['status'] }>();
-  private presentes: string[] = [];
+  /** Agentes do último snapshot (os que saíram inclusive: a gaveta deles ainda mostra a carteira). */
+  private listados: string[] = [];
   private sementes = new Map<string, number>();
 
   constructor(
@@ -197,7 +198,7 @@ export class MotorSocial {
   /** Avança até `agora`: carteiras de quem chegou, pagamentos pelo trabalho, rodas que acabaram e rodas novas. */
   passo(agora: number, agentes: readonly AgenteSocial[]): void {
     const presentes = agentes.filter((a) => a.status !== 'offline');
-    this.presentes = presentes.map((a) => a.id);
+    this.listados = agentes.map((a) => a.id);
     this.sementes = new Map(presentes.map((a) => [a.id, a.seed]));
     for (const id of this.vistos.keys()) if (!this.sementes.has(id)) this.vistos.delete(id);
     for (const a of presentes) this.observar(a, agora);
@@ -220,7 +221,7 @@ export class MotorSocial {
 
   estado(): SocialSnapshot {
     const carteiras: Record<string, CarteiraInfo> = {};
-    for (const id of this.presentes) {
+    for (const id of this.listados) {
       const c = this.carteiras.info(id);
       if (c) carteiras[id] = c;
     }
