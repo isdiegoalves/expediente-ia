@@ -17,6 +17,7 @@ import type { Character } from '../sim/character';
 import { shellAgeKey, shellBubbleAlpha, shellBubbleText, STORM_LIFT, unitHash } from '../sim/shell';
 import type { Sim } from '../sim/sim';
 import { buildAnim } from './anim';
+import { pessoasNaSala, quemEspera } from './contagem-da-sala';
 import { lugarDoBalao, Ocupacao, type Caixa } from './disposicao';
 import { drawFxBanner } from './github-fx';
 import type { HeadInfo, Renderer } from './renderer';
@@ -536,10 +537,7 @@ export class Overlay {
   }
 
   private countIn(roomId: string): number {
-    let n = 0;
-    for (const m of this.sim.fanout.rodas.get(roomId)?.membros ?? []) if (!this.sim.chars.has(m.id)) n++;
-    for (const c of this.sim.chars.values()) if (c.roomId === roomId && !c.leaving) n++;
-    return n;
+    return pessoasNaSala(roomId, this.sim.chars, this.sim.fanout.rodas.get(roomId));
   }
 
   private drawSignText(text: string, x: number, y: number, w: number, h: number, dark: boolean, accounts: string[]): void {
@@ -693,18 +691,13 @@ export class Overlay {
 
   /** Cada sala com alguém esperando você, na visão geral: um balão só, sobre um deles, com a contagem. */
   private esperaDasSalas(vw: number, vh: number): Map<string, EsperaDaSala> | null {
-    const esperando: { id: string; roomId: string; visivel: boolean }[] = [];
-    for (const ch of this.sim.chars.values()) {
-      if (ch.mode !== 'wait' || ch.leaving) continue;
-      const head = this.renderer.heads.get(ch.id);
-      const hx = head ? this.sx(head.x) : -1e9;
-      const hy = head ? this.sy(head.y) : -1e9;
-      esperando.push({ id: ch.id, roomId: ch.roomId, visivel: !!head?.visible && hx >= -120 && hx <= vw + 120 && hy >= -60 && hy <= vh + 80 });
-    }
-    for (const r of this.sim.fanout.rodas.values()) {
-      if (!r.esperando) continue;
-      for (const m of r.membros) if (m.status === 'waiting' && !this.sim.chars.has(m.id)) esperando.push({ id: m.id, roomId: r.roomId, visivel: false });
-    }
+    const esperando = quemEspera(this.sim.chars, this.sim.fanout.rodas.values(), (id) => {
+      const head = this.renderer.heads.get(id);
+      if (!head?.visible) return false;
+      const hx = this.sx(head.x);
+      const hy = this.sy(head.y);
+      return hx >= -120 && hx <= vw + 120 && hy >= -60 && hy <= vh + 80;
+    });
     return esperando.length ? esperaPorSala(esperando) : null;
   }
 
