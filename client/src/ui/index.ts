@@ -200,6 +200,10 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi,
   const renamer = new RoomRenamer(ctx);
   ctx.renameRoom = (id, at) => renamer.open(id, at);
   world.onRoomContextMenu?.((id, at) => renamer.open(id, at));
+  world.onMaqueteFalha?.(() => {
+    settings.maqueteIndisponivel();
+    ctx.updatePrefs({ maquete: false });
+  });
   const empty = new EmptyState(ctx);
   const banner = new ConnectionBanner(ctx);
   const update = new UpdateBanner(store);

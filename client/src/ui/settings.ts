@@ -69,6 +69,7 @@ export class SettingsPopover implements UiComponent {
   private demoGroup: HTMLElement;
   private about: AboutGroup;
   private demoBusy = false;
+  private maqueteFalhou = false;
   private anchor: HTMLElement | null = null;
 
   constructor(
@@ -165,6 +166,12 @@ export class SettingsPopover implements UiComponent {
     });
   }
 
+  /** O efeito não rodou e foi desligado: o interruptor fica desativado, com o porquê, até recarregar. */
+  maqueteIndisponivel(): void {
+    this.maqueteFalhou = true;
+    if (this.isOpen) this.render();
+  }
+
   get isOpen(): boolean {
     try {
       return this.el.matches(':popover-open');
@@ -224,7 +231,7 @@ export class SettingsPopover implements UiComponent {
     this.about.render();
 
     const maquete = this.switches.get('maquete')!;
-    const opcao = opcaoMaquete(webgl2Disponivel());
+    const opcao = opcaoMaquete(webgl2Disponivel(), this.maqueteFalhou);
     setText(maquete.hint, opcao.dica);
     maquete.btn.disabled = opcao.desativada;
 

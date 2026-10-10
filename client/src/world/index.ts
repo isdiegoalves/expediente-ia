@@ -28,7 +28,8 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
   let options: WorldOptions = { ...DEFAULT_WORLD_OPTIONS };
   const camera = new Camera();
   // Simulação e desenho são recriados quando o timelapse entra, pula ou sai (rebuild).
-  const maquete = criarMaqueteDoNavegador(canvas);
+  const maqueteFalhaCbs = new Set<() => void>();
+  const maquete = criarMaqueteDoNavegador(canvas, () => maqueteFalhaCbs.forEach((cb) => cb()));
   let sim = new Sim(art, () => options);
   let renderer = new Renderer(canvas, art, sim, camera);
   let overlay = new Overlay(renderer.ctx, sim, renderer, camera);
@@ -456,6 +457,10 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
       playback = p;
       worldNow = p ? p.clock() : 0;
       rebuild();
+    },
+    onMaqueteFalha: (cb) => {
+      maqueteFalhaCbs.add(cb);
+      return () => void maqueteFalhaCbs.delete(cb);
     },
     onSound: (cb) => {
       soundCbs.add(cb);

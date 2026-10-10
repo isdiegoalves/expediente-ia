@@ -36,20 +36,33 @@ describe('foco amortecido', () => {
   });
 });
 
-function fakes(efeitoPronto = true) {
+function fakes(efeitoPronto: boolean | 'lanca' = true) {
   const efeito: Efeito = { desenhar: vi.fn(), liberar: vi.fn() };
   const ctxSobre = { setTransform: vi.fn(), clearRect: vi.fn() };
-  const criados: { id: string; remove: ReturnType<typeof vi.fn>; width: number; height: number }[] = [];
+  const criados: { id: string; remove: ReturnType<typeof vi.fn>; width: number; height: number; fora: boolean; ouvintes: Record<string, (e: unknown) => void> }[] = [];
   const criarCanvas = vi.fn((id: string) => {
-    const c = { id, width: 0, height: 0, addEventListener: vi.fn(), remove: vi.fn(), getContext: vi.fn(() => ctxSobre) };
+    const c = {
+      id,
+      width: 0,
+      height: 0,
+      fora: false,
+      ouvintes: {} as Record<string, (e: unknown) => void>,
+      addEventListener: vi.fn((tipo: string, cb: (e: unknown) => void) => void (c.ouvintes[tipo] = cb)),
+      remove: vi.fn(() => void (c.fora = true)),
+      getContext: vi.fn(() => ctxSobre),
+    };
     criados.push(c);
     return c as unknown as HTMLCanvasElement;
   });
   const mundo = { width: 800, height: 600, getContext: vi.fn() } as unknown as HTMLCanvasElement;
-  const criarEfeito = vi.fn(() => (efeitoPronto ? efeito : null));
+  const criarEfeito = vi.fn(() => {
+    if (efeitoPronto === 'lanca') throw new Error('shader não compila');
+    return efeitoPronto ? efeito : null;
+  });
   const reduzir = { valor: false };
-  const maquete = criarMaquete({ criarCanvas, criarEfeito, reduzirMovimento: () => reduzir.valor });
-  return { efeito, ctxSobre, criados, mundo, criarCanvas, criarEfeito, reduzir, maquete };
+  const aoFalhar = vi.fn();
+  const maquete = criarMaquete({ criarCanvas, criarEfeito, aoFalhar, reduzirMovimento: () => reduzir.valor });
+  return { efeito, ctxSobre, criados, mundo, criarCanvas, criarEfeito, aoFalhar, reduzir, maquete };
 }
 
 describe('controle do modo maquete', () => {
@@ -91,6 +104,43 @@ describe('controle do modo maquete', () => {
     expect(f.criados[0].remove).toHaveBeenCalled();
   });
 
+  it('fábrica que lança: 10 quadros, nenhum canvas fica, o overlay segue no mundo e só tenta uma vez', () => {
+    const f = fakes('lanca');
+    for (let i = 0; i < 10; i++) expect(f.maquete.aplicar(true, f.mundo, null, 600, 1 / 60)).toBeNull();
+    expect(f.criarEfeito).toHaveBeenCalledTimes(1);
+    expect(f.criados.filter((c) => !c.fora)).toHaveLength(0);
+    expect(f.aoFalhar).toHaveBeenCalledTimes(1);
+  });
+
+  it('getContext(webgl2) nulo avisa a falha e não deixa canvas', () => {
+    const f = fakes(false);
+    f.maquete.aplicar(true, f.mundo, null, 600, 1 / 60);
+    expect(f.aoFalhar).toHaveBeenCalledTimes(1);
+    expect(f.criados.filter((c) => !c.fora)).toHaveLength(0);
+  });
+
+  it('contexto perdido em execução avisa a falha, remove os canvas e devolve o overlay ao mundo', () => {
+    const f = fakes();
+    expect(f.maquete.aplicar(true, f.mundo, null, 600, 1 / 60)).toBe(f.ctxSobre);
+    const evento = { preventDefault: vi.fn() };
+    f.criados[0].ouvintes.webglcontextlost(evento);
+    expect(evento.preventDefault).toHaveBeenCalled();
+    expect(f.aoFalhar).toHaveBeenCalledTimes(1);
+    expect(f.criados.filter((c) => !c.fora)).toHaveLength(0);
+    expect(f.maquete.aplicar(true, f.mundo, null, 600, 1 / 60)).toBeNull();
+    expect(f.criarEfeito).toHaveBeenCalledTimes(1);
+  });
+
+  it('erro ao desenhar o quadro desliga o efeito no mesmo quadro', () => {
+    const f = fakes();
+    (f.efeito.desenhar as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      throw new Error('gl');
+    });
+    expect(f.maquete.aplicar(true, f.mundo, null, 600, 1 / 60)).toBeNull();
+    expect(f.aoFalhar).toHaveBeenCalledTimes(1);
+    expect(f.criados.filter((c) => !c.fora)).toHaveLength(0);
+  });
+
   it('o foco segue o mouse e fica no meio com movimento reduzido', () => {
     const f = fakes();
     for (let i = 0; i < 300; i++) f.maquete.aplicar(true, f.mundo, 540, 600, 1 / 60);
@@ -110,6 +160,9 @@ describe('opção nas Configurações', () => {
     expect(sem.desativada).toBe(true);
     expect(sem.dica).toContain('WebGL2');
     expect(opcaoMaquete(true).desativada).toBe(false);
+    const falhou = opcaoMaquete(true, true);
+    expect(falhou.desativada).toBe(true);
+    expect(falhou.dica).toContain('aceleração gráfica');
   });
 });
 

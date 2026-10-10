@@ -24,9 +24,11 @@ export function webgl2Disponivel(g: { WebGL2RenderingContext?: unknown } = globa
 
 export const MAQUETE_DICA = 'Desfoca as bordas e deixa o escritório com cara de miniatura; o foco segue o mouse.';
 export const MAQUETE_SEM_WEBGL2 = 'Este navegador não oferece WebGL2, que o modo maquete precisa.';
+export const MAQUETE_FALHOU = 'O modo maquete não funcionou aqui: a aceleração gráfica do navegador está desligada ou o contexto se perdeu. Recarregue a página para tentar de novo.';
 
 /** Texto e estado do interruptor nas Configurações. */
-export function opcaoMaquete(disponivel: boolean): { dica: string; desativada: boolean } {
+export function opcaoMaquete(disponivel: boolean, falhou = false): { dica: string; desativada: boolean } {
+  if (falhou) return { dica: MAQUETE_FALHOU, desativada: true };
   return disponivel ? { dica: MAQUETE_DICA, desativada: false } : { dica: MAQUETE_SEM_WEBGL2, desativada: true };
 }
 
@@ -182,6 +184,8 @@ export interface MaqueteDeps {
   criarCanvas: (id: string) => HTMLCanvasElement;
   criarEfeito: (canvas: HTMLCanvasElement) => Efeito | null;
   reduzirMovimento: () => boolean;
+  /** O efeito não pôde rodar (contexto indisponível, shader recusado, contexto perdido): já está desligado. */
+  aoFalhar: () => void;
 }
 
 export interface Maquete {
@@ -211,6 +215,12 @@ export function criarMaquete(deps: MaqueteDeps): Maquete {
     efeito = null;
   };
 
+  const falha = () => {
+    falhou = true;
+    desligar();
+    deps.aoFalhar();
+  };
+
   return {
     aplicar(ligado, mundo, mouseY, alturaVista, dt) {
       if (!ligado) {
@@ -220,24 +230,31 @@ export function criarMaquete(deps: MaqueteDeps): Maquete {
       }
       if (falhou) return null;
       if (!efeito) {
-        canvas = deps.criarCanvas('maquete');
-        efeito = deps.criarEfeito(canvas);
-        if (!efeito) {
-          falhou = true;
-          desligar();
+        try {
+          canvas = deps.criarCanvas('maquete');
+          efeito = deps.criarEfeito(canvas);
+        } catch {
+          efeito = null;
+        }
+        if (!efeito || !canvas) {
+          falha();
           return null;
         }
         canvas.addEventListener('webglcontextlost', (e) => {
           e.preventDefault();
-          falhou = true;
-          desligar();
+          falha();
         });
         sobre = deps.criarCanvas('maquete-overlay');
         ctxSobre = sobre.getContext('2d');
       }
       const alvo = mouseY !== null && alturaVista > 0 && !deps.reduzirMovimento() ? Math.min(1, Math.max(0, mouseY / alturaVista)) : 0.5;
       foco = seguirFoco(foco, alvo, dt);
-      efeito.desenhar(mundo, foco);
+      try {
+        efeito.desenhar(mundo, foco);
+      } catch {
+        falha();
+        return null;
+      }
       if (!sobre || !ctxSobre) return null;
       if (sobre.width !== mundo.width || sobre.height !== mundo.height) {
         sobre.width = mundo.width;
@@ -251,7 +268,7 @@ export function criarMaquete(deps: MaqueteDeps): Maquete {
   };
 }
 
-export function criarMaqueteDoNavegador(mundo: HTMLCanvasElement): Maquete {
+export function criarMaqueteDoNavegador(mundo: HTMLCanvasElement, aoFalhar: () => void): Maquete {
   return criarMaquete({
     criarCanvas: (id) => {
       const c = document.createElement('canvas');
@@ -262,6 +279,7 @@ export function criarMaqueteDoNavegador(mundo: HTMLCanvasElement): Maquete {
       return c;
     },
     criarEfeito,
+    aoFalhar,
     reduzirMovimento: () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches,
   });
 }

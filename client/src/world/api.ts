@@ -81,6 +81,8 @@ export interface WorldApi {
   setPlayback?(p: WorldPlayback | null): void;
   /** (Opcional, aditivo) Sons do ambiente: teclado de quem trabalha à vista, elevador, rodas. */
   onSound?(cb: (cue: SoundCue) => void): () => void;
+  /** (Opcional, aditivo) O modo maquete não pôde rodar e foi desligado (sem aceleração gráfica, contexto perdido). */
+  onMaqueteFalha?(cb: () => void): () => void;
   destroy(): void;
 }
 
