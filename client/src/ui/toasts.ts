@@ -1,9 +1,12 @@
 // Avisos rápidos (toasts) no canto inferior direito da área livre (acima do feed, à esquerda da gaveta).
+import { linkListaDeEspera, textoPrecisamDeVoce } from '../../../shared/espera';
 import type { Notice, NoticeLevel } from '../../../shared/types';
 import { createAvatar } from './avatar';
 import type { UiComponent, UiContext } from './context';
 import { h, iconButton, prefersReducedMotion, setHidden, setText } from './dom';
+import { deveAgrupar, nomesDeQuemEspera } from './espera-aviso';
 import { ICONS } from './icons';
+import { waitingAgents } from './model';
 import { focusPermission } from './permission';
 
 const MAX_VISIBLE = 4;
@@ -24,9 +27,20 @@ interface Toast {
   startedAt: number;
 }
 
+interface Grupo {
+  el: HTMLElement;
+  texto: HTMLElement;
+  nomes: HTMLElement;
+  responder: HTMLButtonElement;
+  app: HTMLAnchorElement;
+  /** Quem o "Responder" atende agora: quem espera há mais tempo e tem pedido. */
+  alvo: string | null;
+}
+
 export class Toasts implements UiComponent {
   readonly el: HTMLElement;
   private toasts: Toast[] = [];
+  private grupo: Grupo | null = null;
 
   constructor(private ctx: UiContext) {
     this.el = h('div', { class: 'ui-toasts', attrs: { 'aria-live': 'polite', 'aria-relevant': 'additions', 'aria-label': 'Avisos' } });
@@ -59,10 +73,9 @@ export class Toasts implements UiComponent {
     this.toasts.push(toast);
     this.el.prepend(toast.el);
     this.arm(toast, LIFETIME[n.level]);
-    while (this.toasts.length > MAX_VISIBLE) {
-      const victim = this.toasts.find((t) => t.notice.level !== 'alert') ?? this.toasts[0];
-      this.dismiss(victim);
-    }
+    // Alertas não são expulsos por outros avisos: cada um some quando o agente deixa de esperar.
+    const comuns = this.toasts.filter((t) => t.notice.level !== 'alert');
+    for (const victim of comuns.slice(0, Math.max(0, comuns.length - MAX_VISIBLE))) this.dismiss(victim);
   }
 
   /** Alertas somem quando o agente deixa de esperar (ou sai do escritório). */
@@ -74,6 +87,51 @@ export class Toasts implements UiComponent {
       // O pedido pode chegar (pelo hook) depois do aviso: o atalho aparece quando ele existe.
       else if (t.answer) setHidden(t.answer, !a.permission);
     }
+    this.renderGrupo();
+  }
+
+  private alertas(): Toast[] {
+    return this.toasts.filter((t) => t.notice.level === 'alert' && t.notice.agentId);
+  }
+
+  /** Com dois ou mais alertas, os avisos individuais se escondem atrás de um só, com a contagem. */
+  private renderGrupo(): void {
+    const alertas = this.alertas();
+    const agrupar = deveAgrupar(alertas.length);
+    for (const t of alertas) t.el.classList.toggle('is-agrupado', agrupar);
+    if (!agrupar) {
+      if (this.grupo) {
+        this.grupo.el.remove();
+        this.grupo = null;
+      }
+      return;
+    }
+    const g = (this.grupo ??= this.createGrupo());
+    if (!g.el.isConnected) this.el.prepend(g.el);
+    const agents = this.ctx.store.snapshot?.agents ?? [];
+    const esperando = waitingAgents(agents);
+    setText(g.texto, textoPrecisamDeVoce(esperando.length));
+    setText(g.nomes, nomesDeQuemEspera(esperando.map((a) => a.name)));
+    g.alvo = esperando.find((a) => a.permission)?.id ?? null;
+    setHidden(g.responder, !g.alvo);
+    const link = linkListaDeEspera(agents);
+    setHidden(g.app, !link);
+    if (link) g.app.href = link;
+  }
+
+  private createGrupo(): Grupo {
+    const texto = h('span', { class: 'ui-toast__text' });
+    const nomes = h('span', { class: 'ui-toast__nomes' });
+    const body = h('button', { class: 'ui-toast__body', type: 'button', title: 'Mostrar quem espera na lista' }, h('span', { text: '✋' }), texto, nomes);
+    body.addEventListener('click', () => this.ctx.showWaiting());
+    const responder = h('button', { class: 'ui-toast__answer', type: 'button', text: 'Responder', title: 'Responder pelo escritório a quem espera há mais tempo' });
+    const app = h('a', { class: 'ui-toast__answer', text: 'Lista no app', title: 'Abre, no app do Claude, a lista de sessões que esperam você', hidden: true });
+    app.rel = 'noopener';
+    const acoes = h('div', { class: 'ui-toast__acoes' }, responder, app);
+    const el = h('div', { class: 'ui-toast ui-toast--alert ui-toast--grupo', role: 'alert' }, body, iconButton(ICONS.close, 'Fechar aviso', () => this.alertas().forEach((t) => this.dismiss(t)), 'ui-icon-btn--sm ui-toast__close'), acoes);
+    const g: Grupo = { el, texto, nomes, responder, app, alvo: null };
+    responder.addEventListener('click', () => g.alvo && focusPermission(this.ctx, g.alvo));
+    return g;
   }
 
   private create(n: Notice, key: string): Toast {

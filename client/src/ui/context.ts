@@ -45,6 +45,8 @@ export interface UiContext {
   /** Anuncia um texto para leitores de tela. */
   announce(text: string): void;
   focusSearch(): void;
+  /** Abre a lista lateral só com quem espera você. */
+  showWaiting(): void;
   /** Abre a ajuda; com `section`, rola até ela (ex.: "usage" = Contas e uso). */
   openHelp(section?: HelpSection): void;
   toggleSettings(): void;

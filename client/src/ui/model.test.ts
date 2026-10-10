@@ -118,6 +118,22 @@ describe('groupRooms', () => {
     const onlyD = groupRooms(snap, { query: '', hiddenAccounts: new Set(['.claude']) });
     expect(onlyD.map((r) => r.room.id)).toEqual(['api']);
   });
+  it('filtra por status: só quem espera, e as salas sem ninguém no grupo somem', () => {
+    const g = groupRooms(snap, { query: '', hiddenAccounts: new Set(), status: 'esperando' });
+    expect(g.map((r) => r.room.id)).toEqual(['api', 'loja']);
+    expect(g.flatMap((r) => r.nodes.map((n) => n.agent.id))).toEqual(['marina', 'ana']);
+  });
+  it('filtro por status mantém o pai de um subagente que bate e tira os subagentes que não batem', () => {
+    const g = groupRooms(snap, { query: '', hiddenAccounts: new Set(), status: 'parados' });
+    const api = g.find((r) => r.room.id === 'api')!;
+    expect(api.nodes.map((n) => n.agent.id)).toEqual(['joao']);
+    expect(api.nodes[0].subs.map((s) => s.id)).toEqual(['sub2']);
+  });
+  it('principal que bate com o filtro de status só mostra os subagentes que também batem', () => {
+    const g = groupRooms(snap, { query: '', hiddenAccounts: new Set(), status: 'trabalhando' });
+    const joao = g.find((r) => r.room.id === 'api')!.nodes.find((n) => n.agent.id === 'joao')!;
+    expect(joao.subs.map((s) => s.id)).toEqual(['sub1']);
+  });
   it('sem snapshot devolve lista vazia', () => {
     expect(groupRooms(null)).toEqual([]);
   });

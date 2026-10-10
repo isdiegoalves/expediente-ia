@@ -138,6 +138,10 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi,
       if (!panels.sidebar) ctx.togglePanel('sidebar', true);
       requestAnimationFrame(() => sidebar.focusSearch());
     },
+    showWaiting() {
+      sidebar.setStatus('esperando');
+      ctx.togglePanel('sidebar', true);
+    },
     openHelp: (section) => help.open(section),
     toggleSettings: () => settings.toggle(topbar.settingsBtn),
     openAbout: () => settings.showAbout(topbar.settingsBtn),

@@ -1,5 +1,6 @@
 // Barra lateral: busca, filtro por conta e a lista de salas -> agentes -> subagentes.
 import type { AccountInfo, AgentInfo } from '../../../shared/types';
+import { textoPrecisamDeVoce } from '../../../shared/espera';
 import { roomTheme } from '../art';
 import type { UiComponent, UiContext } from './context';
 import { createGrupoHead, itemKey, itensDeSubs, updateGrupoHead, type ItemSubs } from './equipes';
@@ -10,13 +11,17 @@ import { plural, shortPath } from './format';
 import { ICONS } from './icons';
 import { groupRooms, type AgentNode, type RoomGroup } from './model';
 import { officeIsEmpty } from './overlays';
+import { salasRecolhidas, alternarSala } from './recolhidas';
 import { createAgentRow, updateAgentRow } from './rows';
+import { contarPorStatus, esperamNoNo, STATUS_FILTROS, subirQuemEspera, type StatusFiltro } from './urgencia';
 import { createAccountChip, createProgress, updateAccountChip, updateProgress } from './widgets';
 
 interface RoomRefs {
   head: HTMLButtonElement;
   name: HTMLElement;
   count: HTMLElement;
+  espera: HTMLElement;
+  fold: HTMLButtonElement;
   path: HTMLElement;
   accs: KeyedList<AccountInfo | string>;
   tasks: HTMLElement;
@@ -39,6 +44,9 @@ export class Sidebar implements UiComponent {
   private input: HTMLInputElement;
   private query = '';
   private filters: HTMLElement;
+  private statusBar: HTMLElement;
+  private statusBtns = new Map<StatusFiltro, HTMLButtonElement>();
+  private status: StatusFiltro = 'todos';
   private filterList: KeyedList<AccountInfo, HTMLButtonElement>;
   private scroller: HTMLElement;
   private rooms: KeyedList<RoomGroup>;
@@ -101,6 +109,14 @@ export class Sidebar implements UiComponent {
       },
     });
 
+    this.statusBar = h('div', { class: 'ui-status-filters', role: 'group', attrs: { 'aria-label': 'Filtrar por status' } });
+    for (const f of STATUS_FILTROS) {
+      const b = h('button', { class: 'ui-status-filter', type: 'button', attrs: { 'data-status': f.id } }, h('span', { class: 'ui-status-filter__name', text: f.rotulo }), h('span', { class: 'ui-status-filter__n' }));
+      b.addEventListener('click', () => this.setStatus(f.id));
+      this.statusBtns.set(f.id, b);
+      this.statusBar.append(b);
+    }
+
     this.scroller = h('div', { class: 'ui-side__scroll' });
     const list = h('div', { class: 'ui-rooms', role: 'list', attrs: { 'aria-label': 'Salas' } });
     this.scroller.append(list);
@@ -119,7 +135,9 @@ export class Sidebar implements UiComponent {
         click: () => {
           this.input.value = '';
           this.query = '';
+          this.status = 'todos';
           this.ctx.updatePrefs({ hiddenAccounts: [] });
+          this.ctx.invalidate();
         },
       },
     });
@@ -130,9 +148,15 @@ export class Sidebar implements UiComponent {
     this.el = h(
       'aside',
       { class: 'ui-panel ui-sidebar', attrs: { 'aria-label': 'Salas e agentes', id: 'ui-sidebar' } },
-      h('div', { class: 'ui-side__head' }, h('div', { class: 'ui-side__title' }, h('h2', { text: 'Escritório' }), close), search, this.filters),
+      h('div', { class: 'ui-side__head' }, h('div', { class: 'ui-side__title' }, h('h2', { text: 'Escritório' }), close), search, this.filters, this.statusBar),
       this.scroller,
     );
+  }
+
+  /** Mostra só um grupo de status (ex.: quem espera você). */
+  setStatus(status: StatusFiltro): void {
+    this.status = status;
+    this.ctx.invalidate();
   }
 
   focusSearch(): void {
@@ -147,12 +171,21 @@ export class Sidebar implements UiComponent {
     this.filterList.sync(accounts.length > 1 ? accounts : []);
     setHidden(this.filters, accounts.length <= 1);
 
-    // Ordem das salas escolhida pelo usuário (arrastando o cabeçalho da sala).
-    const groups = orderRooms(groupRooms(snap, { query: this.query, hiddenAccounts: hidden }), (g) => g.room.id);
-    this.shownRooms = groups.map((g) => g.room.id);
+    const counts = contarPorStatus(snap?.agents.filter((a) => a.status !== 'offline') ?? []);
+    for (const [id, b] of this.statusBtns) {
+      setText(b.lastElementChild!, String(counts[id]));
+      setAttr(b, 'aria-pressed', String(this.status === id));
+      b.classList.toggle('is-on', this.status === id);
+      b.classList.toggle('is-urgent', id === 'esperando' && counts.esperando > 0);
+    }
+
+    // Ordem das salas escolhida pelo usuário (arrastando o cabeçalho da sala); quem espera sobe sem mexer nela.
+    const manual = orderRooms(groupRooms(snap, { query: this.query, hiddenAccounts: hidden, status: this.status }), (g) => g.room.id);
+    this.shownRooms = manual.map((g) => g.room.id);
+    const groups = subirQuemEspera(manual, (g) => g.nodes.some((n) => esperamNoNo(n) > 0));
     this.rooms.sync(groups);
 
-    const filtering = this.query.trim().length > 0 || hidden.size > 0;
+    const filtering = this.query.trim().length > 0 || hidden.size > 0 || this.status !== 'todos';
     const total = snap?.agents.length ?? 0;
     // Escritório vazio sem filtro: o cartão central já explica; a lista não repete o aviso.
     const showEmpty = groups.length === 0 && (filtering || !officeIsEmpty(this.ctx));
@@ -163,7 +196,9 @@ export class Sidebar implements UiComponent {
         filtering && total > 0
           ? this.query.trim()
             ? `Nenhum agente encontrado para “${this.query.trim()}”.`
-            : 'Nenhum agente nas contas selecionadas.'
+            : this.status !== 'todos'
+              ? 'Nenhum agente neste status.'
+              : 'Nenhum agente nas contas selecionadas.'
           : 'Nenhuma sessão aberta no momento.',
       );
       setHidden(this.clearBtn, !(filtering && total > 0));
@@ -196,6 +231,7 @@ export class Sidebar implements UiComponent {
   private createRoom(g: RoomGroup): HTMLElement {
     const name = h('span', { class: 'ui-room__name' });
     const count = h('span', { class: 'ui-room__count' });
+    const espera = h('span', { class: 'ui-room__wait', hidden: true });
     const accsEl = h('span', { class: 'ui-room__accs' });
     const path = h('span', { class: 'ui-room__path' });
     const tasksBar = createProgress('Progresso das tarefas da sala');
@@ -206,7 +242,7 @@ export class Sidebar implements UiComponent {
       'button',
       { class: 'ui-room__head', type: 'button' },
       swatch,
-      h('span', { class: 'ui-room__line' }, name, count, accsEl),
+      h('span', { class: 'ui-room__line' }, name, count, espera, accsEl),
       path,
       tasks,
     );
@@ -225,7 +261,13 @@ export class Sidebar implements UiComponent {
       // Sem tema: mantém a cor padrão do CSS.
     }
     const agentsEl = h('ul', { class: 'ui-nodes' });
-    const section = h('section', { class: 'ui-room', role: 'listitem' }, head, agentsEl);
+    const fold = h('button', { class: 'ui-room__fold', type: 'button' });
+    fold.innerHTML = ICONS.chevronDown;
+    const section = h('section', { class: 'ui-room', role: 'listitem' }, h('div', { class: 'ui-room__bar' }, head, fold), agentsEl);
+    fold.addEventListener('click', () => {
+      alternarSala(g.room.id);
+      this.ctx.invalidate();
+    });
     const accs = new KeyedList<AccountInfo | string>(accsEl, {
       animate: false,
       key: (a) => (typeof a === 'string' ? a : a.id),
@@ -237,7 +279,7 @@ export class Sidebar implements UiComponent {
       create: (n) => this.createNode(n),
       update: (el, n) => this.updateNode(el, n),
     });
-    this.roomRefs.set(section, { head, name, count, path, accs, tasks, tasksBar, tasksText, nodes });
+    this.roomRefs.set(section, { head, name, count, espera, fold, path, accs, tasks, tasksBar, tasksText, nodes });
     return section;
   }
 
@@ -257,6 +299,17 @@ export class Sidebar implements UiComponent {
     setAttr(r.head, 'aria-current', selected ? 'true' : null);
     section.classList.toggle('is-empty', present === 0);
 
+    const esperando = g.nodes.reduce((n, x) => n + esperamNoNo(x), 0);
+    setHidden(r.espera, esperando === 0);
+    setText(r.espera, `✋ ${esperando}`);
+    setTitle(r.espera, textoPrecisamDeVoce(esperando));
+    // Com filtro ativo a sala abre: quem filtra quer ver os agentes.
+    const recolhida = salasRecolhidas().has(g.room.id) && this.query.trim() === '' && this.status === 'todos';
+    section.classList.toggle('is-folded', recolhida);
+    setAttr(r.fold, 'aria-expanded', String(!recolhida));
+    setAttr(r.fold, 'aria-label', `${recolhida ? 'Expandir' : 'Recolher'} a sala ${g.room.name}`);
+    setTitle(r.fold, recolhida ? 'Expandir a sala' : 'Recolher a sala');
+
     const t = g.tasks;
     setHidden(r.tasks, t.total === 0);
     if (t.total > 0) {
@@ -264,9 +317,9 @@ export class Sidebar implements UiComponent {
       setText(r.tasksText, `${t.completed}/${t.total} tarefas`);
     }
     // Ordem escolhida pelo usuário (arrastando as linhas), guardada no navegador.
-    const ordered = orderAgents(g.room.id, g.nodes, (n) => n.agent.sessionId);
-    this.shown.set(g.room.id, ordered);
-    r.nodes.sync(ordered);
+    const manual = orderAgents(g.room.id, g.nodes, (n) => n.agent.sessionId);
+    this.shown.set(g.room.id, manual);
+    r.nodes.sync(subirQuemEspera(manual, (n) => esperamNoNo(n) > 0));
   }
 
   /** Arrastar o cabeçalho de uma sala reordena as salas da lista. */

@@ -3,6 +3,7 @@
 import type { AccountInfo, Activity, AgentInfo, AgentStatus, OfficeSnapshot, RoomInfo, ShellJob, TaskItem } from '../../../shared/types';
 import { tema } from '../tema';
 import { formatElapsed, normalizeSearch } from './format';
+import { bateStatus, type StatusFiltro } from './urgencia';
 
 const rotulos = tema().textos.status;
 
@@ -307,6 +308,8 @@ export interface AgentFilter {
   query: string;
   /** Contas ocultas (AccountInfo.id). */
   hiddenAccounts: ReadonlySet<string>;
+  /** Só agentes deste grupo de status (ausente = todos). */
+  status?: StatusFiltro;
 }
 
 export interface AgentNode {
@@ -369,7 +372,8 @@ export function groupRooms(snap: Pick<OfficeSnapshot, 'rooms' | 'agents' | 'acco
   const accountOrder = new Map(snap.accounts.map((a, i) => [a.id, i]));
   const query = filter?.query.trim() ?? '';
   const hidden = filter?.hiddenAccounts ?? new Set<string>();
-  const filtering = query.length > 0 || hidden.size > 0;
+  const status = filter?.status ?? 'todos';
+  const filtering = query.length > 0 || hidden.size > 0 || status !== 'todos';
 
   const byRoom = new Map<string, AgentInfo[]>();
   for (const a of snap.agents) {
@@ -381,7 +385,7 @@ export function groupRooms(snap: Pick<OfficeSnapshot, 'rooms' | 'agents' | 'acco
   const groups: RoomGroup[] = [];
   for (const room of [...snap.rooms].sort((a, b) => a.slot - b.slot)) {
     const agents = (byRoom.get(room.id) ?? []).slice().sort(byArrival);
-    const visible = (a: AgentInfo) => !hidden.has(a.account) && matchesQuery(a, room, accounts.get(a.account), query);
+    const visible = (a: AgentInfo) => !hidden.has(a.account) && bateStatus(a, status) && matchesQuery(a, room, accounts.get(a.account), query);
     const ids = new Set(agents.map((a) => a.id));
     const subsOf = new Map<string, AgentInfo[]>();
     const top: AgentInfo[] = [];
@@ -400,7 +404,7 @@ export function groupRooms(snap: Pick<OfficeSnapshot, 'rooms' | 'agents' | 'acco
     for (const a of top) {
       const subs = subsOf.get(a.id) ?? [];
       const selfVisible = visible(a);
-      const visibleSubs = selfVisible ? subs.filter((s) => !hidden.has(s.account)) : subs.filter(visible);
+      const visibleSubs = selfVisible ? subs.filter((s) => !hidden.has(s.account) && bateStatus(s, status)) : subs.filter(visible);
       if (!selfVisible && visibleSubs.length === 0) continue;
       matches += (selfVisible ? 1 : 0) + visibleSubs.length;
       nodes.push({ agent: a, subs: visibleSubs, subTotal: subs.length });
