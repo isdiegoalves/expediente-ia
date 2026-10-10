@@ -172,9 +172,7 @@ export function partidas(r: RodaAgendada): { vencedor: string; perdedor: string;
 
 interface EmAndamento {
   roda: RodaAgendada;
-  /** Um jogador deixou de estar à toa antes do fim: a partida não vale (W.O. não paga). */
-  abandonada: boolean;
-  /** Quem saiu da roda (chamado para trabalhar) e pode entrar em outra quando voltar. */
+  /** Quem saiu da roda (chamado para trabalhar): já não é publicado nela e não volta para ela. */
   saiu: Set<string>;
 }
 
@@ -241,7 +239,7 @@ export class MotorSocial {
 
   /** Roda montada fora da agenda (depuração): entra no livro como as outras. */
   incluir(roda: RodaAgendada): void {
-    this.rodas.push({ roda, abandonada: false, saiu: new Set() });
+    this.rodas.push({ roda, saiu: new Set() });
   }
 
   estado(): SocialSnapshot {
@@ -271,19 +269,25 @@ export class MotorSocial {
 
   // ------------------------------------------------------------------ rodas em andamento
 
+  /**
+   * Quem deixou de estar à toa sai da roda publicada. Partida que perde um jogador acaba na hora, sem pagar (W.O.);
+   * roda que fica abaixo do mínimo também acaba.
+   */
   private acompanhar(agora: number, livres: ReadonlyMap<string, Livre>): void {
     const seguem: EmAndamento[] = [];
     for (const e of this.rodas) {
-      if (agora >= e.roda.fim) {
-        if (!e.abandonada) this.pagar(e.roda, agora);
-        for (const id of this.membros(e.roda)) this.quer.delete(id);
+      const r = e.roda;
+      if (agora >= r.fim) {
+        this.pagar(r, agora);
+        for (const id of this.membros(r)) this.quer.delete(id);
         continue;
       }
-      for (const id of this.membros(e.roda)) {
-        if (livres.has(id) || agora < this.entrada(e.roda, id)) continue;
-        e.saiu.add(id);
-        if (KINDS[e.roda.tipo].match && e.roda.participantes.indexOf(id) < 2) e.abandonada = true;
-      }
+      const sairam = this.membros(r).filter((id) => !livres.has(id) && agora >= this.entrada(r, id));
+      if (KINDS[r.tipo].match && r.participantes.slice(0, 2).some((id) => sairam.includes(id))) continue;
+      for (const id of sairam) e.saiu.add(id);
+      r.participantes = r.participantes.filter((id) => !e.saiu.has(id));
+      if (r.tardios) r.tardios = r.tardios.filter((t) => !e.saiu.has(t.id));
+      if (this.membros(r).length < KINDS[r.tipo].min) continue;
       seguem.push(e);
     }
     this.rodas = seguem;
@@ -307,9 +311,7 @@ export class MotorSocial {
   }
 
   private ocupados(): Set<string> {
-    const out = new Set<string>();
-    for (const e of this.rodas) for (const id of this.membros(e.roda)) if (!e.saiu.has(id)) out.add(id);
-    return out;
+    return new Set(this.rodas.flatMap((e) => this.membros(e.roda)));
   }
 
   // ------------------------------------------------------------------ rodas novas
@@ -377,7 +379,7 @@ export class MotorSocial {
     if (chosen.length + 1 < (kind === 'mirror' ? (host.shell ? 2 : 1) : info.min)) return false;
     const id = `${agora.toString(36)}-${hash32(host.a.id).toString(36)}`;
     const roda = montarRoda(this.semente, id, kind, [host.a, ...chosen.map((c) => c.a)], agora, (x) => this.carteiras.coins(x));
-    this.rodas.push({ roda, abandonada: false, saiu: new Set() });
+    this.rodas.push({ roda, saiu: new Set() });
     for (const q of [host, ...chosen]) {
       livres.delete(q.a.id);
       this.quer.delete(q.a.id);
@@ -392,8 +394,8 @@ export class MotorSocial {
     for (const e of this.rodas) {
       const k = e.roda.tipo;
       if (k === 'talk' || k === 'arcade' || k === 'mirror') continue;
-      if (e.roda.fim - agora < ENTRADA_MIN_MS) continue;
-      const dentro = this.membros(e.roda).filter((id) => !e.saiu.has(id));
+      if (e.roda.fim - agora < ENTRADA_MIN_MS || e.saiu.has(l.a.id)) continue;
+      const dentro = this.membros(e.roda);
       if (dentro.length >= KINDS[k].max) continue;
       let s = KINDS[k].match ? 0.8 : 1;
       s *= k === 'tv' ? (hasTrait(l.p, 'series') ? 3 : 1.4) : k === 'kitchen' ? (hasTrait(l.p, 'fofoca') || hasTrait(l.p, 'cafeina') ? 2.5 : 1) : hasTrait(l.p, 'competicao') || hasTrait(l.p, 'esporte') || hasTrait(l.p, 'games') ? 2 : 1;

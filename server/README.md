@@ -197,6 +197,10 @@ andamento e as carteiras de quem está presente saem no snapshot (`social`); o n
 mostram a mesma roda. A aposta é paga no fim previsto, se os dois jogadores seguirem à toa até lá (W.O. não paga).
 Tarefa concluída, pedido atendido e entrega de subagente pagam no servidor, uma vez.
 
+Quem deixa de estar à toa sai da roda publicada e não volta para ela, mesmo que fique à toa de novo antes do fim (pode
+entrar em outra). A partida que perde um jogador deixa de ser publicada na hora, e a roda que fica abaixo do mínimo
+também.
+
 Numa sala com mais de oito subagentes em atividade (`MAX_INDIVIDUAIS`, em `shared/equipes.ts`), nenhum subagente dela é
 convidado para rodas: só oito viram personagem, e quais são cada aba escolhe pela ordem em que os viu chegar, então o
 servidor não tem como saber quem a aba conseguiria animar. Quem já estava numa roda quando a sala encheu fica nela até

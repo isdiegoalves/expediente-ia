@@ -254,4 +254,98 @@ describe('agenda das rodas', () => {
       expect(m.estado().rodas.find((r) => r.id === alvo!.id)?.participantes).toEqual(alvo!.participantes);
     }
   });
+
+  it('quem sai de uma roda e volta à toa antes do fim nunca é publicado em duas rodas ao mesmo tempo, nem de volta na que deixou', () => {
+    let [testadas, seguiuSemEle, foiParaOutra, emDuas, deVolta] = [0, 0, 0, 0, 0];
+    for (let semente = 1; semente <= 40; semente++) {
+      const antes = new MotorSocial(semente);
+      let alvo: RodaAgendada | undefined;
+      for (let t = T0; t <= T0 + 900_000 && !alvo; t += 1000) {
+        antes.passo(t, OCIOSOS);
+        alvo = antes.estado().rodas.find((r) => (r.tipo === 'kitchen' || r.tipo === 'tv') && r.fim - r.inicio > 30_000);
+      }
+      if (!alvo) continue;
+      testadas++;
+      const { id, inicio, fim } = alvo;
+      const quem = alvo.participantes.at(-1)!;
+      const [sai, volta] = [inicio + 5_000, inicio + 13_000];
+      const m = new MotorSocial(semente);
+      const outras = new Set<string>();
+      for (let t = T0; t <= fim + 30_000; t += 1000) {
+        const fora = t >= sai && t < volta;
+        m.passo(t, OCIOSOS.map((a) => (a.id === quem && fora ? { ...a, status: 'working', statusSince: sai } : a.id === quem && t >= volta ? { ...a, statusSince: volta } : a)));
+        const rodas = m.estado().rodas;
+        const todos = rodas.flatMap(membros);
+        if (new Set(todos).size !== todos.length) emDuas++;
+        const antiga = rodas.find((r) => r.id === id);
+        if (t === sai && antiga) seguiuSemEle++;
+        if (t >= sai && antiga && membros(antiga).includes(quem)) deVolta++;
+        if (t >= volta && t < fim) for (const r of rodas) if (r.id !== id && membros(r).includes(quem)) outras.add(r.id);
+      }
+      if (outras.size) foiParaOutra++;
+    }
+    expect([emDuas, deVolta]).toEqual([0, 0]);
+    expect(testadas).toBeGreaterThanOrEqual(30);
+    expect(seguiuSemEle).toBeGreaterThanOrEqual(10);
+    expect(foiParaOutra).toBeGreaterThanOrEqual(10);
+  });
+
+  it('roda que fica abaixo do mínimo acaba na hora: quem ficou não segue preso a ela', () => {
+    const [ana, bia] = OCIOSOS;
+    const m = new MotorSocial(1);
+    m.incluir(montarRoda(1, 'papo', 'talk', [ana, bia], T0, () => 100));
+    m.passo(T0 + 1_000, [ana, bia]);
+    expect(m.estado().rodas.map((r) => r.id)).toEqual(['papo']);
+    m.passo(T0 + 2_000, [ana, { ...bia, status: 'working' }]);
+    expect(m.estado().rodas).toEqual([]);
+  });
+
+  it('torcedor que sai, inclusive o que chegou com o jogo andando, não derruba a partida: ela segue publicada e é paga no fim', () => {
+    const quatro = OCIOSOS.slice(0, 4);
+    const [ana, bia, caio, davi] = quatro;
+    const m = new MotorSocial(1);
+    const roda = montarRoda(1, 'jogo', 'pingpong', [ana, bia, caio], T0, () => 100);
+    roda.tardios = [{ id: davi.id, em: T0 + 1_000 }];
+    m.incluir(roda);
+    const trabalhando = (ids: string[]) => quatro.map((a) => (ids.includes(a.id) ? { ...a, status: 'working' as const } : a));
+    m.passo(T0 + 2_000, quatro);
+    m.passo(T0 + 3_000, trabalhando(['davi']));
+    expect(m.estado().rodas.map((r) => [r.id, r.participantes, r.tardios])).toEqual([['jogo', ['ana', 'bia', 'caio'], []]]);
+    m.passo(T0 + 4_000, trabalhando(['davi', 'caio']));
+    expect(m.estado().rodas.map((r) => [r.id, r.participantes])).toEqual([['jogo', ['ana', 'bia']]]);
+    for (let t = T0 + 5_000; t <= roda.fim + 1_000; t += 1000) m.passo(t, trabalhando(['davi', 'caio']));
+    const c = m.estado().carteiras;
+    expect([c.ana.wins + c.ana.losses, c.bia.wins + c.bia.losses]).toEqual([1, 1]);
+  });
+
+  it('partida em que um jogador sai deixa de ser publicada na hora, e o outro fica livre para outra roda antes do fim previsto', () => {
+    const vistas = [...rodar(new MotorSocial(13), 900).values()];
+    const alvo = vistas.find((r) => partidas(r).some((p) => p.aposta > 0))!;
+    const [p1, p2] = alvo.participantes;
+    const sai = alvo.inicio + 3_000;
+    const m = new MotorSocial(13);
+    let outraDoP2 = false;
+    for (let t = T0; t < alvo.fim; t += 1000) {
+      m.passo(t, OCIOSOS.map((a) => (a.id === p1 && t >= sai ? { ...a, status: 'working', statusSince: sai } : a)));
+      if (t < sai) continue;
+      expect(m.estado().rodas.map((r) => r.id)).not.toContain(alvo.id);
+      outraDoP2 ||= m.estado().rodas.some((r) => membros(r).includes(p2));
+    }
+    expect(outraDoP2).toBe(true);
+  });
+
+  it('mesma semente e mesmo relógio, com gente saindo, voltando e uma sala enchendo: as mesmas rodas e os mesmos saldos', () => {
+    const cena = (t: number): AgenteSocial[] => {
+      const s = (t - T0) / 1000;
+      const daVez = Math.floor(s / 20) % OCIOSOS.length;
+      const vaivem = OCIOSOS.map((a, i) => (i === daVez && s % 20 < 8 ? { ...a, status: 'working' as const } : a));
+      return [...vaivem, ...subs(s < 240 ? 5 : 12, '/time')];
+    };
+    const a = new MotorSocial(42);
+    const b = new MotorSocial(42);
+    const ra = rodar(a, 480, cena);
+    expect(ra.size).toBeGreaterThan(10);
+    expect([...rodar(b, 480, cena).values()]).toEqual([...ra.values()]);
+    expect(b.estado().carteiras).toEqual(a.estado().carteiras);
+  });
 });

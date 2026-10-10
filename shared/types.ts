@@ -408,7 +408,7 @@ export interface RodaAgendada {
   inicio: number;
   /** Fim previsto; a aposta é paga nesta hora se os dois jogadores seguirem à toa até lá. */
   fim: number;
-  /** Anfitrião primeiro; nas partidas, os dois primeiros jogam e o resto torce. */
+  /** Anfitrião primeiro; nas partidas, os dois primeiros jogam e o resto torce. Quem deixa a roda sai da lista. */
   participantes: string[];
   /** Quem chega com a roda andando (TV, copa, torcida). */
   tardios?: { id: string; em: number }[];
