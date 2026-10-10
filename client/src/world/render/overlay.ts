@@ -11,14 +11,16 @@ import { coresDerivadas } from '../../tema/cores';
 import { tema } from '../../tema';
 import type { WorldOptions } from '../api';
 import type { Camera } from '../camera';
+import type { Hit } from '../input';
 import { COL_W, CORRIDOR_Y, SOUTH_Y } from '../constants';
 import type { Character } from '../sim/character';
 import { shellAgeKey, shellBubbleAlpha, shellBubbleText, STORM_LIFT, unitHash } from '../sim/shell';
 import type { Sim } from '../sim/sim';
 import { buildAnim } from './anim';
-import { lugarDoBalao, Ocupacao } from './disposicao';
+import { lugarDoBalao, Ocupacao, type Caixa } from './disposicao';
 import { drawFxBanner } from './github-fx';
 import type { HeadInfo, Renderer } from './renderer';
+import { alturaDaLista, desenharLista, desenharPlaca, larguraDaPlaca, linhasDaLista, LISTA_NOMES_W, LISTA_W, NOME_FONT, PLACA_H, pecasDaPlaca, tituloDaRoda, type PecaDaPlaca } from './roda-texto';
 
 // A Pixelify Sans tem o "C" maiúsculo quase fechado (lê-se "Oopa" em vez de "Copa") em qualquer
 // peso/tamanho usado no canvas; os textos do mundo usam a fonte do sistema, sempre legível.
@@ -110,6 +112,21 @@ interface Label {
 
 type Item = Bubble | Label;
 
+/** Placa ou lista aberta de uma roda da equipe, já posta na tela neste quadro. */
+interface TextoDaRoda {
+  roomId: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** x da ponta que aponta para a roda. */
+  cauda: number;
+  pecas: PecaDaPlaca[] | null;
+  /** Embaixo da roda (a ponta sobe até ela). */
+  abaixo: boolean;
+  destaque: string;
+}
+
 /** Luminância relativa de uma cor hex (0..1). */
 function luminance(hex: string): number {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex);
@@ -154,6 +171,10 @@ export class Overlay {
   private fitted = new Map<string, string>();
   private ocupacao = new Ocupacao();
   private readonly livre = (x: number, y: number, w: number, h: number) => this.ocupacao.livre(x, y, w, h);
+  private textosDasRodas: TextoDaRoda[] = [];
+  /** Nomes (e o "e mais N") da lista aberta e o que o clique em cada um escolhe (px CSS). */
+  private alvosDaLista: (Caixa & { hit: Hit })[] = [];
+  private alvosDasPlacas: TextoDaRoda[] = [];
   private items: Item[] = [];
   /** Objetos reaproveitados entre frames (sem alocação no caminho quente). */
   private bubblePool: Bubble[] = [];
@@ -275,6 +296,7 @@ export class Overlay {
     // placas e pílulas primeiro: são fixas e grandes; balões e etiquetas desviam delas
     this.drawRoomTexts(now, zoom);
     this.drawFxBanners(now, zoom);
+    this.disporRodas(zoom);
 
     // ---- coleta balões e etiquetas dos personagens visíveis
     const items = this.items;
@@ -331,7 +353,83 @@ export class Overlay {
     }
     this.drawChats(now);
     this.drawFloaters(now);
+    this.desenharRodas(sel);
     ctx.textBaseline = 'alphabetic';
+  }
+
+  // =================================================================== roda da equipe
+
+  /** Lista aberta (por cima de tudo) e placas das rodas visíveis, postas antes dos balões para eles desviarem. */
+  private disporRodas(zoom: number): void {
+    const out = this.textosDasRodas;
+    out.length = 0;
+    const fanout = this.sim.fanout;
+    if (!fanout.rodas.size) {
+      fanout.aberta = null;
+      return;
+    }
+    const vw = this.camera.viewW;
+    const vh = this.camera.viewH;
+    if (fanout.aberta && !fanout.rodas.has(fanout.aberta)) fanout.aberta = null;
+    const ordem = [...fanout.rodas.values()].sort((a, b) => Number(b.roomId === fanout.aberta) - Number(a.roomId === fanout.aberta));
+    for (const r of ordem) {
+      const room = this.sim.rooms.get(r.roomId);
+      if (!room || !room.present || room.ghost || room.phase !== 'ready') continue;
+      const l = fanout.lugar(room);
+      const cx = this.sx(l.x);
+      const topo = this.sy(l.y - 34 - (r.esperando ? 14 : 0)) - 4;
+      if (cx < -LISTA_W || cx > vw + LISTA_W || topo < -40 || this.sy(l.y) > vh + 40) continue;
+      if (r.roomId === fanout.aberta) {
+        const w = Math.min(LISTA_W, vw - 8);
+        const h = alturaDaLista(linhasDaLista(r, LISTA_NOMES_W, (t) => this.measure(NOME_FONT, t)));
+        const x = Math.max(4, Math.min(vw - w - 4, Math.round(cx - w / 2)));
+        const abaixo = topo - h - 6 < 4;
+        const y = abaixo ? Math.round(this.sy(l.y + 12) + 8) : Math.round(topo - h - 6);
+        this.place(x, y, w, h);
+        out.push({ roomId: r.roomId, x, y, w, h, cauda: Math.max(x + 10, Math.min(x + w - 10, Math.round(cx))), pecas: null, abaixo, destaque: room.theme.accent });
+        continue;
+      }
+      if (zoom < TINY_ZOOM && !r.esperando) continue;
+      const pecas = pecasDaPlaca(r, zoom < OVERVIEW_ZOOM);
+      const curta = pecas.filter((p) => !p.estado);
+      // embaixo dos pés da roda, para não cobrir as mesas de quem trabalha; sem espaço, em cima das cabeças
+      const pedido = { cx, w: larguraDaPlaca(pecas, (f, t) => this.measure(f, t)), h: PLACA_H, chip: { w: larguraDaPlaca(curta, (f, t) => this.measure(f, t)), h: PLACA_H } };
+      const embaixo = lugarDoBalao({ ...pedido, base: this.sy(l.y + 12) + 6 + PLACA_H, degraus: 0 }, vw, this.livre);
+      const lugar = embaixo ?? lugarDoBalao({ ...pedido, base: topo, degraus: 2 }, vw, this.livre);
+      if (!lugar) continue;
+      this.place(lugar.x, lugar.y, lugar.w, lugar.h);
+      out.push({ roomId: r.roomId, x: lugar.x, y: lugar.y, w: lugar.w, h: lugar.h, cauda: Math.max(lugar.x + 10, Math.min(lugar.x + lugar.w - 10, Math.round(cx))), pecas: lugar.chip ? curta : pecas, abaixo: !!embaixo, destaque: room.theme.accent });
+    }
+  }
+
+  private desenharRodas(sel: { agent: string | null }): void {
+    this.alvosDaLista.length = 0;
+    this.alvosDasPlacas.length = 0;
+    const measure = (f: string, t: string) => this.measure(f, t);
+    for (const t of this.textosDasRodas) {
+      const r = this.sim.fanout.rodas.get(t.roomId);
+      if (!r) continue;
+      if (t.pecas) {
+        desenharPlaca(this.ctx, t.pecas, t, t.cauda, t.abaixo, t.destaque, measure);
+        this.alvosDasPlacas.push(t);
+        continue;
+      }
+      const titulo = tituloDaRoda(r, (id) => this.sim.chars.get(id)?.info.name);
+      const linhas = linhasDaLista(r, LISTA_NOMES_W, (x) => this.measure(NOME_FONT, x));
+      const alvos = desenharLista(this.ctx, titulo, linhas, t, t.cauda, t.abaixo, sel.agent, measure, (f, x, w) => this.fit(f, x, w));
+      // "e mais N" abre quem disparou a roda (a gaveta lista todos, por time) ou, sem pai único, a sala
+      const todos: Hit = r.parentId ? { type: 'agent', id: r.parentId } : { type: 'room', id: r.roomId };
+      for (const a of alvos) this.alvosDaLista.push({ x: a.x, y: a.y, w: a.w, h: a.h, hit: a.id ? { type: 'agent', id: a.id } : todos });
+      this.alvosDasPlacas.push(t);
+    }
+  }
+
+  /** Clique (px CSS) num nome da lista aberta, na lista ou numa placa de roda. */
+  alvoDaRoda(sx: number, sy: number): Hit {
+    const dentro = (c: { x: number; y: number; w: number; h: number }) => sx >= c.x && sx <= c.x + c.w && sy >= c.y && sy <= c.y + c.h;
+    for (const a of this.alvosDaLista) if (dentro(a)) return a.hit;
+    for (const t of this.alvosDasPlacas) if (dentro(t)) return { type: 'grupo', id: t.roomId };
+    return null;
   }
 
   /** Quem senta virado para a câmera atrás de uma mesa: a etiqueta nos pés cobriria a tela do colega. */
@@ -439,6 +537,7 @@ export class Overlay {
 
   private countIn(roomId: string): number {
     let n = 0;
+    for (const m of this.sim.fanout.rodas.get(roomId)?.membros ?? []) if (!this.sim.chars.has(m.id)) n++;
     for (const c of this.sim.chars.values()) if (c.roomId === roomId && !c.leaving) n++;
     return n;
   }
@@ -601,6 +700,10 @@ export class Overlay {
       const hx = head ? this.sx(head.x) : -1e9;
       const hy = head ? this.sy(head.y) : -1e9;
       esperando.push({ id: ch.id, roomId: ch.roomId, visivel: !!head?.visible && hx >= -120 && hx <= vw + 120 && hy >= -60 && hy <= vh + 80 });
+    }
+    for (const r of this.sim.fanout.rodas.values()) {
+      if (!r.esperando) continue;
+      for (const m of r.membros) if (m.status === 'waiting' && !this.sim.chars.has(m.id)) esperando.push({ id: m.id, roomId: r.roomId, visivel: false });
     }
     return esperando.length ? esperaPorSala(esperando) : null;
   }

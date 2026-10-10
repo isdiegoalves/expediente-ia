@@ -20,6 +20,10 @@ do meio (0.**3**.0).
   que segue o mouse e as bordas desfocadas. Nomes, balões e o aviso de quem espera você continuam nítidos por cima. Vem
   desligado (o escritório fica como sempre e nada extra é carregado), a escolha fica no navegador e, sem WebGL2 no
   navegador, a opção aparece desativada.
+- **Fan-out sem lotar a sala.** Com mais de oito subagentes numa sala, oito trabalham nas mesas como antes e os demais
+  ficam numa roda da equipe, em pé sobre um tapete na cor da sala, com uma placa que conta quantos trabalham, esperam
+  você e concluíram; quem espera você sai da roda primeiro. Um clique na roda abre a lista de quem está nela, e o nome
+  leva ao subagente. Os balões não se cobrem mais: quem não acha lugar desvia, vira só o ícone ou espera a vez.
 
 ## [1.1.0] - 2026-10-10
 

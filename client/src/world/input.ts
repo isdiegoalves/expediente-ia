@@ -1,7 +1,8 @@
 // Entrada: arrastar (mouse/toque), roda/pinça (zoom no cursor), clique/duplo clique e teclado.
 import type { Camera } from './camera';
 
-export type Hit = { type: 'agent'; id: string } | { type: 'room'; id: string } | null;
+/** `grupo`: a roda da equipe da sala `id` (os subagentes que não viraram personagens). */
+export type Hit = { type: 'agent'; id: string } | { type: 'room'; id: string } | { type: 'grupo'; id: string } | null;
 
 export interface InputHandlers {
   pick(sx: number, sy: number): Hit;

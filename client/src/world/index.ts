@@ -14,6 +14,7 @@ import { rebaseSnapshot } from './playback';
 import { criarMaqueteDoNavegador } from './render/maquete';
 import { Overlay } from './render/overlay';
 import { Renderer } from './render/renderer';
+import { rodaAbertaApos, rodaNoPonto } from './render/roda';
 import { Sim } from './sim/sim';
 import { SoundCues } from './sound-cues';
 
@@ -42,6 +43,7 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
   let cues = new SoundCues(sim, camera);
   let selection: Selection = null;
   let hover: string | null = null;
+  let hoverPointer = false;
   let mouse: { x: number; y: number } | null = null;
   let raf = 0;
   let lastTs = 0;
@@ -110,6 +112,7 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
   const setSelection = (sel: Selection, focus = false) => {
     const same = sameSelection(sel, selection);
     selection = sel;
+    if (!sel) sim.fanout.aberta = null;
     // com "seguir selecionado" ligado, a câmera acompanha o agente escolhido (ou para de seguir)
     if (options.followSelected) camera.follow = sel?.type === 'agent' ? sel.id : null;
     if (focus && sel) {
@@ -119,14 +122,22 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
     if (!same) emitSelect();
   };
 
+  /** Onde está a roda de quem não tem personagem próprio (subagente na roda da equipe). */
+  const rodaDe = (id: string) => {
+    const r = sim.fanout.rodaDe(id);
+    const room = r && sim.rooms.get(r.roomId);
+    return room?.present ? sim.fanout.lugar(room) : null;
+  };
+
   const focusAgent = (id: string, opts: { follow?: boolean } = {}) => {
     const ch = sim.chars.get(id);
-    if (!ch) return;
+    const alvo = ch ?? rodaDe(id);
+    if (!alvo) return;
     userMoved = true;
     const zoom = Math.max(camera.zoom, camera.snapZoom(3));
-    const c = camera.centerFor(ch.x, ch.y - 12, zoom);
+    const c = camera.centerFor(alvo.x, alvo.y - 12, zoom);
     camera.animateTo(c.x, c.y, zoom, Date.now(), 420);
-    camera.follow = opts.follow ? id : null;
+    camera.follow = ch && opts.follow ? id : null;
   };
 
   const focusRoom = (id: string) => {
@@ -150,6 +161,8 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
   // ------------------------------------------------------------------ hit-test
 
   const pick = (sx: number, sy: number): Hit => {
+    const naLista = overlay.alvoDaRoda(sx, sy);
+    if (naLista) return naLista;
     const w = camera.screenToWorld(sx, sy);
     let best: string | null = null;
     let bestDepth = -Infinity;
@@ -163,24 +176,35 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
       }
     }
     if (best) return { type: 'agent', id: best };
+    const roda = rodaNoPonto(w.x, w.y, sim.fanout.rodas.values(), (id) => sim.rooms.get(id));
+    if (roda) return { type: 'grupo', id: roda };
     const tx = Math.floor(w.x / TILE);
     const ty = Math.floor(w.y / TILE);
     for (const room of sim.rooms.values()) if (room.present && !room.ghost && inRect(room.layout.rect, tx, ty)) return { type: 'room', id: room.id };
     return null;
   };
 
-  const setHover = (id: string | null) => {
+  const setHover = (id: string | null, pointer = !!id) => {
+    if (pointer !== hoverPointer) {
+      hoverPointer = pointer;
+      canvas.style.cursor = pointer ? 'pointer' : 'grab';
+    }
     if (id === hover) return;
     hover = id;
-    canvas.style.cursor = id ? 'pointer' : 'grab';
     hoverCbs.forEach((cb) => cb(id));
   };
 
   const detachInput = attachInput(canvas, camera, {
     pick,
-    click: (hit) => setSelection(hit),
+    click: (hit) => {
+      sim.fanout.aberta = rodaAbertaApos(sim.fanout.aberta, hit, (id) => sim.fanout.membro(id));
+      if (hit?.type !== 'grupo') setSelection(hit);
+    },
     doubleClick: (hit) => {
-      if (hit?.type === 'agent') {
+      if (hit?.type === 'grupo') {
+        sim.fanout.aberta = hit.id;
+        focusRoom(hit.id);
+      } else if (hit?.type === 'agent') {
         setSelection(hit);
         focusAgent(hit.id, { follow: true });
       } else if (hit?.type === 'room') focusRoom(hit.id);
@@ -265,10 +289,10 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
       if (soundCbs.size && !playback) cues.update(now, (c) => soundCbs.forEach((cb) => cb(c)));
       if (mouse) {
         const hit = pick(mouse.x, mouse.y);
-        setHover(hit?.type === 'agent' ? hit.id : null);
+        setHover(hit?.type === 'agent' && sim.chars.has(hit.id) ? hit.id : null, hit?.type === 'agent' || hit?.type === 'grupo');
       }
       // seleção de quem já foi embora
-      if (selection?.type === 'agent' && !sim.chars.has(selection.id)) setSelection(null);
+      if (selection?.type === 'agent' && !sim.chars.has(selection.id) && !sim.fanout.membro(selection.id)) setSelection(null);
       if (selection?.type === 'room' && !sim.rooms.has(selection.id)) setSelection(null);
     } catch (err) {
       console.error('[mundo] erro no frame', err);
@@ -375,8 +399,10 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
     },
     screenPositionOf: (id) => {
       const h = renderer.heads.get(id);
-      if (!h || !h.visible) return null;
-      const p = camera.worldToScreen(h.x, h.y - 2);
+      const roda = h ? null : rodaDe(id);
+      const alvo = h?.visible ? { x: h.x, y: h.y - 2 } : roda ? { x: roda.x, y: roda.y - 34 } : null;
+      if (!alvo) return null;
+      const p = camera.worldToScreen(alvo.x, alvo.y);
       if (p.x < 0 || p.y < 0 || p.x > camera.viewW || p.y > camera.viewH) return null;
       return p;
     },

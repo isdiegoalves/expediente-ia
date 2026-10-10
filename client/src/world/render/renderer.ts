@@ -4,7 +4,7 @@
 import { shade, toHex, withAlpha } from '../../art/core/color';
 import { tema } from '../../tema';
 import { coresDerivadas } from '../../tema/cores';
-import { TILE, type ArtModule, type CharacterFrameRequest, type IconName, type ScreenMode, type Sprite } from '../../art/api';
+import { TILE, type Appearance, type ArtModule, type CharacterFrameRequest, type IconName, type ScreenMode, type Sprite } from '../../art/api';
 import type { OfficeTheme, WorldOptions } from '../api';
 import type { WorldAssets } from '../assets';
 import type { Camera } from '../camera';
@@ -14,12 +14,14 @@ import { slotAt } from '../layout/geometry';
 import type { ExteriorProp } from '../layout/types';
 import { screenModeFor } from '../sim/behavior';
 import type { Character } from '../sim/character';
+import type { RodaDaSala } from '../sim/fanout';
 import type { RoomState } from '../sim/room-state';
 import { cobwebScale, hourglassIcon, HOURGLASS_FLIP_MS, STORM_LIFT } from '../sim/shell';
 import type { Sim } from '../sim/sim';
 import { buildAnim, furnitureScale, NO_ANIM, sweepDelay, type BuildAnim } from './anim';
 import { daylightModeOf, parseHourParam } from './daylight';
 import { RoomFxRenderer } from './github-fx';
+import { figurasDaRoda, tapeteDaRoda, type Figura } from './roda';
 import { Lighting } from './lighting';
 import { Particles } from './particles';
 import { carSprite, propSprite, shadowSprite } from './props';
@@ -33,12 +35,14 @@ const enum K {
   Char,
   Prop,
   Car,
+  RodaChao,
+  Roda,
 }
 
 interface Ent {
   k: K;
   y: number;
-  ref: FurnVis | Character | ExteriorProp | Car | null;
+  ref: FurnVis | Character | ExteriorProp | Car | RodaDaSala | Figura | null;
   area: AreaVis | null;
   scale: number;
 }
@@ -438,6 +442,14 @@ export class Renderer {
       }
       push(K.Char, ch.depth(), ch, null, 1);
     }
+    for (const roda of this.sim.fanout.rodas.values()) {
+      const room = this.sim.rooms.get(roda.roomId);
+      if (!room || !room.present || room.ghost || room.phase !== 'ready') continue;
+      const l = this.sim.fanout.lugar(room);
+      if (!visible(l.x - 32, l.y - 48, 64, 64)) continue;
+      push(K.RodaChao, l.y - TILE, roda, null, 1);
+      for (const f of figurasDaRoda(roda, l, now, (id) => this.sim.chars.has(id))) push(K.Roda, f.y, f, null, 1);
+    }
     for (const prop of this.exterior.props) {
       if (!visible(prop.x - 24, prop.y - 56, 48, 60)) continue;
       let alpha = 1;
@@ -487,6 +499,12 @@ export class Renderer {
           break;
         case K.Car:
           this.drawCar(e.ref as Car);
+          break;
+        case K.RodaChao:
+          this.drawRodaChao(e.ref as RodaDaSala, now, sel);
+          break;
+        case K.Roda:
+          this.drawFigura(e.ref as Figura);
           break;
       }
     }
@@ -904,6 +922,85 @@ export class Renderer {
       this.particles.popcorn(px, py);
       if (Math.random() < 0.3) this.particles.popcorn(px, py);
     }
+  }
+
+  /** Tapete da roda da equipe, o anel de quem espera você ou da seleção e o "!" com quantos esperam. */
+  private drawRodaChao(r: RodaDaSala, now: number, sel: { agent: string | null }): void {
+    const room = this.sim.rooms.get(r.roomId);
+    if (!room) return;
+    const { ctx } = this;
+    const l = this.sim.fanout.lugar(room);
+    const t = tapeteDaRoda(room.theme.accent);
+    ctx.drawImage(t, Math.round(l.x - t.width / 2), Math.round(l.y - t.height / 2 + 1));
+    const marcada = this.sim.fanout.aberta === r.roomId || (!!sel.agent && this.sim.fanout.rodaDe(sel.agent) === r);
+    if (marcada) {
+      const k = 1 + Math.sin(now / 220) * 0.04;
+      ctx.save();
+      ctx.strokeStyle = tema().paleta.mundo.anelSelecao;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.ellipse(l.x, l.y + 1, 25 * k, 10.5 * k, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+    if (r.esperando) {
+      const ph = (now % 1100) / 1100;
+      ctx.save();
+      ctx.strokeStyle = coresDerivadas().mundo.anelDeAlerta;
+      ctx.lineWidth = 1.5;
+      ctx.globalAlpha *= 0.9 * (1 - ph);
+      ctx.beginPath();
+      ctx.ellipse(l.x, l.y + 1, 18 + ph * 14, 7 + ph * 6, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+      this.pushIcon(l.x, l.y - 36, 'alert', Math.round(Math.abs(Math.sin(now / 180)) * 4), 1, r.esperando);
+    }
+  }
+
+  private aparencias = new Map<string, Appearance | null>();
+
+  private aparencia(a: RodaDaSala['membros'][number]): Appearance | null {
+    let ap = this.aparencias.get(a.id);
+    if (ap === undefined) {
+      if (this.aparencias.size > 400) this.aparencias.clear();
+      try {
+        ap = this.art.appearanceFromSeed(a.seed, { look: a.look, sub: true, parts: a.parts });
+      } catch {
+        ap = null;
+      }
+      this.aparencias.set(a.id, ap);
+    }
+    return ap;
+  }
+
+  private drawFigura(f: Figura): void {
+    const appearance = this.aparencia(f.agent);
+    if (!appearance) return;
+    const { ctx } = this;
+    const x = Math.round(f.x);
+    const y = Math.round(f.y);
+    const sh = shadowSprite();
+    ctx.drawImage(sh.canvas, x - sh.ax, y - sh.ay);
+    const req = this.req;
+    req.appearance = appearance;
+    req.dir = f.dir;
+    req.pose = f.pose;
+    req.held = f.held;
+    req.seated = false;
+    req.costume = seasonalCostume(this.theme, f.agent.seed);
+    let sprite: Sprite | null = null;
+    try {
+      sprite = this.charSprite(req, f.animT);
+    } catch {
+      req.pose = 'stand';
+      req.held = 'none';
+      try {
+        sprite = this.charSprite(req, f.animT);
+      } catch {
+        sprite = null;
+      }
+    }
+    if (sprite) ctx.drawImage(sprite.canvas, x - sprite.ax, y - sprite.ay);
   }
 
   private pushIcon(x: number, y: number, name: IconName, bounce: number, alpha: number, badge: number): void {

@@ -8,6 +8,7 @@ import { COL_W, COMPACT_DELAY_MS, DISMANTLE_DELAY_MS, FOOT_DX, FOOT_DY, MISSING_
 import { assembleBuilding, type BuildingLayout } from '../layout/building';
 import { RECEPTION_ID } from '../layout/core';
 import { columnsFor, inRect } from '../layout/geometry';
+import { tileDaRoda } from '../layout/roda';
 import { layoutProjectRoom } from '../layout/room';
 import type { SpotDef, SpotKind } from '../layout/types';
 import { PathFinder } from '../path/astar';
@@ -29,6 +30,7 @@ import {
 } from './behavior';
 import { Character, dirOf, facing } from './character';
 import { Elevator } from './elevator';
+import { Fanout } from './fanout';
 import { RoomFxState } from './github';
 import { RoomState } from './room-state';
 import { countShells, latestShellDone, shellLabel, shellStage, shellWaitSince, spinDir, spinPhase, yawnPhase } from './shell';
@@ -111,6 +113,8 @@ export class Sim {
   readonly effects: WorldEffect[] = [];
   /** Festa e alarme das salas (eventos do GitHub; sim/github.ts). */
   readonly roomFx = new RoomFxState();
+  /** Quem do fan-out é personagem e quem fica na roda da equipe (sim/fanout.ts). */
+  readonly fanout = new Fanout();
   private lastSnapshot: OfficeSnapshot | null = null;
   /** Desde quando há uma vaga livre antes da última sala (0 = não há). */
   private gapSince = 0;
@@ -137,6 +141,7 @@ export class Sim {
       const patches = this.agentPatches;
       snap = { ...snap, agents: snap.agents.map((a) => (patches.has(a.id) ? { ...a, ...patches.get(a.id) } : a)) };
     }
+    snap = { ...snap, agents: this.fanout.filtrar(snap.agents, this.chars.values()) };
     this.lastSnapshot = input;
     this.now = now;
     const first = !this.initialized;
@@ -398,6 +403,13 @@ export class Sim {
     ch.shellDoneAt = latestShellDone(a)?.at ?? 0;
     this.chars.set(a.id, ch);
     if (first) return ch;
+    const room = this.rooms.get(a.roomId);
+    if (room?.present && this.fanout.saiDaRoda(a.id)) {
+      const t = tileDaRoda(this.fanout.lugar(room));
+      ch.placeAtTile(t.x, t.y);
+      ch.arriving = true;
+      return ch;
+    }
     // chegada pelo elevador
     const el = this.pickElevator(ch);
     const spot = this.spots.get(el.spotId)!;
@@ -1329,6 +1341,13 @@ export class Sim {
     const steps: Step[] = [];
     this.pushLeave(ch, steps);
     const room = this.rooms.get(ch.roomId);
+    // sala com roda da equipe: quem entregou (ou voltou para a roda) some nela, sem fila no elevador
+    if (room?.present && ch.info.kind === 'sub' && (this.fanout.membro(ch.id) || this.fanout.rodas.has(room.id))) {
+      const t = tileDaRoda(this.fanout.lugar(room));
+      steps.push({ t: 'go', tx: t.x, ty: t.y }, { t: 'remove' });
+      ch.queue.push(...steps);
+      return true;
+    }
     if (room && room.present && room.lightOn && !this.switchClaimValid(room) && isLastInRoom(room.id, ch.id, this.chars.values())) {
       const sw = room.layout.spots.find((p) => p.kind === 'switch');
       if (sw) {
