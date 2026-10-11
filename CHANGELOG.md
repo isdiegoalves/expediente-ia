@@ -10,30 +10,56 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+## [1.2.0] - 2026-10-11
+
+Escala, leveza e retomada: o escritório aguenta dezenas de subagentes sem lotar, gasta menos quando nada acontece, conta
+o que mudou enquanto você esteve fora e mostra as mesmas rodas e moedinhas em todas as abas. Para atualizar: `git pull`,
+`npm run docker:up` e `npm run instalar` (desta vez o `instalar` é necessário: ele troca a cópia do mod por uma que não
+depende do repositório; da próxima em diante, `npm run atualizar` faz o `git pull`, o `npm install` e o `instalar`).
+
 ### Adicionado
 
-- Resumo "desde que você saiu": ao voltar à janela depois de 30 minutos fora, abre um painel sem rolagem com quantas
-  sessões terminaram, quais travaram (com o erro), quais esperam você e, por sessão, a última tarefa em andamento. Também
-  abre pelo botão da barra superior ou pela tecla R, e `/escritorio resumo` no Claude Code mostra o mesmo em texto, sem
-  gastar tokens. O servidor guarda a hora da saída em `resumo.json` e ela sobrevive ao reinício.
-- **Modo maquete.** Em Configurações › Aparência, um interruptor deixa o escritório com cara de miniatura: uma faixa nítida
-  que segue o mouse e as bordas desfocadas. Nomes, balões e o aviso de quem espera você continuam nítidos por cima. Vem
-  desligado (o escritório fica como sempre e nada extra é carregado), a escolha fica no navegador e, sem WebGL2 no
-  navegador, a opção aparece desativada.
 - **Fan-out sem lotar a sala.** Com mais de oito subagentes numa sala, oito trabalham nas mesas como antes e os demais
   ficam numa roda da equipe, em pé sobre um tapete na cor da sala, com uma placa que conta quantos trabalham, esperam
   você e concluíram; quem espera você sai da roda primeiro. Um clique na roda abre a lista de quem está nela, e o nome
   leva ao subagente. Os balões não se cobrem mais: quem não acha lugar desvia, vira só o ícone ou espera a vez.
   Enquanto a sala está assim, os subagentes dela ficam de fora das rodas dos ociosos (TV, pingue-pongue, copa).
+- **Quem espera você, primeiro.** Na lista lateral, quem espera você sobe para o topo (a ordem que você arrastou fica
+  guardada), há filtro por estado e as salas se recolhem. No escritório, cada sala mostra um balão só com a contagem
+  ("4 precisam de você"), e os avisos chegam agrupados em vez de empilhados; quando quem espera é sessão do app
+  desktop, o aviso leva à lista de espera do app.
+- **Resumo "desde que você saiu".** Ao voltar à janela depois de 30 minutos fora, abre um painel sem rolagem com
+  quantas sessões terminaram, quais travaram (com o erro), quais esperam você e, por sessão, a última tarefa em
+  andamento. Também abre pelo botão da barra superior ou pela tecla R, e `/escritorio resumo` no Claude Code mostra o
+  mesmo em texto, sem gastar tokens. O servidor guarda a hora da saída em `resumo.json` e ela sobrevive ao reinício.
+- **Modo maquete.** Em Configurações › Aparência, um interruptor deixa o escritório com cara de miniatura: uma faixa
+  nítida que segue o mouse e as bordas desfocadas. Nomes, balões e o aviso de quem espera você continuam nítidos por
+  cima. Vem desligado (o escritório fica como sempre e nada extra é carregado) e a escolha fica no navegador. Sem
+  WebGL2, ou se o efeito não conseguir rodar, a opção se desliga e diz por quê.
+- **Atualizar num comando.** `npm run atualizar` faz o `git pull --ff-only`, o `npm install` e reinstala o mod em cada
+  conta; depois é só reiniciar o servidor (`npm run docker:up`).
+- Para quem desenvolve: `npm run medir:escala` mede o tempo de trabalho de cada quadro e a CPU do navegador em cenários
+  fixos da simulação (`?mock=1&sessions=10&projects=10&subs=30` monta 10 salas com 30 subagentes cada), e
+  `npm run medir:servidor` mede a CPU e a memória do servidor sobre sessões fictícias, nativo ou num container de teste.
 
 ### Alterado
 
-- **Movimento pelo escritório vale para todas as abas.** Calmo, Normal e Agitado, em Configurações, voltam a mudar quantas
-  rodas acontecem (além dos passeios sozinhos) e a escolha fica no servidor, igual em todas as abas e depois de
+- **Rodas e moedinhas iguais em todas as abas.** Quem entra em cada roda, quando e quem ganha passou a ser decidido
+  pelo servidor: duas abas mostram a mesma roda, os mesmos participantes e o mesmo saldo, que sobrevive a recarregar a
+  página e a reiniciar o servidor, e o `/escritorio` no Claude Code mostra o saldo de cada agente. As moedinhas que
+  estavam guardadas no navegador não são trazidas: os saldos recomeçam do zero. Uma roda em andamento quando o servidor
+  reinicia não é retomada.
+- **Movimento pelo escritório vale para todas as abas.** Calmo, Normal e Agitado, em Configurações, voltam a mudar
+  quantas rodas acontecem (além dos passeios sozinhos) e a escolha fica no servidor, igual em todas as abas e depois de
   reiniciar; a escolha antiga, guardada no navegador, deixa de valer. Na simulação e no timelapse, vale só na aba.
-- Escritório parado gasta menos do computador: com todos os agentes ociosos há um minuto e sem você mexer na janela, o
-  desenho cai para 10 quadros por segundo, e volta ao máximo na hora em que chega um alerta, um agente começa a trabalhar
-  ou você mexe o mouse ou o teclado. Com a aba oculta, o escritório deixa de se atualizar e se põe em dia ao voltar.
+- **Escritório parado gasta menos do computador.** Com todos os agentes ociosos há um minuto e sem você mexer na
+  janela, o desenho cai para no máximo 10 quadros por segundo, e volta ao máximo na hora em que chega um alerta, um
+  agente começa a trabalhar ou você mexe o mouse ou o teclado. Agente esperando você mantém o desenho no máximo; um
+  comando rodando em segundo plano, não.
+- **O mod instalado não depende mais da pasta do repositório.** A cópia em `~/.expediente/mod-instalado` passou a ser
+  independente: mover ou renomear a pasta do Expediente não quebra o mod. Conta nova do Claude Code entra no
+  `npm run instalar` mesmo sem sessão aberta, e só entra como conta a pasta `~/.claude*` que tem `.claude.json`,
+  `projects/` ou `sessions/` (pastas de outras ferramentas com nome parecido ficam de fora).
 
 ## [1.1.0] - 2026-10-10
 
@@ -137,6 +163,7 @@ Até a 0.4.0 o histórico é o do projeto de origem, o Habblaud, de onde o Exped
 [README](README.md)): o [CHANGELOG dele no commit `cb0c0bb`](https://github.com/marmottajr/habblaud/blob/cb0c0bb/CHANGELOG.md)
 lista o que entrou em cada versão. O Expediente tem releases próprias a partir da 1.0.0.
 
-[Não lançado]: https://github.com/isdiegoalves/expediente-ia/compare/v1.1.0...HEAD
+[Não lançado]: https://github.com/isdiegoalves/expediente-ia/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/isdiegoalves/expediente-ia/releases/tag/v1.2.0
 [1.1.0]: https://github.com/isdiegoalves/expediente-ia/releases/tag/v1.1.0
 [1.0.0]: https://github.com/isdiegoalves/expediente-ia/releases/tag/v1.0.0
