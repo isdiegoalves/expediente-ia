@@ -141,6 +141,36 @@ describe('controle do modo maquete', () => {
     expect(f.criados.filter((c) => !c.fora)).toHaveLength(0);
   });
 
+  it('desligar pelo interruptor não conta como falha mesmo quando o liberar provoca o webglcontextlost', () => {
+    const f = fakes();
+    (f.efeito.liberar as ReturnType<typeof vi.fn>).mockImplementation(() => f.criados[0].ouvintes.webglcontextlost?.({ preventDefault: vi.fn() }));
+    f.maquete.aplicar(true, f.mundo, null, 600, 1 / 60);
+    f.maquete.aplicar(false, f.mundo, null, 600, 1 / 60);
+    expect(f.aoFalhar).not.toHaveBeenCalled();
+    expect(f.maquete.aplicar(true, f.mundo, null, 600, 1 / 60)).toBe(f.ctxSobre);
+    expect(f.criarEfeito).toHaveBeenCalledTimes(2);
+  });
+
+  it('erro no desenhar avisa uma vez só, mesmo quando o liberar provoca o webglcontextlost', () => {
+    const f = fakes();
+    (f.efeito.liberar as ReturnType<typeof vi.fn>).mockImplementation(() => f.criados[0].ouvintes.webglcontextlost?.({ preventDefault: vi.fn() }));
+    (f.efeito.desenhar as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      throw new Error('gl');
+    });
+    f.maquete.aplicar(true, f.mundo, null, 600, 1 / 60);
+    expect(f.aoFalhar).toHaveBeenCalledTimes(1);
+  });
+
+  it('webglcontextlost de um canvas antigo, depois de religar, não derruba o efeito novo', () => {
+    const f = fakes();
+    f.maquete.aplicar(true, f.mundo, null, 600, 1 / 60);
+    f.maquete.aplicar(false, f.mundo, null, 600, 1 / 60);
+    f.maquete.aplicar(true, f.mundo, null, 600, 1 / 60);
+    f.criados[0].ouvintes.webglcontextlost({ preventDefault: vi.fn() });
+    expect(f.aoFalhar).not.toHaveBeenCalled();
+    expect(f.maquete.aplicar(true, f.mundo, null, 600, 1 / 60)).toBe(f.ctxSobre);
+  });
+
   it('o foco segue o mouse e fica no meio com movimento reduzido', () => {
     const f = fakes();
     for (let i = 0; i < 300; i++) f.maquete.aplicar(true, f.mundo, 540, 600, 1 / 60);

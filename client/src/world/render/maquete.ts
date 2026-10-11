@@ -207,12 +207,15 @@ export function criarMaquete(deps: MaqueteDeps): Maquete {
   let foco = 0.5;
 
   const desligar = () => {
-    efeito?.liberar();
-    canvas?.remove();
-    sobre?.remove();
+    const ef = efeito;
+    const c = canvas;
+    const s = sobre;
     canvas = sobre = null;
     ctxSobre = null;
     efeito = null;
+    ef?.liberar();
+    c?.remove();
+    s?.remove();
   };
 
   const falha = () => {
@@ -240,9 +243,10 @@ export function criarMaquete(deps: MaqueteDeps): Maquete {
           falha();
           return null;
         }
-        canvas.addEventListener('webglcontextlost', (e) => {
+        const deste = canvas;
+        deste.addEventListener('webglcontextlost', (e) => {
           e.preventDefault();
-          falha();
+          if (canvas === deste) falha();
         });
         sobre = deps.criarCanvas('maquete-overlay');
         ctxSobre = sobre.getContext('2d');
