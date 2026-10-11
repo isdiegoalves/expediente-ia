@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Prova do modo maquete no app construído (dist/client, ?mock=1) em Chromium headless, sem servidor: os arquivos
-// saem do disco por page.route e qualquer outro host é recusado. Roda quatro casos e confere preferência,
+// saem do disco por page.route e qualquer outro host é recusado. Roda três casos e confere preferência,
 // interruptor, dica e canvas de cada um. Sai com 1 se algum falhar.
 //
 //   npm run build:client && node scripts/prova-maquete.mjs
@@ -62,8 +62,9 @@ function conferir(rotulo, estado, quer) {
 
 async function caso(modo) {
   const perfil = mkdtempSync(join(tmpdir(), 'prova-maquete-'));
-  const ctx = await chromium.launchPersistentContext(perfil, { executablePath: shell, headless: true, viewport: { width: 1280, height: 800 }, args: ['--disable-background-networking', '--no-first-run', '--enable-unsafe-swiftshader'] });
+  let ctx;
   try {
+    ctx = await chromium.launchPersistentContext(perfil, { executablePath: shell, headless: true, viewport: { width: 1280, height: 800 }, args: ['--disable-background-networking', '--no-first-run', '--enable-unsafe-swiftshader'] });
     const page = ctx.pages()[0] ?? (await ctx.newPage());
     await page.route('**/*', (rota) => {
       const u = new URL(rota.request().url());
@@ -108,7 +109,7 @@ async function caso(modo) {
     }
     if (erros.length) { console.log('FALHA erros de página: ' + JSON.stringify(erros)); reprovado = true; }
   } finally {
-    await ctx.close();
+    await ctx?.close();
     rmSync(perfil, { recursive: true, force: true });
   }
 }
