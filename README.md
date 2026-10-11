@@ -380,7 +380,8 @@ botões:
 
 O diálogo continua aparecendo no terminal ao mesmo tempo, e vale o que você responder primeiro: respondeu no
 terminal, o pedido some do escritório sozinho. O contador **precisam de você** (e a tecla `P`) leva até cada pedido.
-Perguntas do agente (`AskUserQuestion`) continuam só no terminal.
+As perguntas do agente (`AskUserQuestion`) chegam do mesmo jeito: o cartão **Pergunta para você** mostra as opções de
+cada pergunta e o campo **Outro**, e **Responder** manda as respostas ao agente.
 
 - O pedido passa por um hook `PermissionRequest` do Claude Code (o do plugin), que só o desvia
   quando há **alguma página do Expediente aberta** neste computador; com o Expediente parado ou sem nenhuma página, ele
@@ -754,8 +755,8 @@ diz se o terminal está ligado e, se não estiver, por quê.
 Rode `npm run instalar:status`: ele diz, por conta, se o plugin `expediente-permissoes` está instalado e ligado e se o
 Expediente está respondendo pedidos. O pedido só é desviado com alguma
 página do Expediente aberta por `http://localhost` (ou `127.0.0.1`) e com o terminal somente leitura ligado (mesma
-trava). Sessões abertas antes da instalação carregam o plugin com `/reload-plugins` (ou ao reabrir). Perguntas do agente
-(`AskUserQuestion`) não passam pelo hook.
+trava). Sessões abertas antes da instalação carregam o plugin com `/reload-plugins` (ou ao reabrir). As perguntas do
+agente (`AskUserQuestion`) passam pelo mesmo hook e dependem das mesmas condições.
 
 </details>
 
