@@ -60,6 +60,14 @@ for (const c of escolhidos) if (!CENARIOS[c]) throw new Error(`cenário desconhe
 
 const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
 
+async function encerrarServidor(servidor) {
+  const saiu = new Promise((ok) => (servidor.filho.exitCode !== null || servidor.filho.signalCode !== null ? ok() : servidor.filho.once('exit', ok)));
+  try {
+    process.kill(servidor.pid);
+  } catch {}
+  await Promise.race([saiu, dormir(5_000)]);
+}
+
 function portaLivre(porta) {
   return new Promise((ok) => {
     const s = createServer();
@@ -321,9 +329,7 @@ async function medir(id, servidorMock, navegador) {
     return await medirCenario(id, c, servidor, navegador, fabrica);
   } finally {
     if (casaReal) {
-      try {
-        process.kill(servidor.pid);
-      } catch {}
+      await encerrarServidor(servidor);
       fabrica.encerrar();
       rmSync(casaReal, { recursive: true, force: true });
     }
@@ -435,10 +441,8 @@ mkdirSync(saida, { recursive: true });
 const casa = mkdtempSync(resolve(tmpdir(), 'medir-escala-casa-'));
 const perfil = mkdtempSync(resolve(tmpdir(), 'medir-escala-chr-'));
 const servidor = await abrirServidor(casa);
-const navegador = await abrirNavegador(perfil).catch((erro) => {
-  try {
-    process.kill(servidor.pid);
-  } catch {}
+const navegador = await abrirNavegador(perfil).catch(async (erro) => {
+  await encerrarServidor(servidor);
   rmSync(casa, { recursive: true, force: true });
   rmSync(perfil, { recursive: true, force: true });
   throw erro;
@@ -462,11 +466,10 @@ try {
     await Promise.race([navegador.cdp.enviar('Browser.close'), dormir(2_000)]);
   } catch {}
   await dormir(1_000);
-  for (const pid of [navegador.pid, servidor.pid]) {
-    try {
-      process.kill(pid);
-    } catch {}
-  }
+  try {
+    process.kill(navegador.pid);
+  } catch {}
+  await encerrarServidor(servidor);
   rmSync(casa, { recursive: true, force: true });
   rmSync(perfil, { recursive: true, force: true });
 }
