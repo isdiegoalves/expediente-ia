@@ -162,7 +162,7 @@ function violacoes(f: Fontes): string[] {
   for (const [cabeca, c] of Object.entries(ROTAS)) {
     const bloco = blocos.get(c.tipo === 'trava' ? (c.noBlocoDe ?? cabeca) : cabeca) ?? '';
     if (c.tipo === 'trava' && !(c.prova ?? /terminalOn\(\)/).test(bloco)) v.push(`rota sem a trava: ${cabeca}`);
-    if (c.tipo === 'leitura' && (!/!isRead\b|method !== 'GET'/.test(bloco) || /method === '(?:POST|PUT|PATCH|DELETE)'/.test(bloco))) {
+    if (c.tipo === 'leitura' && (!/!isRead\b|method !== 'GET'/.test(bloco) || /['"](?:POST|PUT|PATCH|DELETE)['"]/.test(bloco))) {
       v.push(`rota de leitura que não recusa escrita: ${cabeca}`);
     }
     if (c.tipo === 'delegada' && !delegadaRecusaAntes(f.delegadas[c.arquivo] ?? '', c.arquivo)) {
@@ -195,6 +195,11 @@ const QUEBRAS: Record<string, () => Fontes> = {
   'rota colada ao fim do bloco anterior': () => naApp(`    }\n${DEMO}`, `    } else if (path === '/api/novo') {\n${NOVA}${DEMO}`),
   'escrita aninhada em rota de leitura': () =>
     naApp("    if (path.startsWith('/api/agents/')) {\n", "    if (path.startsWith('/api/agents/')) {\n      if (method === 'POST') {\n        office.setDemo(true);\n        return true;\n      }\n"),
+  'escrita aninhada em rota de leitura, no estilo das rotas de escrita da casa': () =>
+    naApp(
+      "    if (path.startsWith('/api/agents/')) {\n",
+      "    if (path.startsWith('/api/agents/')) {\n      if (path.endsWith('/nota')) {\n        if (method !== 'POST') methodNotAllowed(res, 'POST');\n        else office.setDemo(true);\n        return true;\n      }\n",
+    ),
   'rota de leitura sem recusar escrita': () => naApp("    if (path === '/api/snapshot') {\n      if (!isRead) methodNotAllowed(res, 'GET');\n      else ", "    if (path === '/api/snapshot') {\n      "),
   'começo de rota repetido antes da rota de verdade': () => naApp("    if (path === '/api/rooms/rename') {", "    if (path === '/api/rooms/rename') return true;\n    if (path === '/api/rooms/rename') {"),
   'rota com trava sem a trava': () => {
