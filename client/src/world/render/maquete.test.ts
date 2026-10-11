@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { criarMaquete, FAIXA_DE_FOCO, opcaoMaquete, raioDaLinha, seguirFoco, webgl2Disponivel, type Efeito } from './maquete';
+import { aoFalharMaquete, criarCanalDeFalha, criarMaquete, FAIXA_DE_FOCO, MAQUETE_DICA, MAQUETE_FALHOU, MAQUETE_SEM_WEBGL2, opcaoMaquete, OpcaoMaquete, raioDaLinha, seguirFoco, webgl2Disponivel, type Efeito } from './maquete';
 import { DEFAULT_PREFS, loadPrefs, PREFS_KEY, sanitizePrefs, savePrefs, worldOptionsFrom } from '../../ui/prefs';
 
 describe('raio do desfoque por linha', () => {
@@ -193,6 +193,63 @@ describe('opção nas Configurações', () => {
     const falhou = opcaoMaquete(true, true);
     expect(falhou.desativada).toBe(true);
     expect(falhou.dica).toContain('aceleração gráfica');
+  });
+});
+
+describe('falha do efeito até a tela', () => {
+  function tela(efeitoPronto = true) {
+    const canal = criarCanalDeFalha();
+    const prefs = { maquete: true };
+    const opcao = new OpcaoMaquete();
+    const updatePrefs = vi.fn((patch: { maquete: boolean }) => void Object.assign(prefs, patch));
+    canal.assinar(aoFalharMaquete({ maqueteIndisponivel: () => opcao.indisponivel() }, { updatePrefs }));
+    const f = fakes(efeitoPronto);
+    const maquete = criarMaquete({ criarCanvas: f.criarCanvas, criarEfeito: f.criarEfeito, aoFalhar: canal.avisar, reduzirMovimento: () => false });
+    return { ...f, maquete, prefs, opcao, updatePrefs };
+  }
+  const aplicar = (t: ReturnType<typeof tela>, ligado = true) => t.maquete.aplicar(ligado, t.mundo, null, 600, 1 / 60);
+
+  it('ligar e desligar pelo interruptor deixa a preferência, o interruptor e a dica como estavam', () => {
+    const t = tela();
+    t.efeito.liberar = vi.fn(() => t.criados[0].ouvintes.webglcontextlost?.({ preventDefault: vi.fn() }));
+    aplicar(t);
+    aplicar(t, false);
+    expect(t.updatePrefs).not.toHaveBeenCalled();
+    expect(t.opcao.estado(true)).toEqual({ dica: MAQUETE_DICA, desativada: false });
+  });
+
+  it('getContext(webgl2) nulo desliga a preferência, trava o interruptor e mostra a dica da falha', () => {
+    const t = tela(false);
+    aplicar(t);
+    expect(t.updatePrefs).toHaveBeenCalledWith({ maquete: false });
+    expect(t.prefs.maquete).toBe(false);
+    expect(t.opcao.estado(true)).toEqual({ dica: MAQUETE_FALHOU, desativada: true });
+  });
+
+  it('contexto perdido em execução desliga a preferência, trava o interruptor e mostra a dica da falha', () => {
+    const t = tela();
+    aplicar(t);
+    t.criados[0].ouvintes.webglcontextlost({ preventDefault: vi.fn() });
+    expect(t.updatePrefs).toHaveBeenCalledTimes(1);
+    expect(t.prefs.maquete).toBe(false);
+    expect(t.opcao.estado(true)).toEqual({ dica: MAQUETE_FALHOU, desativada: true });
+  });
+
+  it('sem WebGL2 o interruptor segue desativado com a frase própria, sem falha', () => {
+    expect(new OpcaoMaquete().estado(false)).toEqual({ dica: MAQUETE_SEM_WEBGL2, desativada: true });
+  });
+
+  it('o canal avisa todos os assinantes e quem cancela deixa de ser avisado', () => {
+    const canal = criarCanalDeFalha();
+    const a = vi.fn();
+    const b = vi.fn();
+    canal.assinar(a);
+    const cancelar = canal.assinar(b);
+    canal.avisar();
+    cancelar();
+    canal.avisar();
+    expect(a).toHaveBeenCalledTimes(2);
+    expect(b).toHaveBeenCalledTimes(1);
   });
 });
 

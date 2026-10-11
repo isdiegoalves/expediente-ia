@@ -37,6 +37,7 @@ import { TopBar } from './topbar';
 import { UpdateBanner } from './update';
 import { versaoParaAvisar } from './version';
 import { FreeArea } from './viewport';
+import { aoFalharMaquete } from '../world/render/maquete';
 
 /** Relógio dos tempos relativos ("há 5 s"). */
 const CLOCK_MS = 5_000;
@@ -200,10 +201,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi,
   const renamer = new RoomRenamer(ctx);
   ctx.renameRoom = (id, at) => renamer.open(id, at);
   world.onRoomContextMenu?.((id, at) => renamer.open(id, at));
-  world.onMaqueteFalha?.(() => {
-    settings.maqueteIndisponivel();
-    ctx.updatePrefs({ maquete: false });
-  });
+  world.onMaqueteFalha?.(aoFalharMaquete(settings, ctx));
   const empty = new EmptyState(ctx);
   const banner = new ConnectionBanner(ctx);
   const update = new UpdateBanner(store);

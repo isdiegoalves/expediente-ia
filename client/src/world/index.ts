@@ -11,7 +11,7 @@ import { BUILDING_H, COL_W } from './constants';
 import { inRect } from './layout/geometry';
 import { attachInput, type Hit } from './input';
 import { rebaseSnapshot } from './playback';
-import { criarMaqueteDoNavegador } from './render/maquete';
+import { criarCanalDeFalha, criarMaqueteDoNavegador } from './render/maquete';
 import { Overlay } from './render/overlay';
 import { Renderer } from './render/renderer';
 import { rodaAbertaApos, rodaNoPonto } from './render/roda';
@@ -28,8 +28,8 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
   let options: WorldOptions = { ...DEFAULT_WORLD_OPTIONS };
   const camera = new Camera();
   // Simulação e desenho são recriados quando o timelapse entra, pula ou sai (rebuild).
-  const maqueteFalhaCbs = new Set<() => void>();
-  const maquete = criarMaqueteDoNavegador(canvas, () => maqueteFalhaCbs.forEach((cb) => cb()));
+  const maqueteFalha = criarCanalDeFalha();
+  const maquete = criarMaqueteDoNavegador(canvas, maqueteFalha.avisar);
   let sim = new Sim(art, () => options);
   let renderer = new Renderer(canvas, art, sim, camera);
   let overlay = new Overlay(renderer.ctx, sim, renderer, camera);
@@ -458,10 +458,7 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
       worldNow = p ? p.clock() : 0;
       rebuild();
     },
-    onMaqueteFalha: (cb) => {
-      maqueteFalhaCbs.add(cb);
-      return () => void maqueteFalhaCbs.delete(cb);
-    },
+    onMaqueteFalha: maqueteFalha.assinar,
     onSound: (cb) => {
       soundCbs.add(cb);
       return () => void soundCbs.delete(cb);

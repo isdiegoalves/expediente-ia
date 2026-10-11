@@ -32,6 +32,43 @@ export function opcaoMaquete(disponivel: boolean, falhou = false): { dica: strin
   return disponivel ? { dica: MAQUETE_DICA, desativada: false } : { dica: MAQUETE_SEM_WEBGL2, desativada: true };
 }
 
+/** Lembra, até recarregar a página, que o efeito falhou: o interruptor das Configurações fica desativado. */
+export class OpcaoMaquete {
+  private falhou = false;
+
+  indisponivel(): void {
+    this.falhou = true;
+  }
+
+  estado(webgl2: boolean): { dica: string; desativada: boolean } {
+    return opcaoMaquete(webgl2, this.falhou);
+  }
+}
+
+export interface CanalDeFalha {
+  avisar(): void;
+  assinar(cb: () => void): () => void;
+}
+
+export function criarCanalDeFalha(): CanalDeFalha {
+  const cbs = new Set<() => void>();
+  return {
+    avisar: () => cbs.forEach((cb) => cb()),
+    assinar: (cb) => {
+      cbs.add(cb);
+      return () => void cbs.delete(cb);
+    },
+  };
+}
+
+/** Falha do efeito: a tela explica o porquê e a preferência volta a desligada. */
+export function aoFalharMaquete(tela: { maqueteIndisponivel(): void }, prefs: { updatePrefs(patch: { maquete: boolean }): void }): () => void {
+  return () => {
+    tela.maqueteIndisponivel();
+    prefs.updatePrefs({ maquete: false });
+  };
+}
+
 const VERTICE = `#version 300 es
 void main() {
   vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
