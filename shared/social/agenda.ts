@@ -170,6 +170,11 @@ export function partidas(r: RodaAgendada): { vencedor: string; perdedor: string;
   return out;
 }
 
+/** Quem joga as partidas destas rodas (os dois primeiros de cada uma; quem torce não entra). */
+export function jogadores(rodas: readonly RodaAgendada[]): Set<string> {
+  return new Set(rodas.flatMap((r) => (KINDS[r.tipo].match ? r.participantes.slice(0, 2) : [])));
+}
+
 interface EmAndamento {
   roda: RodaAgendada;
   /** Quem saiu da roda (chamado para trabalhar): já não é publicado nela e não volta para ela. */

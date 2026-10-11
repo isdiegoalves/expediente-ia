@@ -128,6 +128,11 @@ export class Social {
 
   // =================================================================== agenda
 
+  /** As rodas da agenda em vigor: as do último snapshot do servidor ou, sem ele, as da agenda daqui. */
+  get agenda(): readonly RodaAgendada[] {
+    return this.rodas;
+  }
+
   /** Snapshot novo: rodas e carteiras do servidor; sem elas (mock, timelapse), a agenda roda aqui. */
   sync(snap: OfficeSnapshot, now: number): void {
     this.agentes = snap.agents;

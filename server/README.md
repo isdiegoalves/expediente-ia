@@ -206,6 +206,11 @@ convidado para rodas: só oito viram personagem, e quais são cada aba escolhe p
 servidor não tem como saber quem a aba conseguiria animar. Quem já estava numa roda quando a sala encheu fica nela até
 o fim, e os agentes principais não mudam. Sem servidor, a agenda da aba recebe a sala inteira e aplica a mesma regra.
 
+Do lado da aba, o jogador de uma partida publicada tem personagem enquanto ela estiver no snapshot: entra antes de quem
+só trabalha e não cede a vaga a quem espera você, que tira a de outro subagente. Assim a aposta que o servidor paga é
+a de uma partida que a tela mostrou até o fim. Se todos os outros personagens da sala esperam ou jogam, quem espera
+fica na roda da equipe, contado, até a partida sair do snapshot.
+
 O ritmo (Calmo, Normal, Agitado) é o tempo que cada um fica na mesa antes da próxima vontade de companhia
 (`SENTADO_MS` em `shared/social/regras.ts`, o mesmo dos passeios sozinhos do navegador). Ele sai no snapshot
 (`social.ritmo`) e muda por `POST /api/social/ritmo`; na troca, as vontades pendentes são sorteadas de novo, e as

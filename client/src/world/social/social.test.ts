@@ -2,7 +2,7 @@
 // carteiras que vêm do servidor, quem é chamado de volta ao trabalho, apostas, moedinhas pelo
 // trabalho e quem espera shell.
 import { describe, expect, it } from 'vitest';
-import { montarRoda, MotorSocial } from '../../../../shared/social/agenda';
+import { montarRoda, MotorSocial, partidas } from '../../../../shared/social/agenda';
 import { START_COINS, TASK_REWARD, TURN_REWARD, type CarteiraInfo } from '../../../../shared/social/carteiras';
 import type { AgentInfo, OfficeSnapshot, RodaAgendada, RoomInfo } from '../../../../shared/types';
 import type { Appearance, ArtModule, RoomTheme } from '../../art/api';
@@ -384,5 +384,106 @@ describe('vida social', () => {
     };
     expect(subsEmRodas(12)).toBe(0);
     expect(subsEmRodas(8)).toBeGreaterThan(0);
+  });
+});
+
+describe('subagente numa partida quando a sala passa de oito', () => {
+  const sub = (id: string, status: AgentInfo['status'], i: number) => agent(id, '/a', status, { kind: 'sub', parentId: 'ana', startedAt: T0 + i, statusSince: T0 - 60_000 });
+  const oito = (dosSete: AgentInfo['status']) => [agent('ana', '/a', 'working'), agent('caio', '/b', 'idle', { statusSince: T0 - 60_000 }), ...Array.from({ length: 7 }, (_, i) => sub(`s${i}`, dosSete, i)), sub('x', 'idle', 7)];
+
+  /**
+   * A sala /a tem oito subagentes, todos personagens: sete no estado `dosSete` e `x`, à toa, num pingue-pongue contra
+   * Caio. Com a partida rolando chega o nono, esperando você. Com servidor, a agenda faz o papel dele e a aba recebe o
+   * snapshot a cada segundo; sem servidor, a partida entra na agenda da própria aba.
+   */
+  function cena(dosSete: AgentInfo['status'], comServidor: boolean) {
+    const fixos = oito(dosSete);
+    const servidor = comServidor ? new MotorSocial(42) : null;
+    const aba = newSim();
+    const clock = { now: T0 };
+    const publicar = (agentes: AgentInfo[], rev: number) => {
+      servidor?.passo(clock.now, agentes);
+      aba.applySnapshot(servidor ? { ...snap(ROOMS, agentes, rev), social: structuredClone(servidor.estado()) } : snap(ROOMS, agentes, rev), clock.now);
+    };
+    publicar(fixos, 0);
+    let roda: RodaAgendada;
+    if (servidor) {
+      const jogam = ['x', 'caio'].map((id) => fixos.find((a) => a.id === id)!);
+      roda = Array.from({ length: 50 }, (_, i) => montarRoda(42, `p${i}`, 'pingpong', jogam, T0, (id) => servidor.carteiras.coins(id))).find((r) => r.aposta > 0)!;
+      servidor.incluir(roda);
+    } else {
+      run(aba, clock, 0.3);
+      expect(aba.social.force('pingpong', clock.now, ['x', 'caio'])).toEqual(['X', 'Caio']);
+      roda = [...aba.social.gatherings][0].plano;
+    }
+    let agentes = fixos;
+    let g: Gathering | undefined;
+    let chegou = 0;
+    let virou = Infinity;
+    let esperandoNaRoda = 0;
+    for (let rev = 1; clock.now < roda.fim + 25_000; rev++) {
+      publicar(agentes, rev);
+      run(aba, clock, 1);
+      g ??= [...aba.social.gatherings][0];
+      if (!chegou && g?.phase === 'run') {
+        chegou = clock.now;
+        agentes = [...fixos, sub('novo', 'waiting', 8)];
+      }
+      if (clock.now < roda.fim) esperandoNaRoda = Math.max(esperandoNaRoda, aba.fanout.rodas.get('/a')?.esperando ?? 0);
+      if (chegou && virou === Infinity && aba.chars.has('novo')) virou = clock.now;
+    }
+    const xVence = partidas(roda)[0].vencedor === 'x';
+    const livro = aba.social.info('caio')!;
+    return {
+      roda,
+      aba,
+      chegou,
+      virou,
+      esperandoNaRoda,
+      emTela: { ateOFim: aba.social.events.filter((e) => /no pingue-pongue/.test(e.text)).length, vencedor: g!.winner, xSaiu: g!.members.find((m) => m.id === 'x')!.left },
+      noLivro: { partidas: livro.wins + livro.losses, caio: livro.coins - START_COINS.main },
+      paga: [
+        { ateOFim: 1, vencedor: xVence ? 'x' : 'caio', xSaiu: false },
+        { partidas: 1, caio: xVence ? -roda.aposta : roda.aposta },
+      ],
+    };
+  }
+
+  it('a partida que chega no mesmo snapshot de quem espera já segura a vaga de quem joga', () => {
+    const fixos = oito('working');
+    const [x, caio] = ['x', 'caio'].map((id) => fixos.find((a) => a.id === id)!);
+    const carteiras = Object.fromEntries(fixos.map((a) => [a.id, carteira(100)]));
+    const aba = newSim();
+    const clock = { now: T0 };
+    aba.applySnapshot(snapServidor(ROOMS, fixos, [], carteiras), clock.now);
+    run(aba, clock, 1);
+    const juntos = snapServidor(ROOMS, [...fixos, sub('novo', 'waiting', 8)], [montarRoda(42, 'p', 'pingpong', [x, caio], clock.now, () => 100)], carteiras, 2);
+    for (let i = 0; i < 12; i++) {
+      aba.applySnapshot(juntos, clock.now);
+      run(aba, clock, 1);
+    }
+    expect([aba.chars.get('x')?.leaving, aba.chars.has('s6'), aba.chars.has('novo')]).toEqual([false, false, true]);
+    expect(aba.chars.get('x')!.gathering?.members.map((m) => m.id)).toEqual(['x', 'caio']);
+  });
+
+  describe.each([
+    ['com servidor', true],
+    ['sem servidor', false],
+  ])('%s', (_, comServidor) => {
+    it('com gente só trabalhando na sala, quem espera tira a vaga de quem trabalha: a partida segue em tela até o fim e é a que o livro paga', () => {
+      const { roda, aba, chegou, virou, emTela, noLivro, paga } = cena('working', comServidor);
+      if (comServidor) expect(roda.aposta).toBeGreaterThan(0);
+      expect([emTela, noLivro]).toEqual(paga);
+      expect(virou - chegou).toBeLessThan(12_000);
+      expect([aba.chars.has('x'), aba.chars.has('s6')]).toEqual([true, false]);
+    });
+
+    it('com os outros sete esperando, ninguém cede a vaga no meio da partida: quem espera fica na roda, contado, e entra quando o jogo acaba, visto até o fim e pago', () => {
+      const { roda, aba, virou, esperandoNaRoda, emTela, noLivro, paga } = cena('waiting', comServidor);
+      expect([emTela, noLivro]).toEqual(paga);
+      expect(esperandoNaRoda).toBe(1);
+      expect(virou).toBeGreaterThan(roda.fim);
+      expect([aba.chars.has('novo'), aba.chars.has('x')]).toEqual([true, false]);
+    });
   });
 });

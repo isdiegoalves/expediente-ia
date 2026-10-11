@@ -1,7 +1,7 @@
 // Regra do fan-out: quem é personagem, quem fica na roda e como a roda conta cada estado.
 import { describe, expect, it } from 'vitest';
 import type { AgentInfo, AgentStatus } from '../../../../shared/types';
-import { escolherIndividuais, Fanout, MAX_INDIVIDUAIS, type PersonagemEmCena } from './fanout';
+import { escolherIndividuais, Fanout, MAX_INDIVIDUAIS, montarRoda, type PersonagemEmCena } from './fanout';
 
 const T0 = 1_700_000_000_000;
 
@@ -100,6 +100,44 @@ describe('quem é personagem numa sala', () => {
     expect(e.individuais.has('s10')).toBe(true);
     expect(e.individuais.has('s2')).toBe(false);
     expect(e.individuais.has('s7')).toBe(true);
+  });
+
+  it('quem joga uma partida da agenda não perde a vaga para quem espera: sai quem só trabalha, o mais novo', () => {
+    const jogando = new Set(['x']);
+    const subs = [...fanOut(7), sub('x', 'idle', T0 + 7000)];
+    const antes = new Set(subs.map((s) => s.id));
+    subs.push(sub('novo', 'waiting', T0 + 8000));
+    const troca = escolherIndividuais(subs, antes, antes, MAX_INDIVIDUAIS, jogando);
+    expect(troca.individuais.has('x')).toBe(true);
+    expect(troca.roda.map((s) => s.id)).toEqual(['novo', 's6']);
+    const chegou = escolherIndividuais(subs, troca.individuais, new Set([...antes].filter((id) => id !== 's6')), MAX_INDIVIDUAIS, jogando);
+    expect([...chegou.individuais].sort()).toEqual(['novo', 's0', 's1', 's2', 's3', 's4', 's5', 'x']);
+    // a partida acabou: à toa e sem jogo, é o primeiro a ceder a vaga
+    subs.push(sub('outro', 'waiting', T0 + 9000));
+    const depois = escolherIndividuais(subs, chegou.individuais, chegou.individuais);
+    expect(depois.roda.map((s) => s.id)).toEqual(['outro', 's6', 'x']);
+  });
+
+  it('aba aberta com a sala já cheia dá personagem a quem joga antes de quem só trabalha: os mesmos oito da aba que viu a sala encher', () => {
+    const subs = [...fanOut(7), sub('x', 'idle', T0 + 7000), sub('novo', 'waiting', T0 + 8000)];
+    expect([...escolherIndividuais(subs, new Set(), new Set(), MAX_INDIVIDUAIS, new Set(['x'])).individuais].sort()).toEqual(['novo', 's0', 's1', 's2', 's3', 's4', 's5', 'x']);
+    expect([...escolherIndividuais(subs, new Set(), new Set()).individuais].sort()).toEqual(['novo', 's0', 's1', 's2', 's3', 's4', 's5', 's6']);
+    // quem espera você entra antes de quem joga
+    const todosEsperam = [sub('x', 'idle', T0 - 1000), ...Array.from({ length: 8 }, (_, i) => sub(`s${i}`, 'waiting', T0 + i * 1000))];
+    expect(escolherIndividuais(todosEsperam, new Set(), new Set(), MAX_INDIVIDUAIS, new Set(['x'])).roda.map((s) => s.id)).toEqual(['x']);
+  });
+
+  it('todos os outros esperam ou jogam: quem espera fica na roda, contado, até a partida sair da agenda, e aí quem jogava cede a vaga', () => {
+    const subs = [...Array.from({ length: 7 }, (_, i) => sub(`s${i}`, 'waiting', T0 + i * 1000)), sub('x', 'idle', T0 + 7000)];
+    const antes = new Set(subs.map((s) => s.id));
+    subs.push(sub('novo', 'waiting', T0 + 8000));
+    const jogo = escolherIndividuais(subs, antes, antes, MAX_INDIVIDUAIS, new Set(['x']));
+    expect([...jogo.individuais].sort()).toEqual([...antes].sort());
+    expect(montarRoda('/a', jogo.roda)).toMatchObject({ esperando: 1, aToa: 0 });
+    const acabou = escolherIndividuais(subs, jogo.individuais, antes);
+    expect(acabou.roda.map((s) => s.id)).toEqual(['novo', 'x']);
+    const cedeu = escolherIndividuais(subs, acabou.individuais, new Set([...antes].filter((id) => id !== 'x')));
+    expect(cedeu.roda.map((s) => s.id)).toEqual(['x']);
   });
 
   it('mais gente esperando do que vagas: oito personagens esperando e o resto na roda, contado, ninguém some', () => {

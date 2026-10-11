@@ -2,7 +2,7 @@
 // apostas pagas no fim (W.O. não paga) e as moedinhas do trabalho pagas uma vez.
 import { describe, expect, it } from 'vitest';
 import type { AgentInfo, RodaAgendada } from '../types';
-import { disponivel, montarRoda, MotorSocial, partidas, SHELL_SOCIAL_MIN_MS, type AgenteSocial } from './agenda';
+import { disponivel, jogadores, montarRoda, MotorSocial, partidas, SHELL_SOCIAL_MIN_MS, type AgenteSocial } from './agenda';
 import { DELIVERY_REWARD, START_COINS, TASK_REWARD, TURN_REWARD } from './carteiras';
 import { KINDS, rpsResult, type Ritmo } from './regras';
 
@@ -332,6 +332,13 @@ describe('agenda das rodas', () => {
       const c = m.estado().carteiras;
       expect(tres.map((a) => c[a.id].wins + c[a.id].losses), jogador).toEqual([0, 0, 0]);
     }
+  });
+
+  it('quem joga são os dois primeiros de cada partida: quem torce, quem chega com o jogo andando e quem está em roda sem partida não entram', () => {
+    const [ana, bia, caio, davi, edu, fabi] = OCIOSOS;
+    const jogo = montarRoda(1, 'jogo', 'pingpong', [ana, bia, caio], T0, () => 100);
+    jogo.tardios = [{ id: davi.id, em: T0 + 1_000 }];
+    expect([...jogadores([jogo, montarRoda(1, 'tv', 'tv', [edu, fabi], T0, () => 100)])].sort()).toEqual(['ana', 'bia']);
   });
 
   it('partida em que um jogador sai deixa de ser publicada na hora, e o outro fica livre para outra roda antes do fim previsto', () => {

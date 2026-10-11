@@ -32,14 +32,17 @@ export interface Escolha {
   roda: AgentInfo[];
 }
 
+const VAZIO: ReadonlySet<string> = new Set();
+
 /**
  * Escolhe quem é personagem numa sala. Quem já era continua, sem troca a cada snapshot, até concluir e sair de cena
  * (aí entra na roda como concluído). Uma vaga só abre quando o personagem sai de cena e vai primeiro para quem espera
- * você, depois para quem trabalha, por ordem de chegada. Quem espera e não acha vaga (nem vai achar com quem já está
- * saindo) tira a de quem só trabalha, o mais novo. `emCena`: subagentes da sala que têm personagem agora, inclusive
- * os que estão saindo.
+ * você, depois para quem joga uma partida da agenda (`jogando`), depois para quem trabalha, por ordem de chegada. Quem
+ * espera e não acha vaga (nem vai achar com quem já está saindo) tira a de quem só trabalha, o mais novo, e nunca a
+ * de quem joga: a partida segue na agenda e é paga no fim. `emCena`: subagentes da sala que têm personagem agora,
+ * inclusive os que estão saindo.
  */
-export function escolherIndividuais(subs: readonly AgentInfo[], anteriores: ReadonlySet<string>, emCena: ReadonlySet<string>, max = MAX_INDIVIDUAIS): Escolha {
+export function escolherIndividuais(subs: readonly AgentInfo[], anteriores: ReadonlySet<string>, emCena: ReadonlySet<string>, max = MAX_INDIVIDUAIS, jogando = VAZIO): Escolha {
   const individuais = new Set<string>();
   for (const s of subs) if (anteriores.has(s.id) && (ativo(s) || emCena.has(s.id))) individuais.add(s.id);
   const ocupadas = () => {
@@ -47,7 +50,8 @@ export function escolherIndividuais(subs: readonly AgentInfo[], anteriores: Read
     for (const s of subs) if (individuais.has(s.id) && ativo(s) && !emCena.has(s.id)) n++;
     return n;
   };
-  const candidatos = subs.filter((s) => ativo(s) && !individuais.has(s.id) && !emCena.has(s.id)).sort(ordemNaRoda);
+  const vez = (s: AgentInfo) => (s.status === 'waiting' ? 0 : jogando.has(s.id) ? 1 : 2);
+  const candidatos = subs.filter((s) => ativo(s) && !individuais.has(s.id) && !emCena.has(s.id)).sort((a, b) => vez(a) - vez(b) || ordemNaRoda(a, b));
   let livres = max - ocupadas();
   for (const c of candidatos) {
     if (livres <= 0) break;
@@ -58,7 +62,7 @@ export function escolherIndividuais(subs: readonly AgentInfo[], anteriores: Read
   if (esperando.length) {
     const ficam = subs.filter((s) => individuais.has(s.id) && ativo(s));
     let faltam = esperando.length - (max - ficam.length);
-    for (const v of ficam.filter((s) => s.status !== 'waiting').sort((a, b) => ordemNaRoda(b, a))) {
+    for (const v of ficam.filter((s) => s.status !== 'waiting' && !jogando.has(s.id)).sort((a, b) => ordemNaRoda(b, a))) {
       if (faltam <= 0) break;
       individuais.delete(v.id);
       faltam--;
@@ -90,8 +94,6 @@ export interface PersonagemEmCena {
   info: { kind: AgentKind };
 }
 
-const VAZIO: ReadonlySet<string> = new Set();
-
 /** Roda com estes membros (já em `ordemNaRoda`), contada por estado. */
 export function montarRoda(roomId: string, membros: AgentInfo[]): RodaDaSala {
   const r: RodaDaSala = { roomId, membros, esperando: 0, trabalhando: 0, aToa: 0, concluido: 0 };
@@ -113,7 +115,7 @@ export class Fanout {
   private vindosDaRoda = new Set<string>();
 
   /** Os agentes do snapshot que viram personagens (todos os principais e os subagentes escolhidos). */
-  filtrar(agents: readonly AgentInfo[], personagens: Iterable<PersonagemEmCena>): AgentInfo[] {
+  filtrar(agents: readonly AgentInfo[], personagens: Iterable<PersonagemEmCena>, jogando = VAZIO): AgentInfo[] {
     const emCena = new Set<string>();
     const emCenaPorSala = new Map<string, Set<string>>();
     for (const c of personagens) {
@@ -134,7 +136,7 @@ export class Fanout {
     const salaDoMembro = new Map<string, string>();
     this.rodas.clear();
     for (const [roomId, subs] of porSala) {
-      const e = escolherIndividuais(subs, this.individuais, emCenaPorSala.get(roomId) ?? VAZIO);
+      const e = escolherIndividuais(subs, this.individuais, emCenaPorSala.get(roomId) ?? VAZIO, MAX_INDIVIDUAIS, jogando);
       for (const id of e.individuais) individuais.add(id);
       if (!e.roda.length) continue;
       this.rodas.set(roomId, montarRoda(roomId, e.roda));

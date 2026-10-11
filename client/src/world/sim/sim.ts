@@ -1,6 +1,7 @@
 // Simulação do escritório: concilia snapshots do servidor com os personagens e salas do mundo,
 // planeja comportamentos e executa as filas de passos a cada frame.
 import { partsKey } from '../../../../shared/appearance';
+import { jogadores } from '../../../../shared/social/agenda';
 import type { AgentInfo, OfficeSnapshot, RoomInfo } from '../../../../shared/types';
 import type { ArtModule, Dir, RoomTheme } from '../../art/api';
 import type { WorldOptions } from '../api';
@@ -142,7 +143,7 @@ export class Sim {
       snap = { ...snap, agents: snap.agents.map((a) => (patches.has(a.id) ? { ...a, ...patches.get(a.id) } : a)) };
     }
     const todos = snap.agents;
-    snap = { ...snap, agents: this.fanout.filtrar(todos, this.chars.values()) };
+    snap = { ...snap, agents: this.fanout.filtrar(todos, this.chars.values(), jogadores(snap.social?.rodas ?? this.social.agenda)) };
     this.lastSnapshot = input;
     this.now = now;
     const first = !this.initialized;
