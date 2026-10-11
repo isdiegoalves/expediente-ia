@@ -56,6 +56,11 @@ function cpuDoContainer(nome) {
   return Number(/usage_usec (\d+)/.exec(r)[1]) / 1e6;
 }
 
+function rssDoContainerKb(nome) {
+  const r = execFileSync('docker', ['exec', nome, 'cat', '/sys/fs/cgroup/memory.current'], { encoding: 'utf8' });
+  return Number(r.trim()) / 1024;
+}
+
 function bytesDaLinhaDoTempoNoContainer(nome) {
   const r = execFileSync('docker', ['exec', nome, 'sh', '-c', 'cat /data/timeline/*.jsonl 2>/dev/null | wc -c'], { encoding: 'utf8' });
   return Number(r.trim());
@@ -112,7 +117,7 @@ async function medirCenario(id, servidor, sessoes) {
     antes = agora;
   }
   const carga1 = loadavg();
-  const rssKb = servidor.container ? 0 : Number(execFileSync('ps', ['-o', 'rss=', '-p', String(servidor.pid)], { encoding: 'utf8' }).trim());
+  const rssKb = servidor.container ? rssDoContainerKb(servidor.container) : Number(execFileSync('ps', ['-o', 'rss=', '-p', String(servidor.pid)], { encoding: 'utf8' }).trim());
   const tamanhoDepois = tamanho();
 
   if (escritor) clearInterval(escritor);
@@ -213,9 +218,11 @@ try {
       execFileSync('docker', ['rm', '-f', '-v', servidor.container], { stdio: 'ignore' });
     } catch {}
   } else if (servidor) {
+    const saiu = new Promise((ok) => (servidor.filho.exitCode !== null || servidor.filho.signalCode !== null ? ok() : servidor.filho.once('exit', ok)));
     try {
       process.kill(servidor.pid);
     } catch {}
+    await Promise.race([saiu, dormir(5_000)]);
   }
   fabrica?.encerrar();
   await dormir(500);
