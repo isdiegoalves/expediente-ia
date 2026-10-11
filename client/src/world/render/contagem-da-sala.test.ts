@@ -1,9 +1,10 @@
 // Pílula da sala e balão "N precisam de você" com gente na roda da equipe (subagente sem personagem).
 import { describe, expect, it } from 'vitest';
-import { esperaPorSala } from '../../../../shared/espera';
+import { esperaPorSala, type EsperaDaSala } from '../../../../shared/espera';
 import type { AgentInfo, AgentStatus } from '../../../../shared/types';
 import { montarRoda } from '../sim/fanout';
 import { pessoasNaSala, quemEspera, type PersonagemNaSala } from './contagem-da-sala';
+import { Overlay } from './overlay';
 
 const T0 = 1_700_000_000_000;
 
@@ -89,5 +90,26 @@ describe('balão "N precisam de você" da visão geral', () => {
     const porSala = esperaPorSala(quemEspera(personagens, rodas, todosAVista));
     expect(porSala.get('/a')).toEqual({ ancora: 'p3', total: 1 });
     expect(porSala.get('/b')).toEqual({ ancora: 'vizinho', total: 3 });
+  });
+});
+
+describe('no overlay, a pílula e o balão recebem a roda da equipe', () => {
+  /** Os dois métodos do overlay que contam, chamados só com o que leem dele: rodam sem canvas. */
+  const overlay = Overlay.prototype as unknown as { countIn(roomId: string): number; esperaDasSalas(vw: number, vh: number): Map<string, EsperaDaSala> | null };
+  const oito = new Map(Array.from({ length: 8 }, (_, i): [string, PersonagemNaSala] => [`p${i}`, personagem('wait')]));
+  const roda = montarRoda('/a', [sub('r0', 'waiting'), sub('r1', 'waiting'), sub('r2', 'working')]);
+  const tela = {
+    sim: { chars: oito, fanout: { rodas: new Map([['/a', roda]]) } },
+    renderer: { heads: new Map([...oito.keys()].map((id) => [id, { visible: true, x: 100, y: 100 }])) },
+    sx: (x: number) => x,
+    sy: (y: number) => y,
+  };
+
+  it('a pílula soma os oito personagens e os três da roda', () => {
+    expect(overlay.countIn.call(tela, '/a')).toBe(11);
+  });
+
+  it('o balão soma os oito personagens que esperam e os dois que esperam na roda', () => {
+    expect(overlay.esperaDasSalas.call(tela, 1440, 900)?.get('/a')).toEqual({ ancora: 'p0', total: 10 });
   });
 });
