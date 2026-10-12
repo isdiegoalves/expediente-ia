@@ -29,7 +29,6 @@ function mundo(on: On, w: Mundo = {}) {
   on('session.id', () => ({ value: 'sess-1' }))
   on('session.surfaces', () => ({ value: ['terminal'] }))
   on('session.usage', () => ({ value: { startedAt: NOW, context: { window: 200_000, tokens: 1, percent: 0 }, rateLimits: [] } }))
-  on('ui.open', () => ({ value: undefined }))
   on('http.fetch', ($, e) => {
     urls.push(e.url)
     return { deny: 'ECONNREFUSED' }
