@@ -258,6 +258,24 @@ describe('permission-hook.mjs: o token local nunca viaja, e o servidor prova que
     }
   });
 
+  it('servidor que prova ter o token mas responde um desafio fora do formato: o hook não manda nada', async () => {
+    const pedidos: string[] = [];
+    const falso = http.createServer((req, res) => {
+      pedidos.push(`${req.method} ${req.url}`);
+      const n = new URL(req.url ?? '/', 'http://x').searchParams.get('n') ?? '';
+      res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ desafio: 'curto', prova: provaDoServidor(CHAVE_DE_TESTE, n) }));
+    });
+    await new Promise<void>((ok) => falso.listen(0, '127.0.0.1', ok));
+    try {
+      const r = await runHook(JSON.stringify(hookJson()), ['--port', String((falso.address() as AddressInfo).port)], { HOME: homeCom(`${VALOR}\n`) });
+      expect(r).toMatchObject({ code: 0, stdout: '' });
+      expect(pedidos).toHaveLength(1);
+    } finally {
+      falso.closeAllConnections();
+      falso.close();
+    }
+  });
+
   it.each([401, 403, 503])('o servidor recusa o registro com %i: sai sem decisão e não pergunta mais nada', async (status) => {
     srv = await fake({ status, body: '{"error":"x"}' });
     const r = await runHook(JSON.stringify(hookJson()), ['--port', String(srv.port)], { HOME: homeCom(`${VALOR}\n`) });

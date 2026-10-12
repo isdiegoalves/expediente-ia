@@ -142,7 +142,7 @@ export function createRequestGuard(auth: Autenticacao): (req: IncomingMessage, r
     const rota = api ? auth.rotaDe(url.pathname) : undefined;
     const leitura = method === 'GET' || method === 'HEAD';
     if (rota === 'desafio') {
-      if (leitura) auth.desafio(res, url);
+      if (leitura) auth.desafio(req, res, url);
       else rejectJson(res, 405, 'método não permitido');
       return true;
     }

@@ -107,8 +107,13 @@ export class Autenticacao {
     return iguais(m[2], provaDoCliente(chave, m[1], metodo, caminho));
   }
 
-  /** `GET /api/token/desafio?n=<nonce do cliente>`: o desafio do servidor e a prova de que ele tem o token. Sem prova do cliente. */
-  desafio(res: ServerResponse, url: URL): void {
+  /**
+   * `GET /api/token/desafio?n=<nonce do cliente>`: o desafio do servidor e a prova de que ele tem o token. Sem prova do cliente. Pedido de
+   * outro site (um `fetch` no-cors de qualquer página aberta no navegador) leva 403: senão ele poderia encher o teto e expulsar os desafios de verdade.
+   */
+  desafio(req: IncomingMessage, res: ServerResponse, url: URL): void {
+    const site = req.headers['sec-fetch-site'];
+    if (site !== undefined && site !== 'none' && site !== 'same-origin') return json(res, 403, { error: 'pedido de outra origem' });
     const lido = this.lerToken();
     if (!lido.ok) return json(res, 503, { error: `Sem token legível: ${lido.motivo}.` });
     const n = url.searchParams.get('n') ?? '';

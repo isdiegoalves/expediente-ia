@@ -127,6 +127,15 @@ describe('desafio do servidor', () => {
     expect((await pedirDesafio(a)).prova).not.toBe(provaDoServidor(CHAVE, a));
   });
 
+  it('pedido de outro site (um fetch no-cors de qualquer página) leva 403 e não gasta o teto; da mesma origem, de fora do navegador ou sem o cabeçalho passa', async () => {
+    for (const site of ['cross-site', 'same-site', 'lixo']) expect((await enviar('GET', `/api/token/desafio?n=${aleatorioHex()}`, { 'Sec-Fetch-Site': site })).status, site).toBe(403);
+    for (const site of ['same-origin', 'none']) expect((await enviar('GET', `/api/token/desafio?n=${aleatorioHex()}`, { 'Sec-Fetch-Site': site })).status, site).toBe(200);
+    expect((await enviar('GET', `/api/token/desafio?n=${aleatorioHex()}`, {})).status).toBe(200);
+    const primeiro = await prova('POST', '/api/demo');
+    for (let i = 0; i < MAX_DESAFIOS + 5; i++) await enviar('GET', `/api/token/desafio?n=${aleatorioHex()}`, { 'Sec-Fetch-Site': 'cross-site' });
+    expect((await enviar('POST', '/api/demo', { ...JSON_CT, 'X-Expediente-Prova': primeiro })).status).toBe(200);
+  });
+
   it('nonce ausente, curto, longo, maiúsculo ou repetido na consulta leva 400, e só GET e HEAD atendem', async () => {
     for (const q of ['', '?n=', '?n=abc', `?n=${'a'.repeat(33)}`, `?n=${'A'.repeat(32)}`, `?n=${'g'.repeat(32)}`, `?n[]=${'a'.repeat(32)}`]) {
       expect((await enviar('GET', `/api/token/desafio${q}`, {})).status, q).toBe(400);
