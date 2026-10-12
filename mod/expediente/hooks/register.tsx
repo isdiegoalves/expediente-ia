@@ -22,21 +22,25 @@
 //
 // 6. Foco pedido pelo navegador (foco.ts): a cada 1 s, só onde há terminal e com o Expediente no ar, busca os pedidos
 //    de foco (GET /api/mod/focos), assume um (POST .../assumir) e roda o mesmo plano do botão Focar, com o pid inteiro
-//    que o servidor devolve e a conferência de que ele ainda é o claude. Reporta o resultado (POST .../resultado). Os POST levam o
-//    token local (~/.expediente/host/token) no cabeçalho X-Expediente-Token; sem o arquivo, nada é postado. O painel do /escritorio
-//    ganha o link "Abrir o escritório" (a página recebe o token pelo fragmento da URL); o valor nunca vira texto de saída, status ou aviso.
+//    que o servidor devolve e a conferência de que ele ainda é o claude. Reporta o resultado (POST .../resultado). O token local
+//    (~/.expediente/host/token) nunca viaja: antes de cada POST, e dos GET que mudam estado no servidor (a lista de focos e o /ir),
+//    o mod pede um desafio, confere a prova de que o servidor tem o token e manda o HMAC dele em X-Expediente-Prova (prova.ts);
+//    sem o arquivo, ou com um servidor que não prova, nada é enviado. O painel do /escritorio ganha, no terminal, "Abrir o escritório":
+//    um botão que grava um bilhete de uso único (60 s) num HTML em pasta temporária de modo 700 e roda `open` só com o caminho.
+//    O token e o bilhete nunca viram texto de saída, status ou aviso.
 //
 // Regras: nenhum hook lança (um hook que lança é pulado, mas o que ele deixou pela metade fica): cada
 // passo tem seu try/catch e falha = silêncio. $.process roda só argv fixo, sem shell montado de texto alheio: mv e rm -f do .tmp (ponte),
 // pgrep e o próprio ps (amostra, tty, confirmação do programa do pid), o leitor de ZELLIJ_*/WEZTERM_* (foco), zellij, open -a WezTerm, osascript
-// (foco) e open com URL da lista permitida (abrir o app); nada de
+// (foco), open com URL da lista permitida (abrir o app) e mktemp, chmod, open e rm -rf só do arquivo e da pasta temporária do escritório; nada de
 // $.model, $.prompt, decisão de ferramenta nem leitura da conversa; a rede é só 127.0.0.1. O estado fica em variáveis do módulo: um
 // hot reload recomeça do zero, o que aqui custa no máximo uma regravação a mais do arquivo de uso.
 //
 // Análise estática do Claude Code: cada chamada é escrita por extenso ($.noun.método), o nome do evento é
 // sempre uma string literal e `$` só é passado para funções declaradas no topo deste arquivo.
 import type { EngineInterface, HttpInit, HttpResponse, Register, RenderSurface, SessionRateLimit } from 'claude-code'
-import { abrirUrl } from './abrir'
+import { abrirUrl, argvChmod, argvLimpar, argvMktemp, arquivoDoEscritorio, ehUrlDoEscritorio, htmlDoEscritorio, pastaTemporaria } from './abrir'
+import { chaveDoArquivo, iguaisHex, nonceAleatorio, provaDoCliente, provaDoServidor } from './prova'
 import { FOCO_OFFLINE_MS, FOCO_POLL_MS, lerPedidos, lerPidAssumido, type ResultadoFoco } from './foco'
 import { acoesDaSessao, detalheTexto, lerIr, listaTexto, nomeDaLinha, pidDoId, porEstado, type IrView } from './escritorio'
 import { offlineText, outdatedText, parseResumo, parseSummary, resumoTexto, statusText, summaryText, type Summary } from './resumo'
@@ -45,8 +49,6 @@ import { AMOSTRA_MS, argvPaiDe, arquivoAmostraOf, contarMix, contarProgramas, eh
 import { appDirOf, filtrarSessaoApp, FRESCO_MS, PONTE_MS, sessoesAppFileOf, type SessaoApp } from './ponte'
 
 export { offlineText, outdatedText, parseSummary, statusText, summaryText, type Summary, type WaitingAgent } from './resumo'
-
-const TOKEN_FORMATO = /^[0-9a-f]{64}$/
 
 /** Porta padrão do Expediente (a mesma do servidor, do hook de permissão e do docker-compose). */
 export const DEFAULT_PORT = 4848
@@ -218,39 +220,74 @@ async function writeUsage($: EngineInterface, rateLimits: readonly SessionRateLi
   lastWrite = { key, at: now }
 }
 
-/**
- * O token local, ou undefined se o arquivo faltar ou não tiver 64 hexadecimais. O valor só pode ir para o cabeçalho de uma
- * escrita ou para o destino de um link do painel: texto de saída de comando, linha de status e aviso chegam ao modelo.
- */
-async function lerTokenLocal($: EngineInterface): Promise<string | undefined> {
-  try {
-    const e = await readEnv($)
-    if (!e.tokenFile) return undefined
-    const token = (await $.fs.read(e.tokenFile)).trim()
-    return TOKEN_FORMATO.test(token) ? token : undefined
-  } catch {
-    return undefined
-  }
-}
-
-/** GET (ou POST com corpo JSON e o token local) no Expediente local com prazo de 2 s; undefined = fora do ar, lento demais ou sem token. Nunca lança. */
-async function getExpediente($: EngineInterface, port: number, path: string, post?: string): Promise<HttpResponse | undefined> {
-  const token = post === undefined ? undefined : await lerTokenLocal($)
-  if (post !== undefined && !token) return undefined
+/** O prazo de 2 s de cada pedido ao Expediente local. */
+async function buscar($: EngineInterface, url: string, init: HttpInit): Promise<HttpResponse | undefined> {
   let wait: { cancel: () => void } | undefined
   const timeout = new Promise<undefined>((resolve) => {
     wait = $.clock.after(FETCH_TIMEOUT_MS, () => resolve(undefined))
   })
   try {
-    const init: HttpInit =
-      post === undefined || !token
-        ? { headers: { accept: 'application/json' } }
-        : { method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json', 'x-expediente-token': token }, body: post }
-    return await Promise.race([$.http.fetch(`http://127.0.0.1:${port}${path}`, init), timeout])
+    return await Promise.race([$.http.fetch(url, init), timeout])
   } catch {
     return undefined
   } finally {
     wait?.cancel()
+  }
+}
+
+/**
+ * A chave dos HMAC (os 32 bytes do token local), ou undefined se o arquivo faltar ou não tiver 64 hexadecimais. O texto do token
+ * nunca sai daqui: nem em cabeçalho, nem em URL, nem em saída de comando, linha de status ou aviso (chegam ao modelo).
+ */
+async function lerChave($: EngineInterface): Promise<Uint8Array | undefined> {
+  try {
+    const e = await readEnv($)
+    return e.tokenFile ? chaveDoArquivo(await $.fs.read(e.tokenFile)) : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** A última vez que o servidor respondeu um desafio com uma prova que não é a do token deste usuário: quem ocupa a porta não é o Expediente. */
+let servidorNaoConfere = false
+
+/** Pede um desafio e confere a prova de que o servidor tem o token. undefined = fora do ar, ou não confere (`servidorNaoConfere`). */
+async function pedirDesafio($: EngineInterface, port: number, chave: Uint8Array): Promise<string | undefined> {
+  const n = nonceAleatorio()
+  const res = await buscar($, `http://127.0.0.1:${port}/api/token/desafio?n=${n}`, { headers: { accept: 'application/json' } })
+  if (!res?.ok) return undefined
+  let json: { desafio?: unknown; prova?: unknown } | null
+  try {
+    json = JSON.parse(res.text) as { desafio?: unknown; prova?: unknown } | null
+  } catch {
+    json = null
+  }
+  const desafio = typeof json?.desafio === 'string' && /^[0-9a-f]{32}$/.test(json.desafio) ? json.desafio : undefined
+  const confere = desafio !== undefined && typeof json?.prova === 'string' && iguaisHex(json.prova, provaDoServidor(chave, n))
+  servidorNaoConfere = !confere
+  return confere ? desafio : undefined
+}
+
+/**
+ * GET (ou POST com corpo JSON) no Expediente local com prazo de 2 s; undefined = fora do ar, lento demais, sem token ou com um
+ * servidor que não prova ter o token. `comProva` (padrão nos POST): pede um desafio e manda a prova no cabeçalho; os GET que
+ * mudam estado do servidor também a exigem (o painel pede o /ir e o foco pede a lista). Nunca lança.
+ */
+async function getExpediente($: EngineInterface, port: number, path: string, post?: string, comProva: boolean = post !== undefined): Promise<HttpResponse | undefined> {
+  try {
+    const url = new URL(`http://127.0.0.1:${port}${path}`)
+    const headers: Record<string, string> = { accept: 'application/json' }
+    if (comProva) {
+      const chave = await lerChave($)
+      if (!chave) return undefined
+      const desafio = await pedirDesafio($, port, chave)
+      if (!desafio) return undefined
+      headers['x-expediente-prova'] = `${desafio}.${provaDoCliente(chave, desafio, post === undefined ? 'GET' : 'POST', `${url.pathname}${url.search}`)}`
+    }
+    const init: HttpInit = post === undefined ? { headers } : { method: 'POST', headers: { ...headers, 'content-type': 'application/json' }, body: post }
+    return await buscar($, url.href, init)
+  } catch {
+    return undefined
   }
 }
 
@@ -454,8 +491,8 @@ interface EstadoPainel {
   resumo: Summary
   ir: Map<string, IrView>
   porta: number
-  /** O escritório com o token no fragmento; ausente sem o arquivo do token. É destino de link, nunca texto. */
-  escritorio?: string
+  /** O arquivo do token existe e tem a forma certa: dá para pedir um bilhete e abrir o escritório já autorizado. */
+  autorizavel: boolean
 }
 
 let painel: EstadoPainel | undefined
@@ -515,7 +552,7 @@ async function atualizarPainel($: EngineInterface): Promise<Asked> {
     const principais = asked.summary.usage.filter((u) => u.kind === 'main').slice(0, MAX_SESSOES_PAINEL)
     await Promise.all(
       principais.map(async (u) => {
-        const res = await getExpediente($, e.port, `/api/agentes/${encodeURIComponent(u.id)}/ir`)
+        const res = await getExpediente($, e.port, `/api/agentes/${encodeURIComponent(u.id)}/ir`, undefined, true)
         const v = res?.ok ? lerIr(res.text) : undefined
         if (!v) return
         ir.set(u.id, v)
@@ -523,8 +560,7 @@ async function atualizarPainel($: EngineInterface): Promise<Asked> {
       }),
     )
   }
-  const token = await lerTokenLocal($)
-  painel = { resumo: asked.summary, ir, porta: e.port, ...(token ? { escritorio: `http://localhost:${e.port}/#t=${token}` } : {}) }
+  painel = { resumo: asked.summary, ir, porta: e.port, autorizavel: !!(await lerChave($)) }
   $.ui.invalidate('ui.render')
   return asked
 }
@@ -545,6 +581,58 @@ async function abrirNoApp($: EngineInterface, url: string): Promise<void> {
     (texto) => $.ui.toast(texto),
     url,
   )
+}
+
+/** Quanto vale um bilhete (o mesmo prazo do servidor): o arquivo temporário some junto. */
+const BILHETE_MS = 60_000
+/** Um bilhete de uso único do servidor e a URL do escritório que o leva; undefined se não deu (ver `servidorNaoConfere`). */
+async function urlDoEscritorio($: EngineInterface, porta: number): Promise<string | undefined> {
+  const res = await getExpediente($, porta, '/api/token/bilhete', '{}')
+  if (!res?.ok) return undefined
+  try {
+    const bilhete = (JSON.parse(res.text) as { bilhete?: unknown } | null)?.bilhete
+    const url = `http://127.0.0.1:${porta}/#b=${String(bilhete)}`
+    return ehUrlDoEscritorio(url) ? url : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Botão "Abrir o escritório" do terminal. O bilhete vai num HTML que redireciona ao escritório, numa pasta temporária de modo 700
+ * (`mktemp -d`), e o `open` recebe só o caminho do arquivo: nada sensível no argv, que outro usuário lê com `ps`. A pasta some
+ * quando o bilhete vence. Nunca lança.
+ */
+async function abrirEscritorio($: EngineInterface, porta: number): Promise<void> {
+  let pasta: string | undefined
+  try {
+    const url = await urlDoEscritorio($, porta)
+    if (!url) {
+      $.ui.toast(servidorNaoConfere ? `Expediente: quem responde na porta ${porta} não é o seu Expediente` : 'Expediente: não deu para autorizar; rode npm run abrir na pasta do Expediente')
+      return
+    }
+    pasta = pastaTemporaria((await $.process.run(argvMktemp, { timeoutMs: 5_000 })).stdout)
+    const html = htmlDoEscritorio(url)
+    if (!pasta || !html) throw new Error('pasta temporária recusada')
+    const arquivo = arquivoDoEscritorio(pasta)
+    await $.fs.write(arquivo, html)
+    const chmod = argvChmod(arquivo)
+    if (!chmod || (await $.process.run(chmod, { timeoutMs: 5_000 })).exitCode !== 0) throw new Error('chmod recusado')
+    const dir = pasta
+    $.clock.after(BILHETE_MS, () => {
+      const limpar = argvLimpar(dir)
+      if (limpar) void $.process.run(limpar, { timeoutMs: 5_000 }).catch(() => undefined)
+    })
+    await abrirUrl(
+      (argv) => $.process.run(argv, { timeoutMs: 10_000 }),
+      (texto) => $.ui.toast(texto),
+      arquivo,
+    )
+  } catch {
+    const limpar = pasta ? argvLimpar(pasta) : undefined
+    if (limpar) await $.process.run(limpar, { timeoutMs: 5_000 }).catch(() => undefined)
+    $.ui.toast('Expediente: não deu para abrir o escritório; rode npm run abrir na pasta do Expediente')
+  }
 }
 
 async function copiarComando($: EngineInterface, comando: string, surface: RenderSurface): Promise<void> {
@@ -601,7 +689,7 @@ async function atenderFocos($: EngineInterface): Promise<void> {
     if (agora < focosAte) return
     if (!(await $.session.surfaces()).includes('terminal')) return
     const e = await readEnv($)
-    const lista = await getExpediente($, e.port, '/api/mod/focos')
+    const lista = await getExpediente($, e.port, '/api/mod/focos', undefined, true)
     if (!lista?.ok) {
       focosAte = agora + FOCO_OFFLINE_MS
       return
@@ -719,15 +807,14 @@ export const register: Register = (on) => {
     const { Box, Text, Button, Link, Code } = $.ui.resolve(e)
     desenhadoEm = await $.clock.now()
     if (!painel) return <Text dimColor>Rode /escritorio para carregar a lista.</Text>
-    const { resumo, ir, porta, escritorio } = painel
+    const { resumo, ir, porta, autorizavel } = painel
     const linhas = listaTexto([], resumo.self)
+    // Só o botão do terminal (que usa o arquivo temporário): o app desktop só desenha Link para https: ou http://localhost, e o
+    // `localhost` pode resolver para ::1, onde outro programa ouça a mesma porta e receba o bilhete no lugar do navegador.
     return (
       <Box flexDirection="column">
-        {escritorio ? (
-          <Box>
-            <Link href={escritorio} label="Abrir o escritório" />
-            {e.surface === 'terminal' ? <Button key="abrir-escritorio" label="Abrir" onPress={() => void abrirNoApp($, escritorio)} /> : undefined}
-          </Box>
+        {autorizavel && e.surface === 'terminal' ? (
+          <Button key="abrir-escritorio" label="Abrir o escritório" onPress={() => void abrirEscritorio($, porta)} />
         ) : (
           <Text dimColor>Para abrir o escritório já autorizado, rode npm run abrir na pasta do Expediente.</Text>
         )}

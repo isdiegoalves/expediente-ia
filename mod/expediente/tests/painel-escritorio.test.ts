@@ -2,6 +2,7 @@
 // `process.run` e `ui.copy` são simulados e o teste confere o argv que chegaria a eles.
 import type { CommandRunInput, HttpResponse, On } from 'claude-code'
 import { describe, expect, mock, test } from 'claude-code/testing'
+import { chaveDoArquivo, provaDoServidor } from '../hooks/prova'
 
 const NOW = Date.parse('2026-10-09T12:00:00Z')
 const PORTA = '4851'
@@ -16,6 +17,8 @@ const PANE = {
   requestId: 'escritorio',
   props: { title: 'Escritório', isFocused: false, bodyColumns: 80, placement: 'dock', scroll: SCROLL, view: {} },
 } as const
+const TOKEN_LOCAL = 'ab'.repeat(32)
+const DESAFIO = 'fedcba9876543210fedcba9876543210'
 const RODOU = { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
 
 interface Sessao {
@@ -65,7 +68,9 @@ function mundo(on: On, m: Mundo) {
     rodados.push([...e.argv])
     return { value: { ...RODOU, ...(m.processo?.(e.argv) ?? {}) } }
   })
+  on('fs.read', (_$, e) => (e.path === '/home/fulano/.expediente/host/token' ? { value: `${TOKEN_LOCAL}\n` } : { deny: 'ENOENT' }))
   on('http.fetch', ($, e) => {
+    if (e.url.includes('/api/token/desafio?n=')) return { value: resposta(JSON.stringify({ desafio: DESAFIO, prova: provaDoServidor(chaveDoArquivo(TOKEN_LOCAL)!, new URL(e.url).searchParams.get('n') ?? '') })) }
     if (e.url.endsWith('/api/mod/focos')) return { value: resposta('{"focos":[]}') }
     buscas.push(e.url)
     const ir = /\/api\/agentes\/([^/]+)\/ir$/.exec(e.url)

@@ -3,6 +3,7 @@
 import type { CommandRunInput, HttpResponse, On } from 'claude-code'
 import { describe, expect, mock, test } from 'claude-code/testing'
 import { FOCO_OFFLINE_MS, FOCO_POLL_MS } from '../hooks/foco'
+import { chaveDoArquivo, provaDoCliente, provaDoServidor } from '../hooks/prova'
 
 const NOW = Date.parse('2026-10-10T12:00:00Z')
 const PORTA = '4852'
@@ -11,6 +12,7 @@ const TOKEN = 'a'.repeat(32)
 /** O token local: 64 hexadecimais. Aqui é uma sentinela, para provar que ele só aparece no cabeçalho das escritas. */
 const TOKEN_LOCAL = '5e17e11a'.repeat(8)
 const ARQUIVO_DO_TOKEN = '/home/fulano/.expediente/host/token'
+const DESAFIO = 'fedcba9876543210fedcba9876543210'
 const CLAUDE = '/Users/fulano/.local/bin/claude\n'
 const PAINEL_ZELLIJ = 'ZELLIJ_PANE_ID=17\nZELLIJ_SESSION_NAME=main\n'
 const START = { cwd: '/work', surface: 'terminal', isInteractive: true } as const
@@ -42,6 +44,8 @@ interface Mundo {
   processo?: (argv: readonly string[]) => Partial<typeof RODOU>
   /** Conteúdo do arquivo do token; 'ausente' = não existe. Padrão: um token válido. */
   token?: string | 'ausente'
+  /** O token que o servidor tem (padrão: o do arquivo). Diferente = quem ocupa a porta não é o Expediente. */
+  tokenDoServidor?: string
 }
 
 function resposta(status: number, texto: string): HttpResponse {
@@ -52,7 +56,11 @@ function mundo(on: On, m: Mundo = {}) {
   const clock = mock.clock(on, { now: NOW })
   mock.env(on, { HOME: '/home/fulano', CLAUDE_CONFIG_DIR: '~/.claude', EXPEDIENTE_PORT: PORTA })
   const chamadas: Chamada[] = []
-  const cabecalhos: Array<{ url: string; token: string | undefined }> = []
+  const cabecalhos: Array<{ url: string; prova: string | undefined; valida: boolean }> = []
+  /** Tudo o que o mod mandou (URL, cabeçalhos e corpo): onde o token não pode aparecer. */
+  const brutos: string[] = []
+  const nonces: string[] = []
+  let desafios = 0
   const saidas: string[] = []
   const rodados: string[][] = []
   const copiados: string[] = []
@@ -87,9 +95,17 @@ function mundo(on: On, m: Mundo = {}) {
     rodados.push([...e.argv])
     return { value: { ...RODOU, ...(m.processo?.(e.argv) ?? {}) } }
   })
-  on('http.fetch', (_$, e) => {
+  on('http.fetch', async (_$, e) => {
     const url = e.url.replace(BASE, '')
-    cabecalhos.push({ url, token: e.init?.headers?.['x-expediente-token'] })
+    brutos.push(JSON.stringify([e.url, e.init ?? null]))
+    if (url.startsWith('/api/token/desafio?n=')) {
+      desafios++
+      const n = new URL(e.url).searchParams.get('n') ?? ''
+      nonces.push(n)
+      return { value: resposta(200, JSON.stringify({ desafio: DESAFIO, prova: provaDoServidor(chaveDoArquivo(m.tokenDoServidor ?? TOKEN_LOCAL)!, n) })) }
+    }
+    const prova = e.init?.headers?.['x-expediente-prova']
+    cabecalhos.push({ url, prova, valida: prova === `${DESAFIO}.${provaDoCliente(chaveDoArquivo(TOKEN_LOCAL)!, DESAFIO, e.init?.method ?? 'GET', url)}` })
     if (url === '/api/mod/focos') {
       chamadas.push({ metodo: 'GET', url })
       const p = m.pedidos ? m.pedidos() : { focos: [] }
@@ -106,7 +122,7 @@ function mundo(on: On, m: Mundo = {}) {
     const usage = [{ id: '.claude:507', name: 'Ana', kind: 'main', status: 'idle', room: 'loja', compactions: 0 }]
     return { value: resposta(200, JSON.stringify({ version: '1', agents: 1, working: 0, waiting: [], usage })) }
   })
-  return { clock, chamadas, cabecalhos, saidas, rodados, copiados, superficiesLidas: () => superficiesLidas }
+  return { clock, chamadas, cabecalhos, brutos, saidas, rodados, copiados, nonces, desafios: () => desafios, superficiesLidas: () => superficiesLidas }
 }
 
 const noClaude = (argv: readonly string[]) => /^ps -o comm= -p \d+$/.test(argv.join(' '))
@@ -238,27 +254,42 @@ describe('foco pedido pelo navegador', () => {
   })
 })
 
-describe('foco pedido pelo navegador e o token local', () => {
-  test('as escritas levam o token no cabeçalho X-Expediente-Token e as leituras não', async ($, on) => {
+describe('foco pedido pelo navegador e a prova do token local', () => {
+  test('o GET dos pedidos e os POST levam a prova certa, cada um com um desafio novo, e o mod nunca manda o token', async ($, on) => {
     const w = mundo(on, { pedidos: pedido, processo: comPainel })
     await ligar($, w)
     expect(w.cabecalhos).toEqual([
-      { url: '/api/mod/focos', token: undefined },
-      { url: `/api/mod/focos/${TOKEN}/assumir`, token: TOKEN_LOCAL },
-      { url: `/api/mod/focos/${TOKEN}/resultado`, token: TOKEN_LOCAL },
+      { url: '/api/mod/focos', prova: expect.stringMatching(/^[0-9a-f]{32}\.[0-9a-f]{64}$/), valida: true },
+      { url: `/api/mod/focos/${TOKEN}/assumir`, prova: expect.any(String), valida: true },
+      { url: `/api/mod/focos/${TOKEN}/resultado`, prova: expect.any(String), valida: true },
     ])
+    expect(w.desafios()).toBe(3)
+    expect(new Set(w.nonces).size).toBe(3)
+    for (const n of w.nonces) expect(n).toMatch(/^[0-9a-f]{32}$/)
+    expect(w.brutos.join('\n')).not.toContain(TOKEN_LOCAL)
   })
 
-  for (const token of ['ausente', 'curto', '', 'g'.repeat(64), `${TOKEN_LOCAL}0`]) {
-    test(`arquivo do token ${token === 'ausente' ? 'ausente' : `inválido (${token.length} caracteres)`}: nada é postado, nada roda e nada quebra`, async ($, on) => {
+  for (const token of ['ausente', 'curto', '', 'g'.repeat(64), `${TOKEN_LOCAL}0`, TOKEN_LOCAL.toUpperCase()]) {
+    test(`arquivo do token ${token === 'ausente' ? 'ausente' : `inválido (${token.length} caracteres)`}: nada é enviado, nada roda e nada quebra`, async ($, on) => {
       const w = mundo(on, { pedidos: pedido, processo: comPainel, token })
       await ligar($, w)
-      expect(w.chamadas.map((c) => c.url)).toEqual(['/api/mod/focos'])
+      expect(w.chamadas).toEqual([])
+      expect(w.brutos.filter((b) => !b.includes('/api/token/desafio'))).toEqual([])
       expect(w.rodados.some((a) => a[0] === 'ps' && a[1] === '-o')).toBe(false)
     })
   }
 
-  test('o valor do token não aparece em texto de comando, linha de status, aviso nem cópia', async ($, on) => {
+  test('servidor que não prova ter o token (quem ocupa a porta): o mod pede o desafio, não manda a prova nem posta nada, e o token não sai', async ($, on) => {
+    const w = mundo(on, { pedidos: pedido, processo: comPainel, tokenDoServidor: 'f'.repeat(64) })
+    await ligar($, w)
+    expect(w.chamadas).toEqual([])
+    expect(w.cabecalhos).toEqual([])
+    expect(w.desafios()).toBe(1)
+    expect(w.brutos.join('\n')).not.toContain(TOKEN_LOCAL)
+    expect(w.rodados.some((a) => a[0] === 'ps' && a[1] === '-o')).toBe(false)
+  })
+
+  test('o valor do token não aparece em texto de comando, linha de status, aviso, cópia nem argv', async ($, on) => {
     const w = mundo(on, { pedidos: pedido, processo: comPainel })
     const texto = (await $.command.run(RUN)) as { text?: string }
     await ligar($, w)

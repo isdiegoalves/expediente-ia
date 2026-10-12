@@ -1,6 +1,6 @@
 // Testes da lista permitida do `open` e da validação dos ids do foco. Nada aqui executa comando.
 import { describe, expect, test } from 'claude-code/testing'
-import { abrirUrl, argvAbrir } from '../hooks/abrir'
+import { abrirUrl, argvAbrir, argvChmod, argvLimpar, argvMktemp, arquivoDoEscritorio, ehUrlDoEscritorio, htmlDoEscritorio, pastaTemporaria } from '../hooks/abrir'
 import { argvAtivarPainelWezTerm, argvFocoZellij } from '../hooks/painel'
 
 const UUID = '11111111-aaaa-4aaa-8aaa-111111111111'
@@ -47,39 +47,101 @@ describe('argvAbrir', () => {
   })
 })
 
-describe('argvAbrir: o escritório com o token no fragmento', () => {
-  const HEX = '5e17e11a'.repeat(8)
+const BILHETE = '00112233445566778899aabbccddeeff'
+const PASTA = '/var/folders/ab/cdef_gh/T/expediente-abrir.XXXXXXXX.aBcD1234'
 
-  test('aceita só http://localhost:<porta>/#t=<64 hexadecimais minúsculos>', async () => {
-    for (const porta of ['4848', '80', '65535']) expect(argvAbrir(`http://localhost:${porta}/#t=${HEX}`)).toEqual(['open', `http://localhost:${porta}/#t=${HEX}`])
+describe('o escritório com o bilhete de uso único', () => {
+  test('a URL é só http://127.0.0.1:<porta>/#b=<32 hexadecimais minúsculos>', async () => {
+    for (const porta of ['4848', '80', '65535']) expect(ehUrlDoEscritorio(`http://127.0.0.1:${porta}/#b=${BILHETE}`)).toBe(true)
+    for (const url of [
+      `http://localhost:4848/#b=${BILHETE}`,
+      `http://[::1]:4848/#b=${BILHETE}`,
+      `http://127.0.0.2:4848/#b=${BILHETE}`,
+      `http://expediente.localhost:4848/#b=${BILHETE}`,
+      `https://127.0.0.1:4848/#b=${BILHETE}`,
+      `http://127.0.0.1/#b=${BILHETE}`,
+      `http://127.0.0.1:0/#b=${BILHETE}`,
+      `http://127.0.0.1:65536/#b=${BILHETE}`,
+      `http://127.0.0.1:99999/#b=${BILHETE}`,
+      `http://127.0.0.1:4848@evil.example/#b=${BILHETE}`,
+      `http://evil.example@127.0.0.1:4848/#b=${BILHETE}`,
+      `http://127.0.0.1:4848#b=${BILHETE}`,
+      `http://127.0.0.1:4848/x#b=${BILHETE}`,
+      `http://127.0.0.1:4848/?a=1#b=${BILHETE}`,
+      `http://127.0.0.1:4848/#t=${'a'.repeat(64)}`,
+      `http://127.0.0.1:4848/#t=${BILHETE}`,
+      `http://127.0.0.1:4848/#b=${BILHETE.slice(1)}`,
+      `http://127.0.0.1:4848/#b=${BILHETE}0`,
+      `http://127.0.0.1:4848/#b=${BILHETE.toUpperCase()}`,
+      `http://127.0.0.1:4848/#b=${BILHETE}&x=1`,
+      `http://127.0.0.1:4848/#b=${BILHETE}\n`,
+      ` http://127.0.0.1:4848/#b=${BILHETE}`,
+      'http://127.0.0.1:4848/',
+      'http://127.0.0.1:4848/#b=',
+    ]) {
+      expect(ehUrlDoEscritorio(url), url).toBe(false)
+    }
+    expect(ehUrlDoEscritorio(undefined as unknown as string)).toBe(false)
   })
 
-  test('recusa outro esquema, host, porta, caminho, consulta ou fragmento', async () => {
-    for (const url of [
-      `https://localhost:4848/#t=${HEX}`,
-      `http://127.0.0.1:4848/#t=${HEX}`,
-      `http://expediente.localhost:4848/#t=${HEX}`,
-      `https://expediente.localhost/#t=${HEX}`,
-      `http://localhost/#t=${HEX}`,
-      `http://localhost:0/#t=${HEX}`,
-      `http://localhost:4848@evil.example/#t=${HEX}`,
-      `http://evil.example:4848/#t=${HEX}`,
-      `http://localhost.evil.example:4848/#t=${HEX}`,
-      `http://localhost:4848#t=${HEX}`,
-      `http://localhost:4848/x#t=${HEX}`,
-      `http://localhost:4848/?a=1#t=${HEX}`,
-      `http://localhost:4848/#t=${HEX.slice(1)}`,
-      `http://localhost:4848/#t=${HEX}0`,
-      `http://localhost:4848/#t=${HEX.toUpperCase()}`,
-      `http://localhost:4848/#t=${HEX}&x=1`,
-      `http://localhost:4848/#t=${HEX}\n`,
-      `http://localhost:4848/#x=1&t=${HEX}`,
-      ` http://localhost:4848/#t=${HEX}`,
-      'http://localhost:4848/',
-      'http://localhost:4848/#t=',
+  test('a URL do escritório, com o bilhete, nunca chega a um argv: nem pelo argvAbrir', async () => {
+    expect(argvAbrir(`http://127.0.0.1:4848/#b=${BILHETE}`)).toBeUndefined()
+    expect(argvAbrir(`http://localhost:4848/#b=${BILHETE}`)).toBeUndefined()
+    const rodados: string[][] = []
+    const avisos: string[] = []
+    await abrirUrl(async (argv) => void rodados.push(argv), (t) => void avisos.push(t), `http://127.0.0.1:4848/#b=${BILHETE}`)
+    expect(rodados).toEqual([])
+    expect(avisos).toHaveLength(1)
+  })
+
+  test('o HTML de redirecionamento só sai para a URL da forma estrita, com ela e nada mais de variável', async () => {
+    const url = `http://127.0.0.1:4848/#b=${BILHETE}`
+    const html = htmlDoEscritorio(url)!
+    expect(html).toContain(`<meta http-equiv="refresh" content="0;url=${url}">`)
+    expect(html.split(url)).toHaveLength(3)
+    expect(htmlDoEscritorio(`${url}"><script>x</script>`)).toBeUndefined()
+    expect(htmlDoEscritorio('http://127.0.0.1:4848/')).toBeUndefined()
+  })
+
+  test('a pasta temporária é a que o mktemp -d devolve: caminho absoluto, nome expediente-abrir.*, sem . nem .. e sem texto de shell', async () => {
+    expect(pastaTemporaria(`${PASTA}\n`)).toBe(PASTA)
+    expect(pastaTemporaria('/tmp/expediente-abrir.abcd1234')).toBe('/tmp/expediente-abrir.abcd1234')
+    for (const pasta of [
+      '',
+      'expediente-abrir.abcd1234',
+      '/expediente-abrir.abcd1234',
+      '/tmp/outra.abcd1234',
+      '/tmp/expediente-abrir.',
+      '/tmp/expediente-abrir.abc',
+      '/tmp/../etc/expediente-abrir.abcd1234',
+      '/tmp/./expediente-abrir.abcd1234',
+      '/tmp/expediente-abrir.abcd1234/..',
+      '/tmp/expediente-abrir.abcd1234/outra',
+      '/tmp/expediente-abrir.abcd 1234',
+      '/tmp/expediente-abrir.abcd1234; rm -rf /',
+      '/tmp/$(id)/expediente-abrir.abcd1234',
+      '/tmp/`id`/expediente-abrir.abcd1234',
+      '/tmp/a b/expediente-abrir.abcd1234',
+      '-rf /tmp/expediente-abrir.abcd1234',
+      '/tmp/expediente-abrir.abcd1234\n/etc',
     ]) {
-      expect(argvAbrir(url), url).toBeUndefined()
+      expect(pastaTemporaria(pasta), pasta).toBeUndefined()
     }
+  })
+
+  test('o open recebe só o abrir.html de uma pasta dessas; chmod e rm -rf, só o arquivo e a pasta', async () => {
+    const arquivo = arquivoDoEscritorio(PASTA)
+    expect(argvAbrir(arquivo)).toEqual(['open', arquivo])
+    expect(argvChmod(arquivo)).toEqual(['chmod', '600', arquivo])
+    expect(argvLimpar(PASTA)).toEqual(['rm', '-rf', PASTA])
+    for (const alvo of [`${PASTA}/outro.html`, `${PASTA}/abrir.htm`, `${PASTA}/../abrir.html`, '/etc/passwd', '/tmp/abrir.html', `${PASTA}/sub/abrir.html`, `${arquivo}\n`, `${arquivo} -a Calculator`, `-a ${arquivo}`]) {
+      expect(argvAbrir(alvo), alvo).toBeUndefined()
+      expect(argvChmod(alvo), alvo).toBeUndefined()
+    }
+    for (const pasta of ['/', '/tmp', '/Users/fulano', `${PASTA}/..`, `${PASTA}/`, '', `${PASTA} /etc`, '/tmp/expediente-abrir.abcd1234/abrir.html']) {
+      expect(argvLimpar(pasta), pasta).toBeUndefined()
+    }
+    expect(argvMktemp).toEqual(['mktemp', '-d', '-t', 'expediente-abrir.XXXXXXXX'])
   })
 })
 

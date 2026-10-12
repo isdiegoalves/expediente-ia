@@ -89,6 +89,8 @@ function mundo(on: On, arquivos: Record<string, string>, opts: { semProcess?: bo
     return a ? { value: { kind: 'file', size: a.text.length, mtimeMs: a.mtimeMs, isLink: false } } : { deny: 'ENOENT' }
   })
   on('fs.read', ($, e) => {
+    // O token local (o foco do navegador o lê a cada segundo) não é arquivo da ponte.
+    if (e.path.endsWith('/host/token')) return { deny: 'ENOENT' }
     leituras.push(e.path)
     const a = fs.get(e.path)
     return a ? { value: a.text } : { deny: 'ENOENT' }
