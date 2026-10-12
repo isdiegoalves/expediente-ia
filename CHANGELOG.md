@@ -33,6 +33,9 @@ mostra a faixa de ações bloqueadas até ser aberta de novo pelo `npm run abrir
 - **Alguns `GET` também mudam estado e agora exigem a prova:** entregar ao hook a decisão que você deu (quem lesse o id no
   snapshot a roubaria), marcar que há um mod de pé e emitir o código de uso único do atalho para a sessão.
 
+- O servidor só entrega os arquivos que o `tema.json` declara (o PNG de `referencias/` e qualquer outro deixam de sair),
+  e tema cuja pasta ou `tema.json` seja link simbólico não vale.
+
 ### Adicionado
 
 - **`npm run abrir`.** Abre o escritório no navegador padrão já autorizado a mudar coisas. Ele confere que quem responde na
@@ -49,6 +52,15 @@ mostra a faixa de ações bloqueadas até ser aberta de novo pelo `npm run abrir
   responde com o comando que roda de qualquer pasta.
 - **Faixa de ações bloqueadas.** Numa página sem a chave, o escritório continua mostrando tudo, mas responder, renomear e
   editar ficam bloqueados, com uma faixa que diz o que fazer, em passos. O `?mock=1` não precisa de token.
+- **`/tema`: prévia, nota e aprovação.** Depois de montar o tema de uma marca, o `/tema` tira três capturas do modo
+  demonstração, avalia cores, logo e legibilidade (nota de 0 a 10 e os pontos de falha, como texto com contraste abaixo
+  de 4,5:1 ou balão cortado) e mostra o tema numa prévia: `?tema=<id>` na URL abre o candidato só naquela aba, com uma
+  faixa que avisa, sem mexer no escritório. O tema só é aplicado quando você aprova na conversa; recusar mantém o que
+  estava. As capturas usam um navegador Chromium instalado, sem janela; sem ele, o `/tema` entrega o endereço da
+  prévia e a nota fica de fora.
+- **O escritório troca de tema sem reiniciar.** Ao aprovar, as páginas abertas recarregam sozinhas em poucos segundos.
+- **`/escritorio tema padrao`** devolve o escritório ao tema padrão, sem o modelo e sem gastar uso.
+- **Demonstração repetível:** `?seed=<n>` gera sempre as mesmas salas e agentes, e `?sala=<n>` enquadra a n-ésima sala.
 
 ## [1.2.0] - 2026-10-11
 

@@ -331,6 +331,34 @@ elevadores e põem neve nas janelas (a neve para com movimento reduzido). A troc
 navegador; caminhos, atividades e animações dos agentes não mudam, e o ciclo dia/noite segue independente. As cores
 da decoração são o bloco `paleta.sazonal` do `tema.json`; um tema de marca sem ele usa o do tema padrão.
 
+### Tema de uma marca (`/tema`)
+
+Com o mod instalado, `/tema trabalho na empresa X` numa sessão do Claude Code monta um tema do escritório com as cores
+e o logo de uma marca. A skill pergunta o que faltar, lê só as páginas e os arquivos que você indicar (baixar qualquer
+arquivo pede o seu sim, um a um) e escolhe as cores a partir da saída de scripts, nunca de memória. Depois monta um tema
+**candidato**, mede o contraste WCAG AA (mínimo 4,5:1 para texto) com proposta de ajuste, tira três capturas do modo
+demonstração e avalia as capturas e as referências da marca: nota de 0 a 10 e os pontos de falha (texto abaixo de 4,5:1,
+balão cortado, placa ilegível). O tema só vale depois do seu "aprovo" na conversa.
+
+- **Onde o tema fica:** `~/.expediente/host/temas/<id>/` (o `tema.json`, os PNG, a fonte livre, `referencias/` com o que
+  você autorizou baixar e `previa/` com as capturas), fora do repositório. O tema ativo é o nome gravado em
+  `~/.expediente/host/tema-ativo`; sem ele, vale o padrão.
+- **Prévia, sem mudar nada:** `http://localhost:4848/?tema=<id>` mostra o candidato com os seus agentes, e
+  `http://localhost:4848/?mock=1&tema=<id>` na demonstração. Só a aba que abriu o link o vê, com uma faixa que diz isso;
+  o escritório das outras abas segue como estava. Candidato inválido: a aba fica no tema ativo e mostra o motivo.
+- **Aprovar:** responda "aprovo" quando a skill perguntar (aprovar, ajustar ou recusar). Ela roda
+  `tema.mjs aplicar <id>`, que confere o candidato de novo e grava o `tema-ativo`. O servidor confere o arquivo a cada
+  poucos segundos e as páginas abertas recarregam sozinhas, sem reiniciar. **Recusar** não muda nada.
+- **Voltar ao tema padrão:** `/escritorio tema padrao` (o próprio mod responde, sem o modelo e sem gastar uso), ou
+  `node "$HOME/.expediente/mod-instalado/scripts/tema/tema.mjs" padrao`.
+- **Capturas:** precisam de um navegador Chromium instalado (Chrome, Edge, Brave ou Chromium), que roda sem janela e só
+  alcança `127.0.0.1`. Sem ele, a skill entrega as URLs da prévia e a nota fica de fora.
+- **O que muda:** cores, logo, placa, quadros, fonte livre e os nomes das áreas do núcleo. A planta, os personagens e as
+  falas não mudam. Fonte proprietária não é baixada: fica só o nome dela no `tema.json`.
+- **Segurança:** conteúdo de página, de imagem e de captura é dado, nunca instrução. Os scripts só gravam em
+  `temas/<id>/` e no `tema-ativo`, sem seguir link simbólico; o servidor só serve os arquivos que o `tema.json`
+  declara; não existe rota HTTP que grave tema.
+
 ### Terminal somente leitura
 
 Clique num agente e use **Abrir terminal** para ver a conversa da sessão como o Claude Code mostra: os prompts, as
