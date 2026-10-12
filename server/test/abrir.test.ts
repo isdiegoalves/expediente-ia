@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -137,7 +137,7 @@ describe('abrir: funções', () => {
 
 describe('abrir: o script de verdade, contra o servidor de verdade (com um "open" falso no PATH, sem abrir navegador)', () => {
   /** O "open" falso anota o argv, os modos da pasta e do arquivo e o HTML, e não abre nada. */
-  async function rodar(home: string, porta: number) {
+  async function rodar(home: string, porta: number, script = SCRIPT) {
     const bin = mkdtempSync(join(tmpdir(), 'expediente-bin-'));
     limpezas.push(() => rmSync(bin, { recursive: true, force: true }));
     const registro = join(bin, 'registro.json');
@@ -148,7 +148,7 @@ describe('abrir: o script de verdade, contra o servidor de verdade (com um "open
     chmodSync(join(bin, 'open'), 0o755);
     // Assíncrono: o servidor de teste roda neste mesmo processo e precisa responder enquanto o script espera.
     const r = await new Promise<{ status: number | null; saida: string }>((ok, fail) => {
-      const filho = spawn(process.execPath, [SCRIPT], { env: { PATH: `${bin}:/usr/bin:/bin`, HOME: home, EXPEDIENTE_PORT: String(porta) } });
+      const filho = spawn(process.execPath, [script], { env: { PATH: `${bin}:/usr/bin:/bin`, HOME: home, EXPEDIENTE_PORT: String(porta) } });
       let saida = '';
       filho.stdout.setEncoding('utf8').on('data', (c: string) => (saida += c));
       filho.stderr.setEncoding('utf8').on('data', (c: string) => (saida += c));
@@ -219,5 +219,24 @@ describe('abrir: o script de verdade, contra o servidor de verdade (com um "open
     expect(semArquivo.status).toBe(1);
     expect(semArquivo.saida).toContain('npm run docker:up');
     expect(statSync(tmpdir()).isDirectory()).toBe(true);
+  });
+
+  it('roda de qualquer pasta, só com node, sobre um git archive sem node_modules (como a cópia que o npm run instalar faz), e a cópia inclui o script', async () => {
+    const raiz = resolve(__dirname, '../..');
+    for (const arquivo of ['scripts/abrir.mjs', 'mod/expediente-permissoes/hooks/permission-hook.mjs']) {
+      const rastreado = spawnSync('git', ['ls-files', '--error-unmatch', arquivo], { cwd: raiz });
+      expect(rastreado.status, `${arquivo} precisa estar versionado`).toBe(0);
+      const atributo = spawnSync('git', ['check-attr', 'export-ignore', arquivo], { cwd: raiz, encoding: 'utf8' });
+      expect(atributo.stdout, arquivo).toMatch(/export-ignore: unspecified/);
+    }
+    const copia = mkdtempSync(join(tmpdir(), 'expediente-copia-'));
+    limpezas.push(() => rmSync(copia, { recursive: true, force: true }));
+    const tar = spawnSync('sh', ['-c', `git archive HEAD scripts/abrir.mjs mod/expediente-permissoes | tar -x -C "${copia}"`], { cwd: raiz });
+    expect(tar.status).toBe(0);
+    expect(existsSync(join(copia, 'node_modules'))).toBe(false);
+    const s = await comServidor(TOKEN);
+    const r = await rodar(comHome(`${TOKEN}\n`), s.porta, join(copia, 'scripts/abrir.mjs'));
+    expect(r.status, r.saida).toBe(0);
+    expect(r.aberto!.argv[0]).toMatch(/\/abrir\.html$/);
   });
 });

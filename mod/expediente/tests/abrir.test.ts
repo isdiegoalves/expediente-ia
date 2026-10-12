@@ -1,6 +1,6 @@
 // Testes da lista permitida do `open` e da validação dos ids do foco. Nada aqui executa comando.
 import { describe, expect, test } from 'claude-code/testing'
-import { abrirUrl, argvAbrir, argvChmod, argvLimpar, argvMktemp, arquivoDoEscritorio, ehUrlDoEscritorio, htmlDoEscritorio, pastaTemporaria } from '../hooks/abrir'
+import { abrirUrl, argvAbrir, argvAbrirArquivo, argvChmod, argvLimpeza, argvMktemp, criadoDoMktemp, ehUrlDoEscritorio, htmlDoEscritorio } from '../hooks/abrir'
 import { argvAtivarPainelWezTerm, argvFocoZellij } from '../hooks/painel'
 
 const UUID = '11111111-aaaa-4aaa-8aaa-111111111111'
@@ -103,13 +103,18 @@ describe('o escritório com o bilhete de uso único', () => {
     expect(htmlDoEscritorio('http://127.0.0.1:4848/')).toBeUndefined()
   })
 
-  test('a pasta temporária é a que o mktemp -d devolve: caminho absoluto, nome expediente-abrir.*, sem . nem .. e sem texto de shell', async () => {
-    expect(pastaTemporaria(`${PASTA}\n`)).toBe(PASTA)
-    expect(pastaTemporaria('/tmp/expediente-abrir.abcd1234')).toBe('/tmp/expediente-abrir.abcd1234')
+  test('a pasta é a que o mktemp -d devolve: dentro de uma pasta temporária do usuário, com o nome do modelo, sem . nem .. e sem texto de shell', async () => {
+    expect(criadoDoMktemp(`${PASTA}\n`)).toEqual({ pasta: PASTA, arquivo: `${PASTA}/abrir.html` })
+    expect(criadoDoMktemp('/tmp/expediente-abrir.abcd1234')?.pasta).toBe('/tmp/expediente-abrir.abcd1234')
+    expect(criadoDoMktemp('/private/tmp/expediente-abrir.abcd1234')).toBeDefined()
+    expect(criadoDoMktemp('/run/user/1000/expediente-abrir.abcd1234')).toBeDefined()
     for (const pasta of [
       '',
       'expediente-abrir.abcd1234',
       '/expediente-abrir.abcd1234',
+      '/home/fulano/expediente-abrir.abcd1234',
+      '/Users/fulano/Downloads/expediente-abrir.abcd1234',
+      '/etc/expediente-abrir.abcd1234',
       '/tmp/outra.abcd1234',
       '/tmp/expediente-abrir.',
       '/tmp/expediente-abrir.abc',
@@ -125,23 +130,34 @@ describe('o escritório com o bilhete de uso único', () => {
       '-rf /tmp/expediente-abrir.abcd1234',
       '/tmp/expediente-abrir.abcd1234\n/etc',
     ]) {
-      expect(pastaTemporaria(pasta), pasta).toBeUndefined()
+      expect(criadoDoMktemp(pasta), pasta).toBeUndefined()
     }
   })
 
-  test('o open recebe só o abrir.html de uma pasta dessas; chmod e rm -rf, só o arquivo e a pasta', async () => {
-    const arquivo = arquivoDoEscritorio(PASTA)
-    expect(argvAbrir(arquivo)).toEqual(['open', arquivo])
-    expect(argvChmod(arquivo)).toEqual(['chmod', '600', arquivo])
-    expect(argvLimpar(PASTA)).toEqual(['rm', '-rf', PASTA])
-    for (const alvo of [`${PASTA}/outro.html`, `${PASTA}/abrir.htm`, `${PASTA}/../abrir.html`, '/etc/passwd', '/tmp/abrir.html', `${PASTA}/sub/abrir.html`, `${arquivo}\n`, `${arquivo} -a Calculator`, `-a ${arquivo}`]) {
-      expect(argvAbrir(alvo), alvo).toBeUndefined()
-      expect(argvChmod(alvo), alvo).toBeUndefined()
+  test('open, chmod e a limpeza só aceitam o caminho IGUAL ao que o mod criou, mesmo que outro caminho tenha o formato certo', async () => {
+    const criado = criadoDoMktemp(PASTA)!
+    const arquivo = criado.arquivo
+    expect(argvAbrirArquivo(arquivo, criado)).toEqual(['open', arquivo])
+    expect(argvChmod(arquivo, criado)).toEqual(['chmod', '600', arquivo])
+    expect(argvLimpeza(criado)).toEqual([['rm', '-f', arquivo], ['rmdir', PASTA]])
+    const outra = criadoDoMktemp('/tmp/expediente-abrir.OUTRA1234')!
+    for (const alvo of [outra.arquivo, `${PASTA}/outro.html`, `${PASTA}/abrir.htm`, `${PASTA}/abrir.HTML`, `${PASTA}/../abrir.html`, '/etc/passwd', '/tmp/abrir.html', `${PASTA}/sub/abrir.html`, `${arquivo}\n`, `${arquivo} -a Calculator`, `-a ${arquivo}`, '', undefined as unknown as string]) {
+      expect(argvAbrirArquivo(alvo, criado), String(alvo)).toBeUndefined()
+      expect(argvChmod(alvo, criado), String(alvo)).toBeUndefined()
     }
-    for (const pasta of ['/', '/tmp', '/Users/fulano', `${PASTA}/..`, `${PASTA}/`, '', `${PASTA} /etc`, '/tmp/expediente-abrir.abcd1234/abrir.html']) {
-      expect(argvLimpar(pasta), pasta).toBeUndefined()
+    // Um "criado" montado à mão, fora do formato, não passa nem comparando igual a si mesmo.
+    for (const pasta of ['/', '/tmp', '/Users/fulano', `${PASTA}/..`, `${PASTA}/`, '', '/etc/expediente-abrir.abcd1234']) {
+      const falso = { pasta, arquivo: `${pasta}/abrir.html` }
+      expect(argvAbrirArquivo(falso.arquivo, falso), pasta).toBeUndefined()
+      expect(argvLimpeza(falso), pasta).toBeUndefined()
     }
+    expect(argvLimpeza({ pasta: PASTA, arquivo: `${PASTA}/outro.html` })).toBeUndefined()
     expect(argvMktemp).toEqual(['mktemp', '-d', '-t', 'expediente-abrir.XXXXXXXX'])
+  })
+
+  test('o argvAbrir genérico não abre arquivo nenhum: só as URLs do Claude', async () => {
+    expect(argvAbrir(`${PASTA}/abrir.html`)).toBeUndefined()
+    expect(argvAbrir('/tmp/expediente-abrir.abcd1234/abrir.html')).toBeUndefined()
   })
 })
 

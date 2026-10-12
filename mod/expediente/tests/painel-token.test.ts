@@ -21,6 +21,7 @@ const PANE = {
   requestId: 'escritorio',
   props: { title: 'Escritório', isFocused: false, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows: 10 }, view: {} },
 } as const
+const COMANDO_DE_QUALQUER_PASTA = 'node ~/.expediente/mod-instalado/scripts/abrir.mjs'
 const RODOU = { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
 
 function resposta(texto: string, status = 200): HttpResponse {
@@ -99,7 +100,7 @@ describe('"Abrir o escritório" no terminal', () => {
     await ui.unmount()
     expect(w.bilhetes()).toBe(1)
     expect(w.pedidos).toEqual([{ url: '/api/token/bilhete', valida: true }])
-    expect(w.rodados.filter((a) => ['mktemp', 'chmod', 'open', 'rm'].includes(a[0]!))).toEqual([['mktemp', '-d', '-t', 'expediente-abrir.XXXXXXXX'], ['chmod', '600', ARQUIVO], ['open', ARQUIVO]])
+    expect(w.rodados.filter((a) => ['mktemp', 'chmod', 'open', 'rm', 'rmdir'].includes(a[0]!))).toEqual([['mktemp', '-d', '-t', 'expediente-abrir.XXXXXXXX'], ['chmod', '600', ARQUIVO], ['open', ARQUIVO]])
     expect(w.escritos).toHaveLength(1)
     expect(w.escritos[0]!.path).toBe(ARQUIVO)
     expect(w.escritos[0]!.text).toBe(htmlDoEscritorio(URL_DO_ESCRITORIO))
@@ -108,9 +109,11 @@ describe('"Abrir o escritório" no terminal', () => {
     semSegredo(texto.text ?? '')
     semSegredo(w.saidas.join('\n'))
     await w.clock.advance(59_000)
-    expect(w.rodados.some((a) => a[0] === 'rm')).toBe(false)
+    expect(w.rodados.some((a) => a[0] === 'rm' || a[0] === 'rmdir')).toBe(false)
     await w.clock.advance(1_000)
-    expect(w.rodados.filter((a) => a[0] === 'rm')).toEqual([['rm', '-rf', PASTA]])
+    // Nada de rm -rf: o arquivo exato e, depois, a pasta exata (o rmdir falha se sobrou algo).
+    expect(w.rodados.filter((a) => a[0] === 'rm' || a[0] === 'rmdir')).toEqual([['rm', '-f', ARQUIVO], ['rmdir', PASTA]])
+    expect(JSON.stringify(w.rodados)).not.toContain('-rf')
   })
 
   test('o token em claro nunca sai: nem na prova de cliente, nem na URL, nem no corpo, nem no cabeçalho', async ($, on) => {
@@ -129,13 +132,13 @@ describe('"Abrir o escritório" no terminal', () => {
     await ui.press({ key: 'abrir-escritorio' })
     await ui.unmount()
     expect(w.bilhetes()).toBe(0)
-    expect(w.rodados.some((a) => ['mktemp', 'chmod', 'open', 'rm'].includes(a[0]!))).toBe(false)
+    expect(w.rodados.some((a) => ['mktemp', 'chmod', 'open', 'rm', 'rmdir'].includes(a[0]!))).toBe(false)
     expect(w.escritos).toEqual([])
     expect(w.saidas.join('\n')).toContain(`quem responde na porta ${PORTA} não é o seu Expediente`)
     expect(w.brutos.join('\n')).not.toContain(TOKEN)
   })
 
-  for (const mktemp of ['/etc', '/tmp/../etc/expediente-abrir.abcd1234', '', 'erro']) {
+  for (const mktemp of ['/etc', '/tmp/../etc/expediente-abrir.abcd1234', '/home/fulano/expediente-abrir.abcd1234', '', 'erro']) {
     test(`pasta que o mktemp devolve fora da forma (${JSON.stringify(mktemp)}): nada é gravado nem aberto`, async ($, on) => {
       const w = mundo(on, { token: TOKEN, mktemp })
       await $.command.run(RUN)
@@ -143,7 +146,7 @@ describe('"Abrir o escritório" no terminal', () => {
       await ui.press({ key: 'abrir-escritorio' })
       await ui.unmount()
       expect(w.escritos).toEqual([])
-      expect(w.rodados.some((a) => a[0] === 'open' || a[0] === 'chmod' || a[0] === 'rm')).toBe(false)
+      expect(w.rodados.some((a) => a[0] === 'open' || a[0] === 'chmod' || a[0] === 'rm' || a[0] === 'rmdir')).toBe(false)
       expect(w.saidas.join('\n')).toContain('npm run abrir')
     })
   }
@@ -155,7 +158,7 @@ describe('"Abrir o escritório" no terminal', () => {
     await ui.press({ key: 'abrir-escritorio' })
     await ui.unmount()
     expect(w.rodados.some((a) => a[0] === 'open')).toBe(false)
-    expect(w.rodados.filter((a) => a[0] === 'rm')).toEqual([['rm', '-rf', PASTA]])
+    expect(w.rodados.filter((a) => a[0] === 'rm' || a[0] === 'rmdir')).toEqual([['rm', '-f', ARQUIVO], ['rmdir', PASTA]])
     expect(w.saidas.join('\n')).toContain('npm run abrir')
     semSegredo(JSON.stringify(w.rodados))
   })
@@ -169,12 +172,12 @@ describe('"Abrir o escritório" fora do terminal', () => {
       const ui = await $.ui.mount({ ...PANE, surface })
       expect(await ui.find({ type: 'Link', text: /Abrir o escritório/ }), surface).toBeUndefined()
       expect(await ui.find({ type: 'Button', text: /Abrir o escritório/ }), surface).toBeUndefined()
-      expect(await ui.find({ text: /npm run abrir/ }), surface).toBeDefined()
+      expect((await ui.find({ type: 'Code' }))?.props.source, surface).toBe(COMANDO_DE_QUALQUER_PASTA)
       await ui.unmount()
     }
     expect(w.bilhetes()).toBe(0)
     expect(w.escritos).toEqual([])
-    expect(w.rodados.some((a) => ['mktemp', 'chmod', 'open', 'rm'].includes(a[0]!))).toBe(false)
+    expect(w.rodados.some((a) => ['mktemp', 'chmod', 'open', 'rm', 'rmdir'].includes(a[0]!))).toBe(false)
     expect(w.brutos.join('\n')).not.toContain(TOKEN)
   })
 })
@@ -188,7 +191,7 @@ describe('sem token utilizável', () => {
         const ui = await $.ui.mount({ ...PANE, surface })
         expect(await ui.find({ type: 'Link', text: /Abrir o escritório/ })).toBeUndefined()
         expect(await ui.find({ type: 'Button', text: /Abrir o escritório/ })).toBeUndefined()
-        expect(await ui.find({ text: /npm run abrir/ })).toBeDefined()
+        expect((await ui.find({ type: 'Code' }))?.props.source).toBe(COMANDO_DE_QUALQUER_PASTA)
         await ui.unmount()
       }
       expect(w.bilhetes()).toBe(0)

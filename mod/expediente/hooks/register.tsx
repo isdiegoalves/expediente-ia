@@ -32,14 +32,14 @@
 // Regras: nenhum hook lança (um hook que lança é pulado, mas o que ele deixou pela metade fica): cada
 // passo tem seu try/catch e falha = silêncio. $.process roda só argv fixo, sem shell montado de texto alheio: mv e rm -f do .tmp (ponte),
 // pgrep e o próprio ps (amostra, tty, confirmação do programa do pid), o leitor de ZELLIJ_*/WEZTERM_* (foco), zellij, open -a WezTerm, osascript
-// (foco), open com URL da lista permitida (abrir o app) e mktemp, chmod, open e rm -rf só do arquivo e da pasta temporária do escritório; nada de
+// (foco), open com URL da lista permitida (abrir o app) e mktemp, chmod, open, rm -f e rmdir só do arquivo e da pasta temporária do escritório; nada de
 // $.model, $.prompt, decisão de ferramenta nem leitura da conversa; a rede é só 127.0.0.1. O estado fica em variáveis do módulo: um
 // hot reload recomeça do zero, o que aqui custa no máximo uma regravação a mais do arquivo de uso.
 //
 // Análise estática do Claude Code: cada chamada é escrita por extenso ($.noun.método), o nome do evento é
 // sempre uma string literal e `$` só é passado para funções declaradas no topo deste arquivo.
 import type { EngineInterface, HttpInit, HttpResponse, Register, RenderSurface, SessionRateLimit } from 'claude-code'
-import { abrirUrl, argvChmod, argvLimpar, argvMktemp, arquivoDoEscritorio, ehUrlDoEscritorio, htmlDoEscritorio, pastaTemporaria } from './abrir'
+import { abrirUrl, argvAbrirArquivo, argvChmod, argvLimpeza, argvMktemp, criadoDoMktemp, ehUrlDoEscritorio, htmlDoEscritorio, type Criado } from './abrir'
 import { chaveDoArquivo, iguaisHex, nonceAleatorio, provaDoCliente, provaDoServidor } from './prova'
 import { FOCO_OFFLINE_MS, FOCO_POLL_MS, lerPedidos, lerPidAssumido, type ResultadoFoco } from './foco'
 import { acoesDaSessao, detalheTexto, lerIr, listaTexto, nomeDaLinha, pidDoId, porEstado, type IrView } from './escritorio'
@@ -585,6 +585,8 @@ async function abrirNoApp($: EngineInterface, url: string): Promise<void> {
 
 /** Quanto vale um bilhete (o mesmo prazo do servidor): o arquivo temporário some junto. */
 const BILHETE_MS = 60_000
+/** O script do host, da cópia que o `npm run instalar` fez: roda com node puro, de qualquer pasta. */
+const COMANDO_ABRIR = 'node ~/.expediente/mod-instalado/scripts/abrir.mjs'
 /** Um bilhete de uso único do servidor e a URL do escritório que o leva; undefined se não deu (ver `servidorNaoConfere`). */
 async function urlDoEscritorio($: EngineInterface, porta: number): Promise<string | undefined> {
   const res = await getExpediente($, porta, '/api/token/bilhete', '{}')
@@ -598,40 +600,41 @@ async function urlDoEscritorio($: EngineInterface, porta: number): Promise<strin
   }
 }
 
+/** Apaga o arquivo e a pasta que o mod criou (`rm -f` e `rmdir`, os dois com o caminho exato); nunca lança. */
+async function limparEscritorio($: EngineInterface, criado: Criado): Promise<void> {
+  for (const argv of argvLimpeza(criado) ?? []) await $.process.run(argv, { timeoutMs: 5_000 }).catch(() => undefined)
+}
+
 /**
  * Botão "Abrir o escritório" do terminal. O bilhete vai num HTML que redireciona ao escritório, numa pasta temporária de modo 700
- * (`mktemp -d`), e o `open` recebe só o caminho do arquivo: nada sensível no argv, que outro usuário lê com `ps`. A pasta some
- * quando o bilhete vence. Nunca lança.
+ * (`mktemp -d`), e o `open` recebe só o caminho do arquivo que o mod acabou de criar: nada sensível no argv, que outro usuário lê
+ * com `ps`. Arquivo e pasta somem quando o bilhete vence (se o mod terminar antes, sobra um HTML com bilhete vencido na pasta 700).
+ * Nunca lança.
  */
 async function abrirEscritorio($: EngineInterface, porta: number): Promise<void> {
-  let pasta: string | undefined
+  let criado: Criado | undefined
   try {
     const url = await urlDoEscritorio($, porta)
     if (!url) {
       $.ui.toast(servidorNaoConfere ? `Expediente: quem responde na porta ${porta} não é o seu Expediente` : 'Expediente: não deu para autorizar; rode npm run abrir na pasta do Expediente')
       return
     }
-    pasta = pastaTemporaria((await $.process.run(argvMktemp, { timeoutMs: 5_000 })).stdout)
+    criado = criadoDoMktemp((await $.process.run(argvMktemp, { timeoutMs: 5_000 })).stdout)
     const html = htmlDoEscritorio(url)
-    if (!pasta || !html) throw new Error('pasta temporária recusada')
-    const arquivo = arquivoDoEscritorio(pasta)
-    await $.fs.write(arquivo, html)
-    const chmod = argvChmod(arquivo)
+    if (!criado || !html) throw new Error('pasta temporária recusada')
+    const feito = criado
+    await $.fs.write(feito.arquivo, html)
+    const chmod = argvChmod(feito.arquivo, feito)
     if (!chmod || (await $.process.run(chmod, { timeoutMs: 5_000 })).exitCode !== 0) throw new Error('chmod recusado')
-    const dir = pasta
     $.clock.after(BILHETE_MS, () => {
-      const limpar = argvLimpar(dir)
-      if (limpar) void $.process.run(limpar, { timeoutMs: 5_000 }).catch(() => undefined)
+      void limparEscritorio($, feito)
     })
-    await abrirUrl(
-      (argv) => $.process.run(argv, { timeoutMs: 10_000 }),
-      (texto) => $.ui.toast(texto),
-      arquivo,
-    )
+    const abrir = argvAbrirArquivo(feito.arquivo, feito)
+    if (!abrir) throw new Error('open recusado')
+    await $.process.run(abrir, { timeoutMs: 10_000 })
   } catch {
-    const limpar = pasta ? argvLimpar(pasta) : undefined
-    if (limpar) await $.process.run(limpar, { timeoutMs: 5_000 }).catch(() => undefined)
-    $.ui.toast('Expediente: não deu para abrir o escritório; rode npm run abrir na pasta do Expediente')
+    if (criado) await limparEscritorio($, criado)
+    $.ui.toast('Expediente: não deu para abrir o escritório; rode o comando do painel ou npm run abrir na pasta do Expediente')
   }
 }
 
@@ -816,7 +819,10 @@ export const register: Register = (on) => {
         {autorizavel && e.surface === 'terminal' ? (
           <Button key="abrir-escritorio" label="Abrir o escritório" onPress={() => void abrirEscritorio($, porta)} />
         ) : (
-          <Text dimColor>Para abrir o escritório já autorizado, rode npm run abrir na pasta do Expediente.</Text>
+          <Box flexDirection="column">
+            <Text dimColor>Para abrir o escritório já autorizado, rode num terminal, de qualquer pasta:</Text>
+            <Code source={COMANDO_ABRIR} />
+          </Box>
         )}
         {linhas.map((l) => (
           <Text dimColor>{l}</Text>

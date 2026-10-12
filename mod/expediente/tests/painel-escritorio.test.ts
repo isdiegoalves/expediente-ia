@@ -209,7 +209,7 @@ describe('painel do /escritorio', () => {
     const w = mundo(on, { superficies: ['desktop'], sessoes: [{ id: '.claude:510', ir: { estado: 'vivo', origin: 'terminal', comando: FORK, aviso: AVISO, links: [] } }] })
     await $.command.run(RUN)
     const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
-    expect((await ui.find({ type: 'Code' }))?.props.source).toBe(FORK)
+    expect((await ui.findAll({ type: 'Code' })).map((c) => c.props.source)).toContain(FORK)
     expect(await ui.find({ type: 'Button' })).toBeUndefined()
     await ui.unmount()
     expect(w.rodados).toEqual([])
