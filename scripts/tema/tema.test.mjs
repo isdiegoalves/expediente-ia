@@ -814,7 +814,7 @@ ${corpo || `for a in "$@"; do case "$a" in --screenshot=*) cp "${join(raiz, 'cap
     chamadasFeitas.forEach((args, i) => {
       const n = i + 1;
       assert.ok(args.includes('--headless=new'), 'sem janela');
-      assert.equal(args.at(-1), `http://127.0.0.1:${porta}/?mock=1&sessions=10&seed=12&sala=${n}&tema=${ID}`);
+      assert.equal(args.at(-1), `http://127.0.0.1:${porta}/?mock=1&sessions=10&seed=12&faixa=0&sala=${n}&tema=${ID}`);
       assert.ok(args.includes('--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1'), 'nenhum outro endereço resolve');
       assert.ok(args.includes('--force-prefers-reduced-motion'));
       const perfil = valorDe(args, '--user-data-dir=');

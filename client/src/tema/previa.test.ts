@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Tema } from '../../../shared/tema/validar';
-import { textoDaPrevia } from '../ui/previa';
+import { semFaixa, textoDaPrevia } from '../ui/previa';
 import { carregarTema, definirTema, tema, TEMA_PADRAO, urlDoTema } from './index';
 
 const candidato = (id = 'aurora'): Tema => ({ ...structuredClone(TEMA_PADRAO), id, nome: 'Aurora Ficticia' });
@@ -90,5 +90,12 @@ describe('faixa de prévia', () => {
     expect(texto).toContain('"Aurora Ficticia"');
     expect(texto).toMatch(/só nesta aba/);
     expect(texto).toMatch(/aprovar ou recusar/);
+  });
+});
+
+describe('faixa nas capturas', () => {
+  it('?faixa=0 esconde a faixa; qualquer outra coisa não', () => {
+    expect(semFaixa('?mock=1&faixa=0&sala=1&tema=x')).toBe(true);
+    for (const q of ['', '?tema=x', '?faixa=1', '?faixa=', '?faixa=00', '?faixa=false']) expect(semFaixa(q), q).toBe(false);
   });
 });

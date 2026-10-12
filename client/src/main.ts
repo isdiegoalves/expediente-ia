@@ -4,7 +4,7 @@ import { salaPedida, salaPelaOrdem } from './enquadrar';
 import { receberTokenDaUrl } from './net/token';
 import { carregarTema, tema } from './tema';
 import { aplicarFonte, aplicarPaleta } from './tema/aplicar';
-import { faixaDePrevia } from './ui/previa';
+import { faixaDePrevia, semFaixa } from './ui/previa';
 import { migrateLegacyKeys, safeLocalStorage } from './ui/prefs';
 
 // Antes de tudo: o mundo (carteiras) e a UI (preferências) leem o localStorage ao serem criados.
@@ -23,7 +23,7 @@ void (async () => {
   const world = createWorld(document.getElementById('world') as HTMLCanvasElement, store);
   const ui = document.getElementById('ui') as HTMLElement;
   createUI(ui, store, world, aviso);
-  if (previa) ui.append(faixaDePrevia(tema().nome));
+  if (previa && !semFaixa(location.search)) ui.append(faixaDePrevia(tema().nome));
   // O tema ativo mudou (tema-ativo gravado): o mundo e a UI leem o tema ao carregar, então a página recomeça.
   store.on('tema', (t) => {
     if (chave !== undefined && t.chave !== chave) location.reload();

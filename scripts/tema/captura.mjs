@@ -125,7 +125,7 @@ export async function capturar({ id, porta, home = homedir(), env = process.env,
       let r;
       // O navegador às vezes trava na partida (visto no Chrome do macOS sob carga): quem passa do limite é morto e tenta de novo.
       for (let tentativa = 1; tentativa <= TENTATIVAS && !png; tentativa++) {
-        r = lancar(navegador, argsDoNavegador({ perfil: join(temporaria, `perfil-${n}-${tentativa}`), saida, url: urlDaPrevia('127.0.0.1', porta, id, `mock=1&sessions=10&seed=12&sala=${n}&`) }), env, limiteMs);
+        r = lancar(navegador, argsDoNavegador({ perfil: join(temporaria, `perfil-${n}-${tentativa}`), saida, url: urlDaPrevia('127.0.0.1', porta, id, `mock=1&sessions=10&seed=12&faixa=0&sala=${n}&`) }), env, limiteMs);
         try {
           if (statSync(saida).size <= MAX_CAPTURA) png = readFileSync(saida);
         } catch {
