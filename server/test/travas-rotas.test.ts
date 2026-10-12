@@ -451,6 +451,8 @@ const QUEBRAS: Record<string, () => Fontes> = {
   'rota de leitura: sub-rota nova depois da recusa, sem citar método': () =>
     naApp("      const detail = office.detail(id);\n", "      if (id.endsWith('/renomear')) {\n        deps.renameRoom?.(id, url.searchParams.get('nome') ?? '');\n        return true;\n      }\n      const detail = office.detail(id);\n"),
   'rota de leitura: escrita sob cabeçalho de sobrescrita de método': () => naApp(`${SNAP}      else sendJson(`, `${SNAP}      else if (req.headers['x-http-method-override']) office.setDemo(true);\n      else sendJson(`),
+  'rota de leitura: sub-rota de escrita depois da recusa, em uma linha, com o método entre aspas': () =>
+    naApp(`${SNAP}      else sendJson(`, `${SNAP}      else if (url.searchParams.get('m') === 'POST') handleCharacter(req, res, 'x', 'POST').catch((err) => fail(res, err));\n      else sendJson(`),
   'rota sem trava: chama o ajudante que edita personagem': () =>
     naApp(DEMO_ATE_RECUSA, `${DEMO_ATE_RECUSA}      else if (url.searchParams.has('p')) handleCharacter(req, res, url.searchParams.get('p')!, 'PUT').catch((err) => fail(res, err));\n`),
   'rota sem trava: deps desestruturado': () => naApp(DEMO + '\n', `${DEMO}\n      const { renameRoom } = deps;\n      renameRoom?.('a', 'b');\n`),
