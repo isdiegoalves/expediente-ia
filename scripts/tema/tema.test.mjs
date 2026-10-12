@@ -1051,6 +1051,24 @@ describe('skill /tema: o que ela promete é o que os scripts fazem', () => {
     assert.match(skill, /\/escritorio tema padrao/);
   });
 
+  test('as regras não se contradizem com os passos: nada é baixado, copiado ou escrito fora dos comandos', () => {
+    const corpo = skill.slice(skill.indexOf('## Passos'));
+    assert.doesNotMatch(corpo, /\b(salve|salvar|copie|copiar|baixe|baixar|baixa)\b/i);
+    assert.doesNotMatch(skill, /pede a permissão do dono, arquivo por arquivo/);
+    assert.match(skill, /\*\*Você não baixa arquivo\.\*\*/);
+    assert.match(skill, /Gravar, copiar, mover, baixar ou apagar arquivo por qualquer outro meio/);
+    assert.equal([...corpo.matchAll(/rm -rf/g)].length, 1);
+    assert.match(corpo, /ele mesmo o roda \(você não apaga\)/);
+  });
+
+  test('cada comando da regra 2 aparece como passo, e o marca entra por heredoc de delimitador entre aspas', () => {
+    const regra = /com os comandos (.+?)\. Nunca execute/s.exec(skill)[1];
+    const corpo = skill.slice(skill.indexOf('## Passos'));
+    for (const [, c] of regra.matchAll(/`(\w+)`/g)) assert.match(corpo, new RegExp(`(\\.\\.\\. (tema\\.mjs )?${c}\\b|\`${c}\`)`), c);
+    assert.match(corpo, /tema\.mjs marca <id> <<'MARCA_\w+'/);
+    assert.match(corpo, /numa única linha/);
+  });
+
   test('a frase antiga ("preview e aprovação ainda não fazem parte") saiu', () => {
     assert.doesNotMatch(skill, /ainda não fazem parte/);
     assert.doesNotMatch(skill, /nunca escreva o arquivo `tema-ativo`/);
