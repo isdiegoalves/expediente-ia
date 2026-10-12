@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 // Passos determinísticos do /tema (coleta de marca, paleta, pré-voo, aplicar e voltar ao padrão). Só `aplicar` e `padrao` escrevem tema-ativo.
-// Uso: node scripts/tema/tema.mjs <preparar|paleta|css|rasterizar|montar|contraste|validar|aplicar|padrao> ...
+// Uso: node scripts/tema/tema.mjs <preparar|paleta|css|rasterizar|montar|contraste|validar|capturar|aplicar|padrao> ...
 import { spawnSync } from 'node:child_process';
 import { readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { aplicarPropostas, relatorio } from './contraste.mjs';
 import { arquivoComumParaLer, cadeiaSegura, criarPasta, destinoGravavel, gravarArquivoComum, gravarTemaAtivo, idValido, lerTemaAtivo, nomePng, pastaDosTemas } from './confinar.mjs';
+import { capturar, urlDaPrevia } from './captura.mjs';
 import { caminhoSeguro, montar, RAIZ } from './marca.mjs';
 import { ehPng, lerPng, MAX_BYTES_ENTRADA, quantizar } from './png.mjs';
 import { rasterizar } from './svg.mjs';
@@ -103,6 +104,17 @@ const comandos = {
     process.exitCode = validarTema(id);
   },
 
+  async capturar([id, ...opcoes]) {
+    const i = opcoes.indexOf('--porta');
+    const bruta = i >= 0 ? opcoes[i + 1] : process.env.EXPEDIENTE_PORT ?? '4848';
+    const porta = /^\d{1,5}$/.test(bruta ?? '') ? Number(bruta) : 0;
+    if (porta < 1 || porta > 65535) throw new Error('porta inválida: use --porta <1 a 65535>');
+    idValido(id);
+    console.log(`Prévia no navegador, com os seus agentes: ${urlDaPrevia('localhost', porta, id)}\nPrévia no navegador, na demonstração: ${urlDaPrevia('localhost', porta, id, 'mock=1&')}`);
+    const gravadas = await capturar({ id, porta });
+    console.log(`\nCapturas do modo demonstração (nunca do escritório real):\n${gravadas.map((g) => `  ${g}`).join('\n')}`);
+  },
+
   aplicar([id]) {
     if (id === 'padrao') throw new Error('para voltar ao tema padrão use o comando "padrao"');
     const doTema = JSON.parse(readFileSync(arquivoComumParaLer(join(pastaDoTema(id), 'tema.json'), 'tema.json'), 'utf8'));
@@ -120,8 +132,8 @@ const comandos = {
 const [cmd, ...args] = process.argv.slice(2);
 try {
   if (!comandos[cmd]) throw new Error(`comando desconhecido; use: ${Object.keys(comandos).join(', ')}`);
-  comandos[cmd](args);
+  await comandos[cmd](args);
 } catch (e) {
   console.error(`ERRO: ${e.message}`);
-  process.exitCode = 1;
+  process.exitCode = e.codigo ?? 1;
 }
