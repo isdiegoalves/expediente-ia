@@ -43,6 +43,14 @@ describe('toda escrita da página passa por tokenLocal.escrever', () => {
     expect(readFileSync(join(RAIZ, 'ui/ir.ts'), 'utf8')).toContain('init?.method ? tokenLocal.escrever(url, init) : fetch(url, init)');
   });
 
+  it('o segredo não é guardado como texto: token.ts não usa localStorage, sessionStorage nem cookie, e só o IndexedDB guarda a chave', () => {
+    const token = readFileSync(join(RAIZ, 'net/token.ts'), 'utf8');
+    expect(token).not.toMatch(/localStorage|sessionStorage|document\.cookie/);
+    expect(token).toMatch(/importKey\('raw', bytes, HMAC, false, \['sign'\]\)/);
+    const usos = fontes.filter((f) => /\.importKey\(/.test(readFileSync(f, 'utf8'))).map((f) => f.slice(RAIZ.length + 1));
+    expect(usos).toEqual(['net/token.ts']);
+  });
+
   it('o store escreve pelo token nas quatro chamadas (demo, ritmo, decisão e personagem, PUT e DELETE)', () => {
     const store = readFileSync(join(RAIZ, 'net/store.ts'), 'utf8');
     expect(store.match(/tokenLocal\.escrever\(/g)).toHaveLength(4);

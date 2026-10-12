@@ -261,34 +261,49 @@ describe('fonte alternativa (timelapse)', () => {
 
 describe('personagem do projeto (store)', () => {
   const TOKEN = '5e17e11a'.repeat(8);
-  beforeEach(() => void tokenLocal.receber(`#t=${TOKEN}`));
-  afterEach(() => {
+  const BILHETE = '00112233445566778899aabbccddeeff';
+  const DESAFIO = 'fedcba9876543210fedcba9876543210';
+
+  /** `fetch` de um servidor que troca o bilhete, dá o desafio e responde o resto com `resto`. */
+  const servidor = (resto: () => Response) =>
+    vi.fn(async (url: string) => {
+      if (url === '/api/token/troca') return new Response(JSON.stringify({ token: TOKEN }), { status: 200 });
+      if (url.startsWith('/api/token/desafio')) return new Response(JSON.stringify({ desafio: DESAFIO, prova: 'x' }), { status: 200 });
+      return resto();
+    });
+  const autorizar = () => tokenLocal.receberDaUrl({ hash: `#b=${BILHETE}`, pathname: '/', search: '' }, { replaceState: () => {} });
+
+  afterEach(async () => {
     vi.unstubAllGlobals();
-    tokenLocal.apagar();
+    await tokenLocal.apagar();
   });
 
-  /** O que `fetch` recebeu: método, corpo e o cabeçalho do token junto com os de sempre. */
-  const comToken = (method: string, body: string) => ({ method, body, headers: expect.any(Headers) });
+  /** O que `fetch` recebeu: método, corpo e os cabeçalhos (com a prova do token) junto com os de sempre. */
+  const comProva = (method: string, body: string) => ({ method, body, headers: expect.any(Headers) });
   const cabecalhosDaUltima = (fetchMock: { mock: { calls: unknown[][] } }) => new Headers((fetchMock.mock.calls.at(-1)![1] as RequestInit).headers);
 
-  it('saveCharacter: PUT JSON na rota do agente; devolve undefined ou a mensagem de erro do servidor', async () => {
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ error: 'Ana já está no escritório em api' }), { status: 409 }));
+  it('saveCharacter: PUT JSON na rota do agente, com a prova do token; devolve undefined ou a mensagem de erro do servidor', async () => {
+    const fetchMock = servidor(() => new Response(JSON.stringify({ error: 'Ana já está no escritório em api' }), { status: 409 }));
     vi.stubGlobal('fetch', fetchMock);
+    await autorizar();
     const store = new OfficeStore();
     expect(await store.saveCharacter('.claude:1', { name: 'Ana', seed: 1, parts: {} })).toBe('Ana já está no escritório em api');
-    expect(fetchMock).toHaveBeenCalledWith('/api/agents/.claude%3A1/character', comToken('PUT', '{"name":"Ana","seed":1,"parts":{}}'));
+    expect(fetchMock).toHaveBeenCalledWith('/api/agents/.claude%3A1/character', comProva('PUT', '{"name":"Ana","seed":1,"parts":{}}'));
     expect(cabecalhosDaUltima(fetchMock).get('content-type')).toBe('application/json');
-    expect(cabecalhosDaUltima(fetchMock).get('x-expediente-token')).toBe(TOKEN);
+    expect(cabecalhosDaUltima(fetchMock).get('x-expediente-prova')).toMatch(new RegExp(`^${DESAFIO}\\.[0-9a-f]{64}$`));
+    expect(JSON.stringify(fetchMock.mock.calls)).not.toContain(TOKEN);
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ desafio: DESAFIO, prova: 'x' }), { status: 200 }));
     fetchMock.mockResolvedValueOnce(new Response('{"ok":true}', { status: 200 }));
     expect(await store.saveCharacter('.claude:1', { name: 'Ana', seed: 1, parts: {} })).toBeUndefined();
   });
 
   it('resetCharacter: DELETE com corpo JSON; sem conexão vira mensagem; no mock não chama a rede', async () => {
-    const fetchMock = vi.fn(async () => new Response('{"ok":true}', { status: 200 }));
+    const fetchMock = servidor(() => new Response('{"ok":true}', { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
+    await autorizar();
     expect(await new OfficeStore().resetCharacter('a')).toBeUndefined();
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/agents/a/character', comToken('DELETE', '{}'));
-    expect(cabecalhosDaUltima(fetchMock).get('x-expediente-token')).toBe(TOKEN);
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/agents/a/character', comProva('DELETE', '{}'));
+    expect(cabecalhosDaUltima(fetchMock).get('x-expediente-prova')).toMatch(/^[0-9a-f]{32}\.[0-9a-f]{64}$/);
     fetchMock.mockRejectedValueOnce(new TypeError('failed to fetch'));
     expect(await new OfficeStore().resetCharacter('a')).toBe('Sem conexão com o Expediente.');
     const calls = fetchMock.mock.calls.length;

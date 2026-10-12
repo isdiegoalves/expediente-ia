@@ -6,8 +6,12 @@ import { h, setHidden, setText } from './dom';
 export interface EstadoDoToken {
   /** `?mock=1`: não há servidor, nada é escrito. */
   mock: boolean;
-  /** Esta página tem um token guardado. */
+  /** A leitura da chave guardada e a troca do bilhete da URL já terminaram. */
+  carregado: boolean;
+  /** Esta página tem a chave do token. */
   paginaTemToken: boolean;
+  /** O endereço em que a página foi aberta (`host:porta`). A chave vale só na origem http://127.0.0.1:<porta>. */
+  endereco: string;
   /** O motivo que o /api/health deu para o servidor estar sem token; null = o servidor tem. */
   servidorSemToken: string | null;
 }
@@ -16,12 +20,12 @@ const PASSOS_DA_PAGINA = [
   'As ações que mudam algo (responder permissões, renomear salas, mudar o personagem ou o ritmo, focar sessões) estão bloqueadas: esta página não tem o token local. O que é só leitura segue funcionando.',
   'Para liberar:',
   '1. No Claude Code, rode /escritorio e use "Abrir o escritório"; ou, na pasta do Expediente, rode npm run abrir',
-  '2. A página abre já autorizada.',
+  '2. A página abre já autorizada (por http://127.0.0.1, o endereço em que a autorização vale).',
 ].join('\n');
 
 /** O texto do aviso, ou null quando não há o que avisar. */
 export function textoDoAviso(e: EstadoDoToken): string | null {
-  if (e.mock) return null;
+  if (e.mock || !e.carregado) return null;
   if (e.servidorSemToken !== null) {
     return [
       `O servidor está sem token local (${e.servidorSemToken}), então as ações que mudam algo estão bloqueadas.`,
@@ -30,7 +34,8 @@ export function textoDoAviso(e: EstadoDoToken): string | null {
       '2. Abra o escritório de novo com npm run abrir',
     ].join('\n');
   }
-  return e.paginaTemToken ? null : PASSOS_DA_PAGINA;
+  if (e.paginaTemToken) return null;
+  return e.endereco.startsWith('127.0.0.1:') ? PASSOS_DA_PAGINA : `${PASSOS_DA_PAGINA}\nVocê abriu por ${e.endereco}. A autorização vale só na origem http://127.0.0.1:<porta>: o que o npm run abrir abre. Por aqui dá para ler tudo, mas não mudar nada.`;
 }
 
 async function motivoDoServidor(): Promise<string | null> {
@@ -78,7 +83,7 @@ export class TokenAviso implements UiComponent {
   }
 
   render(): void {
-    const texto = this.dispensado ? null : textoDoAviso({ mock: this.ctx.store.mock, paginaTemToken: tokenLocal.atual() !== null, servidorSemToken: this.servidorSemToken });
+    const texto = this.dispensado ? null : textoDoAviso({ mock: this.ctx.store.mock, carregado: tokenLocal.carregado, paginaTemToken: tokenLocal.tem(), endereco: location.host, servidorSemToken: this.servidorSemToken });
     setHidden(this.el, texto === null);
     if (texto !== null) setText(this.texto, texto);
   }
