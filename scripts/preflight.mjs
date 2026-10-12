@@ -317,7 +317,7 @@ const etapas = [
       const { r, registros } = medirTestes([], resolve(mkdtempSync(resolve(tmpdir(), 'preflight-tempos-')), 'tempos.json'));
       if (!r.ok) return r;
       registrosDeTempo = registros;
-      const t = comandoSimples('node', ['--test', 'scripts/preflight.test.mjs', 'scripts/tema/tema.test.mjs']);
+      const t = comandoSimples('node', ['--test', 'scripts/preflight.test.mjs', 'scripts/tema/tema.test.mjs', 'scripts/tema/travas.test.mjs']);
       if (!t.ok) return t;
       return ok('typecheck, vitest e node:test verdes');
     },
