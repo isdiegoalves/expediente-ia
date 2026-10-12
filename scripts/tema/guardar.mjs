@@ -23,6 +23,16 @@ export function conferirTamanho(arquivo, tipo, rotulo) {
   if (statSync(arquivo).size > tetoDe(tipo)) throw new Error(`${rotulo}: acima de ${tetoDe(tipo)} bytes`);
 }
 
+const PRELUDIO = /^(?:\s+|<\?xml[^>]*\?>|<!--[\s\S]*?-->|<!DOCTYPE\s+svg\b[^>]*>)/i;
+const RAIZ_SVG = /^<(?:[A-Za-z_][\w.-]*:)?svg(?:[\s/>]|$)/i;
+
+/** O texto é um documento SVG (a primeira marcação é <svg>, com ou sem prefixo), não uma página que tem um SVG dentro. */
+function ehDocumentoSvg(texto) {
+  let resto = texto;
+  for (let m = PRELUDIO.exec(resto); m; m = PRELUDIO.exec(resto)) resto = resto.slice(m[0].length);
+  return RAIZ_SVG.test(resto);
+}
+
 /** O conteúdo que vai para o disco: o PNG regravado ou o texto como veio, depois de conferir que é o que o nome diz. */
 export function conteudoParaGuardar(tipo, buf) {
   if (tipo === 'png') {
@@ -37,6 +47,6 @@ export function conteudoParaGuardar(tipo, buf) {
     throw new Error(`o conteúdo não é texto UTF-8, não ${tipo}`);
   }
   if (texto.includes('\u0000')) throw new Error(`o conteúdo tem byte nulo, não é ${tipo}`);
-  if (/<svg[\s>]/i.test(texto)) throw new Error('SVG não é guardado: rasterize com "rasterizar" ou peça um PNG ao dono');
+  if (ehDocumentoSvg(texto)) throw new Error('SVG não é guardado: rasterize com "rasterizar" ou peça um PNG ao dono');
   return buf;
 }

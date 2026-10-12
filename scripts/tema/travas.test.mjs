@@ -544,7 +544,7 @@ describe('guardar: cópia de arquivo do dono para referencias/, sempre confinada
 
   test('SVG nunca fica guardado, nem renomeado', () => {
     novoHome();
-    for (const [nome, dados] of [['logo.svg', SVG_OK], ['logo.css', SVG_OK], ['logo.html', `<!doctype html>${SVG_OK}`], ['logo.png', SVG_OK]]) {
+    for (const [nome, dados] of [['logo.svg', SVG_OK], ['logo.css', SVG_OK], ['logo.html', SVG_OK], ['logo.png', SVG_OK]]) {
       const r = guardar(origem('x.svg', dados), nome);
       assert.equal(r.code, 1, nome);
       assert.match(r.erro, /SVG não é guardado|nome de arquivo inválido|não é PNG/, nome);
