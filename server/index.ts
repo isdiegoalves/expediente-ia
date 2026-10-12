@@ -171,7 +171,7 @@ const api = createApiHandler({
   stats,
   resumo: { presenca, inicio: startedAt },
   versao: createVersaoReader(join(config.hostDir, 'versao.json'), config.version),
-  tema: createTemaHandler(pastasDoTema, temaAtivo, sendJson),
+  tema: createTemaHandler(pastasDoTema, () => temaAtivo, sendJson),
 });
 
 const server = createServer();

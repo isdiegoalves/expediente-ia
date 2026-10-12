@@ -1,13 +1,14 @@
-// GET /api/tema (tema ativo, já validado) e GET /temas/<id>/<arquivo> (PNG e fonte declarada do tema ativo).
+// GET /api/tema (tema ativo, já validado; com ?previa=<id>, o candidato em prévia) e GET /temas/<id>/<arquivo> (os
+// arquivos que o tema.json declara, do tema ativo e dos candidatos válidos).
 import { createReadStream } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { arquivoDoTema, type PastasDoTema, type TemaCarregado } from '../tema/carregar';
+import { arquivoDoTema, chaveDoTema, previaDoTema, type PastasDoTema, type TemaCarregado } from '../tema/carregar';
 
 const ARQUIVO = /^\/temas\/([^/]+)\/(.+)$/;
 
 type SendJson = (res: ServerResponse, status: number, body: unknown) => void;
 
-export function createTemaHandler(pastas: PastasDoTema, ativo: TemaCarregado, sendJson: SendJson): (req: IncomingMessage, res: ServerResponse, url: URL) => boolean {
+export function createTemaHandler(pastas: PastasDoTema, ativo: () => TemaCarregado, sendJson: SendJson): (req: IncomingMessage, res: ServerResponse, url: URL) => boolean {
   return (req, res, url) => {
     const path = url.pathname;
     const isApi = path === '/api/tema';
@@ -17,8 +18,11 @@ export function createTemaHandler(pastas: PastasDoTema, ativo: TemaCarregado, se
       sendJson(res, 405, { error: 'método não permitido' });
       return true;
     }
+    const atual = ativo();
     if (isApi) {
-      sendJson(res, 200, { id: ativo.id, base: ativo.base, tema: ativo.tema, aviso: ativo.aviso });
+      const pedido = url.searchParams.get('previa');
+      const t = pedido === null ? atual : previaDoTema(pastas, atual, pedido);
+      sendJson(res, 200, { id: t.id, base: t.base, tema: t.tema, aviso: t.aviso, previa: t.previa, chave: chaveDoTema(atual) });
       return true;
     }
     let rel: RegExpExecArray | null = null;
@@ -27,7 +31,7 @@ export function createTemaHandler(pastas: PastasDoTema, ativo: TemaCarregado, se
     } catch {
       // caminho com escape inválido: cai no 404
     }
-    const arquivo = rel ? arquivoDoTema(pastas, ativo, rel[1], rel[2]) : undefined;
+    const arquivo = rel ? arquivoDoTema(pastas, atual, rel[1], rel[2]) : undefined;
     if (!arquivo) {
       sendJson(res, 404, { error: 'não encontrado' });
       return true;
