@@ -71,7 +71,7 @@ partir da 2.1.287; a API ainda é "early access" e pode mudar entre versões. A 
   ainda é o `claude` e roda o mesmo plano do botão "Focar"; depois `POST .../resultado` com `focado`, `sem-painel` ou
   `nao-e-claude`. Nada além do pid inteiro vindo do servidor chega ao `$.process`.
 
-- **Token local:** o mod nunca manda o token. Antes de cada chamada que muda estado do servidor (`POST .../assumir`,
+- **Token local:** o mod nunca manda o token (as provas usam chaves derivadas dele, uma por papel). Antes de cada chamada que muda estado do servidor (`POST .../assumir`,
   `.../resultado` e `/api/token/bilhete`) e de cada `GET` que também muda (`/api/mod/focos` e `/api/agentes/:id/ir`), pede um
   desafio (`GET /api/token/desafio`), confere a prova de que o servidor tem o token em `~/.expediente/host/token` e manda o HMAC dele
   em `X-Expediente-Prova` (`hooks/prova.ts`: SHA-256 e HMAC em JavaScript puro, porque o ambiente do mod só tem

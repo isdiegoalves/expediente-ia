@@ -432,22 +432,38 @@ quem cria o arquivo é o `npm run docker:up` (só se ele não existir; nunca tro
 servidor cria ao subir. Ler (o escritório, o terminal somente leitura, o `/api/health`) não pede nada: a leitura depende só de
 o servidor estar acessível apenas pelo próprio computador, como antes.
 
-**O segredo nunca viaja.** Quem escreve (a página, o hook de permissões, o mod, o pré-voo) pede ao servidor um desafio, confere
-que o servidor prova ter o mesmo token (um HMAC-SHA256 do nonce que ele mandou) e só então manda, no cabeçalho
-`X-Expediente-Prova`, o HMAC do desafio, do método e do caminho. O desafio vale 60 s e uma vez; sem prova, ou com prova
-errada, o servidor responde `401`, e `503` se ele mesmo estiver sem token. Poucos `GET` também mudam estado no servidor
-(entregar a decisão ao hook, marcar que há um mod de pé, emitir o código de uso único do atalho para a sessão) e por isso
-também exigem a prova. Se o Expediente estiver parado e outro programa ocupar a porta, ele não recebe o segredo (e o hook, o
-mod, o `npm run abrir` e o pré-voo recusam falar com quem não prova ter o token).
+**O token não viaja; uma chave derivada dele viaja uma vez.** O token (K) fica no arquivo e nunca sai do computador em claro. Dele
+derivam duas chaves, uma por papel: `HMAC(K, "expediente/cliente")` e `HMAC(K, "expediente/servidor")`. Quem escreve com o arquivo
+em mãos (o hook de permissões, o mod, o `npm run abrir` e o pré-voo) pede ao servidor um desafio, **confere** que ele prova ter K
+(um HMAC do nonce que o cliente mandou, com a chave do servidor) e só então manda, no cabeçalho `X-Expediente-Prova`, o HMAC do
+desafio, do método e do caminho, com a chave do cliente. A **página não tem K** e não confere o servidor: ela recebe só a chave do
+cliente, **uma vez, na resposta da troca do bilhete** (em claro, para quem tem um bilhete válido), a guarda no IndexedDB como chave
+não exportável e assina com ela. Essa chave só assina provas de cliente: não produz a prova do servidor, então uma página falsa
+servida na porta não a usa para se passar pelo Expediente diante do hook, do mod, do `npm run abrir` ou do pré-voo. O desafio vale
+60 s e uma vez; sem prova, ou com prova errada, o servidor responde `401`, e `503` se ele mesmo estiver sem token. Poucos `GET`
+também mudam estado no servidor (entregar a decisão ao hook, marcar que há um mod de pé, emitir o código de uso único do atalho
+para a sessão) e por isso também exigem a prova. Se o Expediente estiver parado e outro programa ocupar a porta, ele não recebe K
+nem a prova de ninguém (o hook, o mod, o `npm run abrir` e o pré-voo recusam falar com quem não prova ter K).
 
 **O que o token protege e o que não protege.** Ele protege contra quem alcança a porta mas não lê os arquivos do seu
 usuário: um container, um processo isolado, outro usuário da máquina. Um programa rodando como você consegue ler o
-arquivo do token; contra ele o token não é barreira (nem o resto do Expediente: esse programa já lê as suas sessões). O token
-também não autentica a página para você: com o Expediente parado, um programa que ocupe a porta pode servir uma página falsa;
-ele só não consegue o segredo. Trocar o token é apagar o arquivo e rodar `npm run docker:up` (ou reiniciar o servidor); as
-páginas abertas pedem a autorização de novo.
+arquivo do token; contra ele o token não é barreira (nem o resto do Expediente: esse programa já lê as suas sessões). O que
+continua, sem enfeite:
 
-**Abrir o escritório já autorizado.** A página não guarda o token: guarda uma chave que não pode ser exportada, no
+- **O token não autentica a página para você.** Com o Expediente parado, um programa que ocupe a porta pode servir uma página
+  falsa naquela origem; ela pode pedir à chave de cliente guardada no seu navegador provas de **cliente**. Se o Expediente voltar
+  e a aba falsa seguir aberta, quem a controla consegue escrever em nome do dono enquanto a aba estiver aberta (a chave não sai do
+  navegador, mas assina). Só TLS com identidade autenticaria a página; o Expediente não tem.
+- **O corpo do pedido não entra na prova** (só método e caminho com a consulta): um intermediário que repasse o pedido de um
+  cliente legítimo a um Expediente verdadeiro poderia trocar o corpo.
+- **A resposta também não é autenticada:** quem estiver no meio do caminho entre o cliente e o servidor pode trocar a resposta
+  (a prova do servidor vale para o desafio, não para o que vem depois).
+- Ler (a conversa do terminal somente leitura, por exemplo) não pede prova.
+
+Trocar o token é apagar o arquivo e rodar `npm run docker:up` (ou reiniciar o servidor); as páginas abertas, que têm a chave
+derivada do token antigo, levam `401` e pedem a autorização de novo.
+
+**Abrir o escritório já autorizado.** A página não guarda o token: guarda a chave do cliente, que não pode ser exportada, no
 IndexedDB do navegador, e assina cada escrita com ela. Para recebê-la, abra o escritório por um destes caminhos, sem digitar nada:
 
 - `npm run abrir`, na pasta do Expediente: confere que quem responde na porta tem o seu token, pede um **bilhete de uso

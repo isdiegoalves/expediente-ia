@@ -105,21 +105,23 @@ Borda (`http/guard.ts`, vale para API, estáticos e Vite): `Host` precisa ser `l
 (contra DNS rebinding) → senão 403; `X-Forwarded-For` com endereço fora do loopback → 403; `POST` em `/api/*` exige
 `Content-Type: application/json` (415) e `Origin` da mesma origem do `Host` (403), contra CSRF. Todo pedido a `/api/` que não seja `GET` nem `HEAD` (inclusive `OPTIONS`) exige a prova de que quem pede conhece o token de
 `<pasta da ponte>/token` (`~/.expediente/host/token`, `/host/token` no container; 64 hexadecimais, modo 600), no cabeçalho
-`X-Expediente-Prova: <desafio>.<hex>`. O segredo nunca viaja. O protocolo (`http/autenticacao.ts`, `token.ts`):
+`X-Expediente-Prova: <desafio>.<hex>`. O token (K) nunca viaja; só uma chave derivada dele, uma vez, para a página. O protocolo (`http/autenticacao.ts`, `token.ts`):
 
 1. `GET /api/token/desafio?n=<nonce do cliente, 32 hex>` (sem prova) → `{desafio, prova}`: `desafio` são 32 hex aleatórios (60 s, uso
-   único, só em memória, no máximo 1000 vivos) e `prova = hex(HMAC-SHA256(K, "servidor\n" + n))`. O cliente confere a prova (só quem
-   tem o token a sabe fazer) antes de confiar no servidor; `K` são os 32 bytes do token.
-2. A escrita leva `<desafio>.<hex(HMAC-SHA256(K, "cliente\n" + desafio + "\n" + MÉTODO + "\n" + caminho com a consulta, como foi enviado))>`.
+   único, só em memória, no máximo 1000 vivos) e `prova = hex(HMAC-SHA256(Ks, "servidor\n" + n))`. O cliente com o arquivo confere a prova (só quem
+   tem K a sabe fazer) antes de confiar no servidor. `K` são os 32 bytes do token; as chaves por papel são `Ks = HMAC(K, "expediente/servidor")`
+   e `Kc = HMAC(K, "expediente/cliente")`. Com uma chave só, a página (que guarda a chave no navegador) assinaria `servidor\n<nonce>` para
+   uma página falsa servida na porta, que passaria na conferência.
+2. A escrita leva `<desafio>.<hex(HMAC-SHA256(Kc, "cliente\n" + desafio + "\n" + MÉTODO + "\n" + caminho com a consulta, como foi enviado))>`.
    O guard consome o desafio antes de comparar e compara em tempo constante: desafio desconhecido, vencido ou reusado, de outro
    método ou caminho, ou prova errada, dá 401 em JSON. Os prefixos "servidor" e "cliente" impedem usar a resposta de um lado como a
    prova do outro, e não há relógio no protocolo (container e host podem divergir depois de o Mac dormir). O corpo não entra na
-   prova: um intermediário que repasse o pedido a um Expediente de verdade poderia trocá-lo.
+   prova: um intermediário que repasse o pedido a um Expediente de verdade poderia trocá-lo. A resposta também não é autenticada.
 3. Sem token legível o servidor responde 503 a toda escrita, ao desafio, ao bilhete e à troca.
 4. `POST /api/token/bilhete` (com prova) → `{bilhete}`: 32 hex, 60 s, uso único, no máximo 64 vivos. `POST /api/token/troca {bilhete}`
-   (a única escrita sem prova de cliente: o bilhete é a credencial; JSON, mesma origem, `Sec-Fetch-Site` de dentro) → `{token}` uma
-   vez, `no-store`; bilhete desconhecido, vencido ou reusado → 401. É assim que o segredo chega à página, que o guarda como chave
-   HMAC não exportável.
+   (a única escrita sem prova de cliente: o bilhete é a credencial; JSON, mesma origem, `Sec-Fetch-Site` de dentro) → `{chave}` (é `Kc`, nunca K) uma
+   vez, `no-store`; bilhete desconhecido, vencido ou reusado → 401. É assim que a chave do cliente chega à página, que a guarda como chave
+   HMAC não exportável; ela só produz provas de cliente. Uma página com a chave do desenho anterior (o próprio K) leva 401.
 
 Três `GET` mudam estado do servidor e por isso também exigem a prova (`http/prova-get.ts`): `/api/permissions/:id/wait` (entrega e
 apaga a decisão guardada para o hook), `/api/mod/focos` (marca que há um mod de pé) e `/api/agentes/:id/ir` (emite um nonce e expulsa

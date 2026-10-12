@@ -26,10 +26,14 @@ mostra a faixa de ações bloqueadas até ser aberta de novo pelo `npm run abrir
   32 bytes aleatórios guardado em `~/.expediente/host/token` (modo 600): sem a prova, o servidor responde `401`. O token
   protege contra quem alcança a porta sem ler os seus arquivos (um container, um processo isolado, outro usuário da máquina);
   um programa rodando como você consegue ler o arquivo, e contra ele o token não é barreira. Ler o escritório não pede nada.
-- **O segredo nunca viaja.** A prova é um HMAC de um desafio que o servidor emite (60 s, uso único), do método e do caminho, e
-  o servidor prova de volta que tem o token antes de qualquer cliente confiar nele. Se o Expediente estiver parado e outro
-  programa ocupar a porta, ele não recebe o segredo, e o hook, o mod, o `npm run abrir` e o pré-voo recusam falar com ele. O
-  que ele ainda pode é servir uma página falsa: o token não autentica a página para você.
+- **O token não viaja.** A prova é um HMAC de um desafio que o servidor emite (60 s, uso único), do método e do caminho, e o
+  servidor prova de volta que tem o token antes de o hook, o mod, o `npm run abrir` e o pré-voo confiarem nele. Do token saem duas
+  chaves, uma por papel: a página recebe só a do cliente (uma vez, na troca do bilhete) e ela não produz a prova do servidor, então
+  uma página falsa servida na porta não a usa para se passar pelo Expediente. Se o Expediente estiver parado e outro programa
+  ocupar a porta, ele não recebe o token nem a prova de ninguém. O que ele ainda pode: servir uma página falsa que peça provas de
+  cliente à chave guardada no navegador e, se o Expediente voltar com a aba falsa aberta, escrever em seu nome enquanto ela
+  estiver aberta. O token não autentica a página para você; só TLS com identidade faria isso. O corpo do pedido e a resposta
+  também não são autenticados.
 - **Alguns `GET` também mudam estado e agora exigem a prova:** entregar ao hook a decisão que você deu (quem lesse o id no
   snapshot a roubaria), marcar que há um mod de pé e emitir o código de uso único do atalho para a sessão.
 
