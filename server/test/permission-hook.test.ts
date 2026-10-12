@@ -369,10 +369,10 @@ describe('permission-hook.mjs e o token local (processo)', () => {
     }
   });
 
-  it('token errado (o servidor responde 401): sai sem decisão, nada fica pendente e o valor não aparece na depuração', async () => {
+  it('token errado (a prova do servidor não confere com o do arquivo): sai sem decisão, nada fica pendente e nenhum valor aparece na depuração', async () => {
     const errado = 'e'.repeat(64);
     const r = await semDecisao(homeCom(`${errado}\n`), true);
-    expect(r.stderr).toContain('401');
+    expect(r.stderr).toContain('não é o Expediente');
     expect(r.stderr).not.toContain(errado);
     expect(r.stderr).not.toContain(TOKEN_DE_TESTE);
   });

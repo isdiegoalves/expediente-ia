@@ -4,7 +4,9 @@ import { mkdirSync, mkdtempSync, writeFileSync, appendFileSync, rmSync } from 'n
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Autenticacao } from '../http/autenticacao';
 import { createRequestGuard } from '../http/guard';
+import { chaveDoToken, provaDoCliente, type TokenLido } from '../token';
 
 let n = 0;
 const uuid = () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`;
@@ -140,12 +142,15 @@ export function appendLines(path: string, lines: string[]): void {
 }
 
 export const TOKEN_DE_TESTE = 'ab'.repeat(32);
+export const tokenDeTeste = (): TokenLido => ({ ok: true, token: TOKEN_DE_TESTE, chave: chaveDoToken(TOKEN_DE_TESTE) });
 
-/** O guard de verdade, com o token certo carimbado em todo pedido: para os testes de rota, que não tratam do token. */
+/** O guard de verdade, com a prova certa carimbada em todo pedido: para os testes de rota, que não tratam do token. */
 export function guardDeTeste(): (req: IncomingMessage, res: ServerResponse) => boolean {
-  const guard = createRequestGuard(() => ({ ok: true, token: TOKEN_DE_TESTE }));
+  const auth = new Autenticacao(tokenDeTeste);
+  const guard = createRequestGuard(auth);
   return (req, res) => {
-    req.headers['x-expediente-token'] ??= TOKEN_DE_TESTE;
+    const desafio = auth.emitirDesafio();
+    req.headers['x-expediente-prova'] ??= `${desafio}.${provaDoCliente(chaveDoToken(TOKEN_DE_TESTE), desafio, req.method ?? 'GET', req.url ?? '/')}`;
     return guard(req, res);
   };
 }

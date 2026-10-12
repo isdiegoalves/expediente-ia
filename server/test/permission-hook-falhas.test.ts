@@ -6,7 +6,9 @@ import type { AddressInfo } from 'node:net';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
+import { TOKEN_DE_TESTE } from './fixtures';
 import { HOME_DE_TESTE, hookJson } from './permission-server';
+import { aleatorioHex, chaveDoToken, provaDoCliente, provaDoServidor } from '../token';
 
 const HOOK = resolve(__dirname, '../../mod/expediente-permissoes/hooks/permission-hook.mjs');
 const { parseOptions } = (await import(pathToFileURL(HOOK).href)) as { parseOptions(argv: string[], env: NodeJS.ProcessEnv): { port: number; timeoutMs: number } };
@@ -17,24 +19,59 @@ interface Reply {
   drop?: boolean;
   hang?: boolean;
 }
+interface Pedido {
+  metodo: string;
+  url: string;
+  prova: string | undefined;
+  /** A prova de cliente confere com o token do arquivo do hook, para o método e a URL como chegaram. */
+  provaValida: boolean;
+  /** Tudo o que chegou (linha de pedido, cabeçalhos e corpo): onde o segredo não pode aparecer. */
+  bruto: string;
+}
 interface Fake {
   port: number;
   posted: string[];
-  /** O cabeçalho X-Expediente-Token de cada pedido, na ordem (undefined = sem o cabeçalho). */
-  tokens: Array<string | undefined>;
+  /** Os pedidos que não são de desafio, na ordem. */
+  pedidos: Pedido[];
+  /** Quantos desafios pediram. */
+  desafios: number;
+  /** O nonce de cada desafio pedido, na ordem. */
+  nonces: string[];
   close(): Promise<void>;
 }
 
-function fake(register: Reply, wait: Reply = { status: 200, body: '{"status":"pending"}' }): Promise<Fake> {
+const CHAVE_DE_TESTE = chaveDoToken(TOKEN_DE_TESTE);
+
+/** Um "Expediente" falso: responde o desafio com a prova de quem tem `chave` e o resto com as respostas dadas. */
+function fake(register: Reply, wait: Reply = { status: 200, body: '{"status":"pending"}' }, chave: Buffer = CHAVE_DE_TESTE): Promise<Fake> {
   const posted: string[] = [];
-  const tokens: Array<string | undefined> = [];
+  const pedidos: Pedido[] = [];
+  const estado = { desafios: 0 };
+  const nonces: string[] = [];
   const server = http.createServer((req, res) => {
-    tokens.push(req.headers['x-expediente-token'] as string | undefined);
     const chunks: Buffer[] = [];
     req.on('data', (c: Buffer) => chunks.push(c));
     req.on('end', () => {
+      const corpo = Buffer.concat(chunks).toString('utf8');
+      const url = req.url ?? '/';
+      if (url.startsWith('/api/token/desafio')) {
+        estado.desafios++;
+        const n = new URL(url, 'http://x').searchParams.get('n') ?? '';
+        nonces.push(n);
+        res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ desafio: aleatorioHex(), prova: provaDoServidor(chave, n) }));
+        return;
+      }
+      const prova = req.headers['x-expediente-prova'] as string | undefined;
+      const [desafio = '', hex = ''] = (prova ?? '').split('.');
+      pedidos.push({
+        metodo: req.method ?? '',
+        url,
+        prova,
+        provaValida: /^[0-9a-f]{32}$/.test(desafio) && hex === provaDoCliente(CHAVE_DE_TESTE, desafio, req.method ?? '', url),
+        bruto: `${req.method} ${url}\n${JSON.stringify(req.headers)}\n${corpo}`,
+      });
       const isPost = req.method === 'POST';
-      if (isPost) posted.push(Buffer.concat(chunks).toString('utf8'));
+      if (isPost) posted.push(corpo);
       const r = isPost ? register : wait;
       if (r.hang) return;
       if (r.drop) return void req.socket.destroy();
@@ -46,7 +83,11 @@ function fake(register: Reply, wait: Reply = { status: 200, body: '{"status":"pe
       ok({
         port: (server.address() as AddressInfo).port,
         posted,
-        tokens,
+        pedidos,
+        nonces,
+        get desafios() {
+          return estado.desafios;
+        },
         close: () =>
           new Promise<void>((done) => {
             server.closeAllConnections();
@@ -146,7 +187,7 @@ describe('permission-hook.mjs: qualquer falha devolve a decisão ao terminal', (
   });
 });
 
-describe('permission-hook.mjs: o token local e o servidor', () => {
+describe('permission-hook.mjs: o token local nunca viaja, e o servidor prova que o tem', () => {
   const homes: string[] = [];
   afterEach(() => {
     for (const h of homes.splice(0)) rmSync(h, { recursive: true, force: true });
@@ -158,7 +199,7 @@ describe('permission-hook.mjs: o token local e o servidor', () => {
     if (conteudo !== undefined) writeFileSync(join(home, '.expediente', 'host', 'token'), conteudo);
     return home;
   }
-  const VALOR = '5e17e11a'.repeat(8);
+  const VALOR = TOKEN_DE_TESTE;
 
   it.each([['ausente', undefined], ['curto', 'curto\n'], ['vazio', ''], ['com letras fora do hexadecimal', `${'g'.repeat(64)}\n`], ['maiúsculo', `${VALOR.toUpperCase()}\n`]])(
     'arquivo do token %s: o hook nem chama o servidor e sai sem decisão',
@@ -166,22 +207,61 @@ describe('permission-hook.mjs: o token local e o servidor', () => {
       srv = await fake(REGISTRADO);
       const r = await runHook(JSON.stringify(hookJson()), ['--port', String(srv.port)], { HOME: homeCom(conteudo) });
       expect(r).toMatchObject({ code: 0, stdout: '' });
-      expect(srv.tokens).toEqual([]);
+      expect(srv.pedidos).toEqual([]);
+      expect(srv.desafios).toBe(0);
     },
   );
 
-  it('com o token legível, só o registro (POST) leva o cabeçalho, com o valor do arquivo, e o corpo não tem o valor', async () => {
+  it('com o token legível: cada chamada (o registro e a espera) vem depois de um desafio, com a prova certa, e o segredo não aparece em nenhum byte que chegou', async () => {
     srv = await fake(REGISTRADO, { status: 200, body: '{"status":"decided","behavior":"deny"}' });
-    const r = await runHook(JSON.stringify(hookJson()), ['--port', String(srv.port)], { HOME: homeCom(`${VALOR}\n`) });
+    const r = await runHook(JSON.stringify(hookJson()), ['--port', String(srv.port)], { HOME: homeCom(`${VALOR}\n`), EXPEDIENTE_HOOK_DEBUG: '1' });
     expect(r.code).toBe(0);
-    expect(srv.tokens).toEqual([VALOR, undefined]);
-    expect(srv.posted[0]).not.toContain(VALOR);
+    expect(srv.desafios).toBe(2);
+    expect(srv.nonces).toHaveLength(2);
+    for (const n of srv.nonces) expect(n).toMatch(/^[0-9a-f]{32}$/);
+    expect(srv.nonces[0]).not.toBe(srv.nonces[1]);
+    expect(srv.pedidos.map((p) => `${p.metodo} ${p.url.split('?')[0]}`)).toEqual(['POST /api/permissions', 'GET /api/permissions/p1/wait']);
+    for (const p of srv.pedidos) {
+      expect(p.prova, p.url).toMatch(/^[0-9a-f]{32}\.[0-9a-f]{64}$/);
+      expect(p.provaValida, p.url).toBe(true);
+      expect(p.bruto).not.toContain(VALOR);
+    }
+    expect(r.stderr + r.stdout).not.toContain(VALOR);
+  });
+
+  it('servidor que não tem o token (quem ocupa a porta com o Expediente parado): o hook não manda registro nem prova, e sai sem decisão', async () => {
+    srv = await fake(REGISTRADO, { status: 200, body: '{"status":"decided","behavior":"allow"}' }, chaveDoToken('f'.repeat(64)));
+    const r = await runHook(JSON.stringify(hookJson()), ['--port', String(srv.port)], { HOME: homeCom(`${VALOR}\n`), EXPEDIENTE_HOOK_DEBUG: '1' });
+    expect(r).toMatchObject({ code: 0, stdout: '' });
+    expect(srv.desafios).toBe(1);
+    expect(srv.pedidos).toEqual([]);
+    expect(r.stderr).toContain('não é o Expediente');
+    expect(r.stderr).not.toContain(VALOR);
+  });
+
+  it.each([
+    ['sem prova nenhuma', '{"desafio":"' + 'a'.repeat(32) + '"}'],
+    ['com a prova de outro nonce (repetição de uma resposta antiga)', '{"desafio":"' + 'a'.repeat(32) + '","prova":"' + 'b'.repeat(64) + '"}'],
+    ['com desafio fora do formato', '{"desafio":"curto","prova":"' + 'b'.repeat(64) + '"}'],
+    ['que não é JSON', 'lixo'],
+  ])('servidor que responde o desafio %s: o hook sai sem decisão e não manda nada', async (_nome, corpo) => {
+    const falso = http.createServer((req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' }).end(corpo);
+    });
+    await new Promise<void>((ok) => falso.listen(0, '127.0.0.1', ok));
+    try {
+      const r = await runHook(JSON.stringify(hookJson()), ['--port', String((falso.address() as AddressInfo).port)], { HOME: homeCom(`${VALOR}\n`) });
+      expect(r).toMatchObject({ code: 0, stdout: '' });
+    } finally {
+      falso.closeAllConnections();
+      falso.close();
+    }
   });
 
   it.each([401, 403, 503])('o servidor recusa o registro com %i: sai sem decisão e não pergunta mais nada', async (status) => {
     srv = await fake({ status, body: '{"error":"x"}' });
     const r = await runHook(JSON.stringify(hookJson()), ['--port', String(srv.port)], { HOME: homeCom(`${VALOR}\n`) });
     expect(r).toMatchObject({ code: 0, stdout: '' });
-    expect(srv.tokens).toEqual([VALOR]);
+    expect(srv.pedidos.map((p) => p.metodo)).toEqual(['POST']);
   });
 });

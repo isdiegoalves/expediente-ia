@@ -30,6 +30,7 @@ import { SessoesAppReader } from './sources/sessoes-app';
 import { ClaudeWatcher } from './sources/watcher';
 import { createBuildReader } from './build';
 import { arquivoDoToken, garantirToken, lerToken } from './token';
+import { Autenticacao } from './http/autenticacao';
 import { carregarTema } from './tema/carregar';
 import { createVersaoReader } from './versao';
 
@@ -202,7 +203,8 @@ if (config.dev) {
 }
 
 // Host/Origin/Content-Type: barra DNS rebinding e CSRF antes de qualquer rota (inclusive o Vite).
-const guard = createRequestGuard(lerTokenDoDono);
+const autenticacao = new Autenticacao(lerTokenDoDono);
+const guard = createRequestGuard(autenticacao);
 
 server.on('request', (req, res) => {
   const url = parseUrl(req);

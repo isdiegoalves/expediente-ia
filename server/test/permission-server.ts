@@ -8,13 +8,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AccountsService } from '../accounts/service';
 import { createApiHandler } from '../http/app';
+import { Autenticacao } from '../http/autenticacao';
 import { createRequestGuard } from '../http/guard';
 import { Hub } from '../http/sse';
 import { NameStore } from '../model/names';
 import { Office } from '../model/office';
 import { createPermissionRoutes } from '../permissions/http';
 import { PermissionRegistry, type RegistryOptions } from '../permissions/registry';
-import { arquivoDoToken, lerToken } from '../token';
+import { aleatorioHex, arquivoDoToken, chaveDoToken, lerToken, provaDoCliente } from '../token';
 import { TOKEN_DE_TESTE, tempDir } from './fixtures';
 
 
@@ -77,7 +78,7 @@ export async function servePermissions(opts: { enabled?: boolean; viewers?: numb
     terminal: enabled,
     permissions: registry ? createPermissionRoutes(registry) : undefined,
   });
-  const guard = createRequestGuard(() => lerToken(arquivoDoToken(PONTE_DE_TESTE)));
+  const guard = createRequestGuard(new Autenticacao(() => lerToken(arquivoDoToken(PONTE_DE_TESTE))));
   const server = http.createServer((req, res) => {
     if (guard(req, res)) return;
     if (!api(req, res, new URL(req.url ?? '/', 'http://x'))) res.writeHead(404).end();
@@ -105,17 +106,25 @@ export async function servePermissions(opts: { enabled?: boolean; viewers?: numb
   };
 }
 
-/** Requisição crua (dá para trocar Host, Origin e Content-Type). */
-export function request(
+/** Requisição crua (dá para trocar Host, Origin e Content-Type). Com a prova do token certa, a menos que `headers` traga a sua. */
+export async function request(
   base: string,
   path: string,
   opts: { method?: string; headers?: Record<string, string>; body?: unknown } = {},
 ): Promise<{ status: number; json: unknown; text: string }> {
-  const u = new URL(base);
   const data = opts.body === undefined ? undefined : typeof opts.body === 'string' ? opts.body : JSON.stringify(opts.body);
-  const headers: Record<string, string> = { ...(data !== undefined ? { 'Content-Type': 'application/json' } : {}), 'X-Expediente-Token': TOKEN_DE_TESTE, ...opts.headers };
+  const headers: Record<string, string> = { ...(data !== undefined ? { 'Content-Type': 'application/json' } : {}), ...opts.headers };
+  if (!Object.keys(headers).some((h) => h.toLowerCase() === 'x-expediente-prova')) {
+    const desafio = ((await cru(base, `/api/token/desafio?n=${aleatorioHex()}`, 'GET', {}, undefined)).json as { desafio: string }).desafio;
+    headers['X-Expediente-Prova'] = `${desafio}.${provaDoCliente(chaveDoToken(TOKEN_DE_TESTE), desafio, opts.method ?? 'GET', path)}`;
+  }
+  return cru(base, path, opts.method ?? 'GET', headers, data);
+}
+
+function cru(base: string, path: string, method: string, headers: Record<string, string>, data: string | undefined): Promise<{ status: number; json: unknown; text: string }> {
+  const u = new URL(base);
   return new Promise((ok, fail) => {
-    const req = http.request({ host: u.hostname, port: u.port, path, method: opts.method ?? 'GET', headers }, (res) => {
+    const req = http.request({ host: u.hostname, port: u.port, path, method, headers }, (res) => {
       let text = '';
       res.setEncoding('utf8');
       res.on('data', (c: string) => (text += c));

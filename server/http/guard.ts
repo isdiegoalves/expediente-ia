@@ -8,17 +8,16 @@
 // 2) CSRF: requisições que mudam estado (POST) exigem `Content-Type: application/json` — o que um
 //    formulário ou um fetch "simples" de outro site não consegue enviar sem preflight de CORS, que
 //    este servidor nunca autoriza — e, quando há `Origin`, ele precisa ser da mesma origem do Host.
-// 3) Token local: toda chamada a /api/ que não seja GET nem HEAD precisa do cabeçalho X-Expediente-Token. O servidor só é
-//    alcançável pelo próprio computador, mas qualquer programa que alcance a porta poderia, por exemplo, decidir uma
-//    permissão pendente; o token fica num arquivo que só o usuário lê.
+// 3) Prova do token local: toda chamada a /api/ que não seja GET nem HEAD (e os poucos GET que mudam estado, ver prova-get.ts)
+//    leva X-Expediente-Prova, o HMAC do desafio que o servidor emitiu, do método e do caminho. O servidor só é alcançável pelo
+//    próprio computador, mas qualquer programa que alcance a porta poderia, por exemplo, decidir uma permissão pendente; o
+//    segredo fica num arquivo que só o usuário lê e nunca viaja: quem ocupasse a porta com o Expediente parado não o receberia.
 // 4) Proxy: `X-Forwarded-For` com endereço fora do loopback indica pedido repassado de outra máquina.
-import { createHash, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { isIP } from 'node:net';
 import { isLoopbackBind } from '../config';
-import type { TokenLido } from '../token';
-
-export const TOKEN_CABECALHO = 'x-expediente-token';
+import { PROVA_CABECALHO, type Autenticacao } from './autenticacao';
+import { getExigeProva } from './prova-get';
 
 /**
  * Nome do host (minúsculo, sem porta e sem colchetes no IPv6) a partir de um cabeçalho Host
@@ -89,12 +88,6 @@ export function isJsonContentType(value: string | undefined): boolean {
   return !!value && /^application\/json\s*(;|$)/i.test(value.trim());
 }
 
-/** Compara os resumos SHA-256: `timingSafeEqual` lança com tamanhos diferentes, e assim o tamanho do token também não vaza. */
-function tokenConfere(enviado: string | undefined, esperado: string): boolean {
-  const resumo = (v: string) => createHash('sha256').update(v).digest();
-  return timingSafeEqual(resumo(enviado ?? ''), resumo(esperado));
-}
-
 function rejectJson(res: ServerResponse, status: number, error: string): void {
   const body = JSON.stringify({ error });
   res.writeHead(status, {
@@ -119,9 +112,9 @@ function reject(res: ServerResponse, status: number, message: string): void {
 
 /**
  * Devolve um filtro para o início de cada requisição: responde (e devolve true) quando a
- * requisição deve ser recusada; senão devolve false e não toca na resposta. `token` é lido a cada escrita.
+ * requisição deve ser recusada; senão devolve false e não toca na resposta. O token é lido a cada escrita.
  */
-export function createRequestGuard(token: () => TokenLido): (req: IncomingMessage, res: ServerResponse) => boolean {
+export function createRequestGuard(auth: Autenticacao): (req: IncomingMessage, res: ServerResponse) => boolean {
   return (req, res) => {
     const forwarded = req.headers['x-forwarded-for'];
     if (!forwardedAllowed(forwarded)) {
@@ -138,35 +131,45 @@ export function createRequestGuard(token: () => TokenLido): (req: IncomingMessag
       return true;
     }
     const method = req.method ?? 'GET';
-    if (method === 'GET' || method === 'HEAD') return false;
-    const origin = typeof req.headers.origin === 'string' ? req.headers.origin : undefined;
-    if (method !== 'OPTIONS' && !originAllowed(origin, host)) {
-      reject(res, 403, 'Origem não permitida.');
-      return true;
-    }
     // Mesma leitura do caminho que o index.ts faz: `/x/../api/...` chega à rota como `/api/...`.
-    let path = '/';
+    let url = new URL('/', 'http://localhost');
     try {
-      path = new URL(req.url ?? '/', 'http://localhost').pathname;
+      url = new URL(req.url ?? '/', 'http://localhost');
     } catch {
       // caminho ilegível: o index.ts também cai em '/'
     }
-    const api = path === '/api' || path.startsWith('/api/');
-    if (api) {
-      const lido = token();
+    const api = url.pathname === '/api' || url.pathname.startsWith('/api/');
+    const rota = api ? auth.rotaDe(url.pathname) : undefined;
+    const leitura = method === 'GET' || method === 'HEAD';
+    if (rota === 'desafio') {
+      if (leitura) auth.desafio(res, url);
+      else rejectJson(res, 405, 'método não permitido');
+      return true;
+    }
+    if (leitura && !(api && getExigeProva(url))) return false;
+    const origin = typeof req.headers.origin === 'string' ? req.headers.origin : undefined;
+    if (!leitura && method !== 'OPTIONS' && !originAllowed(origin, host)) {
+      reject(res, 403, 'Origem não permitida.');
+      return true;
+    }
+    if (api && rota !== 'troca') {
+      const lido = auth.token();
       if (!lido.ok) {
         rejectJson(res, 503, `Escrita bloqueada: ${lido.motivo}. Rode npm run docker:up (ou reinicie o servidor) na pasta do Expediente.`);
         return true;
       }
-      const enviado = req.headers[TOKEN_CABECALHO];
-      if (!tokenConfere(typeof enviado === 'string' ? enviado : undefined, lido.token)) {
-        rejectJson(res, 401, 'Falta o token local, ou ele está errado. Abra o escritório pelo botão do painel do /escritorio ou rode npm run abrir na pasta do Expediente.');
+      if (!auth.confere(req.headers[PROVA_CABECALHO], method, req.url ?? '/', lido.chave)) {
+        rejectJson(res, 401, 'Falta a prova do token local, ou ela está errada. Abra o escritório pelo botão do painel do /escritorio ou rode npm run abrir na pasta do Expediente.');
         return true;
       }
     }
-    if (method === 'OPTIONS') return false;
+    if (leitura || method === 'OPTIONS') return false;
     if (api && !isJsonContentType(req.headers['content-type'])) {
       reject(res, 415, 'Envie o corpo como JSON (Content-Type: application/json).');
+      return true;
+    }
+    if (rota) {
+      auth.tratar(rota, req, res);
       return true;
     }
     return false;

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { getExigeProva } from '../http/prova-get';
 
 const ler = (arquivo: string) => readFileSync(join(__dirname, '..', arquivo), 'utf8');
 
@@ -8,6 +9,8 @@ interface Fontes {
   app: string;
   index: string;
   guard: string;
+  provaGet: string;
+  autenticacao: string;
   delegadas: Record<string, string>;
 }
 
@@ -15,6 +18,8 @@ const FONTES: Fontes = {
   app: ler('http/app.ts'),
   index: ler('index.ts'),
   guard: ler('http/guard.ts'),
+  provaGet: ler('http/prova-get.ts'),
+  autenticacao: ler('http/autenticacao.ts'),
   delegadas: { 'tema.ts': ler('http/tema.ts'), 'timeline.ts': ler('http/timeline.ts'), 'stats.ts': ler('http/stats.ts') },
 };
 
@@ -103,35 +108,70 @@ const PEDIDO = [
   '}',
 ];
 
-// O que o guard faz com um pedido que não é GET nem HEAD, do método até a saída de OPTIONS: o Origin, o caminho como a rota o lê,
-// e o token (cobrado em todo /api/, falhando fechado se o servidor não tem token). Qualquer instrução a mais ou a menos nesse trecho derruba o teste.
+// O que o guard faz com um pedido que não é um GET que só lê, do método até a saída de OPTIONS e do que ele devolve: o desafio (sem prova de cliente),
+// o Origin, o caminho como a rota o lê, a prova do token (cobrada em todo /api/ menos na troca do bilhete, falhando fechada sem token) e o 415.
+// Qualquer instrução a mais ou a menos nesse trecho derruba o teste.
 const COBRANCA_DO_TOKEN = [
   "const method = req.method ?? 'GET';",
-  "if (method === 'GET' || method === 'HEAD') return false;",
+  "let url = new URL('/', 'http://localhost');",
+  'try {',
+  "url = new URL(req.url ?? '/', 'http://localhost');",
+  '} catch {',
+  '}',
+  "const api = url.pathname === '/api' || url.pathname.startsWith('/api/');",
+  'const rota = api ? auth.rotaDe(url.pathname) : undefined;',
+  "const leitura = method === 'GET' || method === 'HEAD';",
+  "if (rota === 'desafio') {",
+  'if (leitura) auth.desafio(res, url);',
+  "else rejectJson(res, 405, 'método não permitido');",
+  'return true;',
+  '}',
+  'if (leitura && !(api && getExigeProva(url))) return false;',
   "const origin = typeof req.headers.origin === 'string' ? req.headers.origin : undefined;",
-  "if (method !== 'OPTIONS' && !originAllowed(origin, host)) {",
+  "if (!leitura && method !== 'OPTIONS' && !originAllowed(origin, host)) {",
   "reject(res, 403, 'Origem não permitida.');",
   'return true;',
   '}',
-  "let path = '/';",
-  'try {',
-  "path = new URL(req.url ?? '/', 'http://localhost').pathname;",
-  '} catch {',
-  '}',
-  "const api = path === '/api' || path.startsWith('/api/');",
-  'if (api) {',
-  'const lido = token();',
+  "if (api && rota !== 'troca') {",
+  'const lido = auth.token();',
   'if (!lido.ok) {',
   'rejectJson(res, 503, `Escrita bloqueada: ${lido.motivo}. Rode npm run docker:up (ou reinicie o servidor) na pasta do Expediente.`);',
   'return true;',
   '}',
-  'const enviado = req.headers[TOKEN_CABECALHO];',
-  "if (!tokenConfere(typeof enviado === 'string' ? enviado : undefined, lido.token)) {",
-  "rejectJson(res, 401, 'Falta o token local, ou ele está errado. Abra o escritório pelo botão do painel do /escritorio ou rode npm run abrir na pasta do Expediente.');",
+  "if (!auth.confere(req.headers[PROVA_CABECALHO], method, req.url ?? '/', lido.chave)) {",
+  "rejectJson(res, 401, 'Falta a prova do token local, ou ela está errada. Abra o escritório pelo botão do painel do /escritorio ou rode npm run abrir na pasta do Expediente.');",
   'return true;',
   '}',
   '}',
-  "if (method === 'OPTIONS') return false;",
+  "if (leitura || method === 'OPTIONS') return false;",
+  "if (api && !isJsonContentType(req.headers['content-type'])) {",
+  "reject(res, 415, 'Envie o corpo como JSON (Content-Type: application/json).');",
+  'return true;',
+  '}',
+  'if (rota) {',
+  'auth.tratar(rota, req, res);',
+  'return true;',
+  '}',
+  'return false;',
+];
+
+// prova-get.ts inteiro, sem os comentários: os GET que mudam estado e a única exceção.
+const PROVA_GET = [
+  "const IR = /^\\/api\\/agentes\\/[^/]+\\/ir$/;",
+  "const GET_COM_PROVA: readonly RegExp[] = [/^\\/api\\/permissions\\/[^/]+\\/wait$/, /^\\/api\\/mod\\/focos$/, IR];",
+  'export function getExigeProva(url: URL): boolean {',
+  "if (url.searchParams.get('abrir') === '1' && IR.test(url.pathname)) return false;",
+  'return GET_COM_PROVA.some((re) => re.test(url.pathname));',
+  '}',
+];
+
+// As três rotas de token, as exceções à prova do cliente, e a conferência que consome o desafio antes de comparar.
+const ROTAS_DE_TOKEN = "const ROTAS: Record<string, RotaDeToken> = { '/api/token/desafio': 'desafio', '/api/token/bilhete': 'bilhete', '/api/token/troca': 'troca' };";
+const CONFERE = [
+  "const m = typeof cabecalho === 'string' ? PROVA_FORMATO.exec(cabecalho) : null;",
+  'if (!m) return false;',
+  'if (!this.desafios.consumir(m[1])) return false;',
+  'return iguais(m[2], provaDoCliente(chave, m[1], metodo, caminho));',
 ];
 
 const semComentario = (linhas: string[]) => linhas.map((l) => l.trim()).filter((l) => l && !l.startsWith('//'));
@@ -237,14 +277,20 @@ function violacoes(f: Fontes): string[] {
 
   const guardas = semComentario(f.guard.split('\n'));
   const de = guardas.indexOf(COBRANCA_DO_TOKEN[0]!);
-  const ate = guardas.indexOf(COBRANCA_DO_TOKEN.at(-1)!);
+  const ate = guardas.lastIndexOf(COBRANCA_DO_TOKEN.at(-1)!);
   if (de < 0 || ate < 0 || JSON.stringify(guardas.slice(de, ate + 1)) !== JSON.stringify(COBRANCA_DO_TOKEN)) {
-    v.push('o guard não cobra o token como deve: método, Origin, caminho, token (503 sem token, 401 com valor errado) e a saída de OPTIONS');
+    v.push('o guard não cobra a prova do token como deve: desafio, Origin, caminho, prova (503 sem token, 401 sem prova válida), OPTIONS, 415 e as rotas de token');
   }
-  if (!/export const TOKEN_CABECALHO = 'x-expediente-token';/.test(f.guard)) v.push('o cabeçalho do token mudou no guard');
-  if (!/return timingSafeEqual\(resumo\(enviado \?\? ''\), resumo\(esperado\)\);/.test(f.guard)) v.push('o guard não compara o token em tempo constante');
-  if (!/^const guard = createRequestGuard\(lerTokenDoDono\);$/m.test(f.index) || !/^const lerTokenDoDono = \(\) => lerToken\(arquivoToken\);$/m.test(f.index)) {
-    v.push('o guard em index.ts não recebe o leitor do token do dono');
+  if (JSON.stringify(semComentario(f.provaGet.split('\n'))) !== JSON.stringify(PROVA_GET)) {
+    v.push('os GET que mudam estado (wait, focos, ir) não são os que exigem a prova, ou a exceção do /ir?abrir=1 mudou');
+  }
+  if (!semComentario(f.autenticacao.split('\n')).includes(ROTAS_DE_TOKEN)) v.push('as rotas de token mudaram: só /api/token/desafio, bilhete e troca, e só a troca dispensa a prova do cliente');
+  const autenticacao = semComentario(f.autenticacao.split('\n'));
+  const confere = autenticacao.indexOf(CONFERE[0]!);
+  if (confere < 0 || JSON.stringify(autenticacao.slice(confere, confere + CONFERE.length)) !== JSON.stringify(CONFERE)) v.push('a conferência da prova não consome o desafio antes de comparar em tempo constante');
+  if (!/^export const PROVA_CABECALHO = 'x-expediente-prova';$/m.test(f.autenticacao)) v.push('o cabeçalho da prova mudou');
+  if (!/^const autenticacao = new Autenticacao\(lerTokenDoDono\);$/m.test(f.index) || !/^const guard = createRequestGuard\(autenticacao\);$/m.test(f.index) || !/^const lerTokenDoDono = \(\) => lerToken\(arquivoToken\);$/m.test(f.index)) {
+    v.push('o guard em index.ts não recebe a autenticação com o leitor do token do dono');
   }
 
   const pedido = semComentario(entre(f.index, "server.on('request', (req, res) => {", '});', 'index.ts'));
@@ -263,6 +309,8 @@ function trocar(fonte: string, alvo: string, novo: string): string {
 const NOVA = "      office.setDemo(true);\n      return true;\n    }\n";
 const DEMO = "    if (path === '/api/demo') {";
 const noGuard = (alvo: string, novo: string): Fontes => ({ ...FONTES, guard: trocar(FONTES.guard, alvo, novo) });
+const noProvaGet = (alvo: string, novo: string): Fontes => ({ ...FONTES, provaGet: trocar(FONTES.provaGet, alvo, novo) });
+const noAutenticacao = (alvo: string, novo: string): Fontes => ({ ...FONTES, autenticacao: trocar(FONTES.autenticacao, alvo, novo) });
 const naApp = (alvo: string, novo: string): Fontes => ({ ...FONTES, app: trocar(FONTES.app, alvo, novo) });
 const noTema = (alvo: string, novo: string): Fontes => ({ ...FONTES, delegadas: { ...FONTES.delegadas, 'tema.ts': trocar(FONTES.delegadas['tema.ts']!, alvo, novo) } });
 
@@ -298,15 +346,25 @@ const QUEBRAS: Record<string, () => Fontes> = {
   },
   'rota na delegada antes da recusa de escrita': () => noTema("    if (req.method !== 'GET' && req.method !== 'HEAD') {", "    if (path === '/api/tema/gravar') {\n      return true;\n    }\n    if (req.method !== 'GET' && req.method !== 'HEAD') {"),
   'delegada sem a recusa de escrita': () => noTema("if (req.method !== 'GET' && req.method !== 'HEAD') {", 'if (false) {'),
-  'guard sem a cobrança do token': () => noGuard('if (!tokenConfere(', 'if (false && !tokenConfere('),
+  'guard sem a conferência da prova': () => noGuard('if (!auth.confere(', 'if (false && !auth.confere('),
   'guard que falha aberto com o servidor sem token': () => noGuard('if (!lido.ok) {', 'if (false) {'),
-  'guard que deixa OPTIONS passar antes do token': () => noGuard("if (method === 'GET' || method === 'HEAD') return false;", "if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return false;"),
-  'guard que cobra o token só em POST': () => noGuard('if (api) {', "if (api && method === 'POST') {"),
-  'guard que lê o caminho sem normalizar': () => noGuard("path = new URL(req.url ?? '/', 'http://localhost').pathname;", "path = (req.url ?? '/').split('?')[0]!;"),
-  'guard que deixa uma rota da API sem token': () => noGuard('const api = path ===', "if (path.startsWith('/api/mod/')) return false;\n    const api = path ==="),
-  'guard que compara o token com ===': () => noGuard("return timingSafeEqual(resumo(enviado ?? ''), resumo(esperado));", "return enviado === esperado;"),
-  'guard que aceita token vazio': () => noGuard("const enviado = req.headers[TOKEN_CABECALHO];", "const enviado = req.headers[TOKEN_CABECALHO] || 'x';"),
-  'index.ts cria o guard sem o leitor do token do dono': () => ({ ...FONTES, index: trocar(FONTES.index, 'createRequestGuard(lerTokenDoDono)', "createRequestGuard(() => ({ ok: true, token: '' }))") }),
+  'guard que deixa OPTIONS passar antes da prova': () => noGuard("if (leitura && !(api && getExigeProva(url))) return false;", "if ((leitura || method === 'OPTIONS') && !(api && getExigeProva(url))) return false;"),
+  'guard que cobra a prova só em POST': () => noGuard('if (api && rota !== \'troca\') {', "if (api && rota !== 'troca' && method === 'POST') {"),
+  'guard que lê o caminho sem normalizar': () => noGuard("url = new URL(req.url ?? '/', 'http://localhost');", "url = new URL('http://localhost' + (req.url ?? '/').split('?')[0]);"),
+  'guard que deixa uma rota da API sem prova': () => noGuard('const rota = api ?', "if (url.pathname.startsWith('/api/mod/')) return false;\n    const rota = api ?"),
+  'guard que dispensa a prova em outra rota de token': () => noGuard("if (api && rota !== 'troca') {", "if (api && rota !== 'troca' && rota !== 'bilhete') {"),
+  'guard que não pergunta quais GET mudam estado': () => noGuard('if (leitura && !(api && getExigeProva(url))) return false;', 'if (leitura) return false;'),
+  'guard que responde o desafio a qualquer método': () => noGuard('if (leitura) auth.desafio(res, url);', 'auth.desafio(res, url);'),
+  'guard com a troca do bilhete antes do Content-Type': () => noGuard("if (api && !isJsonContentType(req.headers['content-type'])) {", "if (api && rota !== 'troca' && !isJsonContentType(req.headers['content-type'])) {"),
+  'GET que muda estado sai da lista da prova': () => noProvaGet('/^\\/api\\/permissions\\/[^/]+\\/wait$/, ', ''),
+  'GET de focos sai da lista da prova': () => noProvaGet('/^\\/api\\/mod\\/focos$/, ', ''),
+  'o /ir sai da lista da prova': () => noProvaGet('/^\\/api\\/mod\\/focos$/, IR]', '/^\\/api\\/mod\\/focos$/]'),
+  'o /ir?abrir=1 vira exceção de qualquer rota': () => noProvaGet("&& IR.test(url.pathname)) return false;", ") return false;"),
+  'a lista de prova dos GET vira vazia': () => noProvaGet('return GET_COM_PROVA.some((re) => re.test(url.pathname));', 'return false;'),
+  'rota de token nova sem prova': () => noAutenticacao("'/api/token/troca': 'troca' }", "'/api/token/troca': 'troca', '/api/token/novo': 'troca' }"),
+  'conferência que compara antes de consumir o desafio': () => noAutenticacao('if (!this.desafios.consumir(m[1])) return false;\n    return iguais', 'return iguais'),
+  'conferência com ===': () => noAutenticacao('return iguais(m[2], provaDoCliente(chave, m[1], metodo, caminho));', 'return m[2] === provaDoCliente(chave, m[1], metodo, caminho);'),
+  'index.ts cria o guard sem a autenticação do dono': () => ({ ...FONTES, index: trocar(FONTES.index, 'new Autenticacao(lerTokenDoDono)', "new Autenticacao(() => ({ ok: true, token: '', chave: Buffer.alloc(0) }))") }),
   'rota em index.ts, antes do handler da API': () => ({ ...FONTES, index: trocar(FONTES.index, '    if (guard(req, res)) return;\n', "    if (guard(req, res)) return;\n    if (url.pathname === '/api/novo') return;\n") }),
 };
 
@@ -317,5 +375,48 @@ describe('toda rota que age sobre sessões ou grava estado confere a trava de pu
 
   it.each(Object.keys(QUEBRAS))('acusa: %s', (nome) => {
     expect(violacoes(QUEBRAS[nome]!())).not.toEqual([]);
+  });
+});
+
+// O que o GET de cada rota da tabela faz, lido nos handlers. 'prova' = muda ou consome estado do servidor, então exige a prova do token;
+// 'le' = só lê (o GET do EventSource não manda cabeçalho, e nenhum desses muda estado). Rota nova entra aqui com os exemplos de GET dela:
+// a tabela precisa ter as mesmas chaves de ROTAS, e getExigeProva tem de concordar com cada exemplo.
+//   /api/permissions/:id/wait   entrega e apaga a decisão guardada para o hook e registra quem espera
+//   /api/mod/focos              marca que há um mod de pé (muda o que o /ir oferece)
+//   /api/agentes/:id/ir         emite um nonce e expulsa os mais antigos do agente; com abrir=1 só consome o nonce que o navegador traz
+//   /api/resumo                 só lê a hora da saída (quem a grava é o POST /api/resumo/presenca)
+//   /api/focos/:token           só lê o andamento
+//   /api/stream, /terminal      anexam um leitor, sem mudar o escritório
+const GET_DAS_ROTAS: Record<string, Array<[string, 'le' | 'prova']>> = {
+  'if (deps.tema?.(req, res, url)) return true;': [['/api/tema', 'le']],
+  "if (path === '/api/stream')": [['/api/stream', 'le']],
+  "if (path === '/api/snapshot')": [['/api/snapshot', 'le']],
+  "if (path === '/api/health')": [['/api/health', 'le']],
+  "if (path === '/api/versao')": [['/api/versao', 'le']],
+  "if (path === '/api/resumo' || path === '/api/resumo/presenca')": [['/api/resumo?session=s', 'le']],
+  "if (path === '/api/mod/summary')": [['/api/mod/summary?session=s', 'le']],
+  'const terminalMatch = TERMINAL_ROUTE.exec(path)': [['/api/agents/x/terminal', 'le']],
+  "if (path.startsWith('/api/sessions/'))": [['/api/sessions/recent', 'le']],
+  "if (path === '/api/permissions' || path.startsWith('/api/permissions/'))": [['/api/permissions/p1/wait?timeout=1', 'prova'], ['/api/permissions/p1', 'le']],
+  'const modFocos = MOD_FOCOS_ROUTE.exec(path)': [['/api/mod/focos', 'prova']],
+  'const focoMatch = FOCO_ROUTE.exec(path)': [[`/api/focos/${'a'.repeat(32)}`, 'le']],
+  'const focarMatch = FOCAR_ROUTE.exec(path)': [],
+  'const irMatch = IR_ROUTE.exec(path)': [['/api/agentes/x/ir', 'prova'], ['/api/agentes/x/ir?abrir=1&n=abc', 'le']],
+  'const characterMatch = CHARACTER_ROUTE.exec(path)': [],
+  "if (path.startsWith('/api/agents/'))": [['/api/agents/x', 'le']],
+  "if (path === '/api/rooms/rename')": [],
+  "if (path === '/api/social/ritmo')": [],
+  "if (path === '/api/stats' || path.startsWith('/api/stats/'))": [['/api/stats', 'le']],
+  "if (path === '/api/demo')": [],
+  'if (deps.timeline?.(req, res, url)) return true;': [['/api/timeline/days', 'le']],
+};
+
+describe('todo GET que muda estado exige a prova', () => {
+  it('a tabela do GET tem uma entrada para cada rota da tabela das rotas', () => {
+    expect(Object.keys(GET_DAS_ROTAS).sort()).toEqual(Object.keys(ROTAS).sort());
+  });
+
+  it.each(Object.entries(GET_DAS_ROTAS).flatMap(([cabeca, exemplos]) => exemplos.map(([caminho, tipo]) => [cabeca, caminho, tipo] as const)))('%s: GET %s é "%s"', (_cabeca, caminho, tipo) => {
+    expect(getExigeProva(new URL(caminho, 'http://x'))).toBe(tipo === 'prova');
   });
 });

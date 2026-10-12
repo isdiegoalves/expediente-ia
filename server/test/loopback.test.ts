@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { isLoopbackBind, loadConfig } from '../config';
+import { Autenticacao } from '../http/autenticacao';
 import { createRequestGuard } from '../http/guard';
 import { tempDir } from './fixtures';
 
@@ -55,7 +56,7 @@ describe('X-Forwarded-For', () => {
   afterEach(() => new Promise<void>((ok) => (server ? server.close(() => ok()) : ok())));
 
   async function status(xff: string): Promise<number> {
-    const guard = createRequestGuard(() => ({ ok: false, motivo: 'sem token' }));
+    const guard = createRequestGuard(new Autenticacao(() => ({ ok: false, motivo: 'sem token' })));
     server = http.createServer((req, res) => {
       if (!guard(req, res)) res.writeHead(200).end('ok');
     });

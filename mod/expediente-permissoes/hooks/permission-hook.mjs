@@ -8,11 +8,13 @@
 // O Claude Code mostra o diálogo no terminal e roda este hook AO MESMO TEMPO (vale o que responder
 // primeiro); em subagentes em segundo plano o diálogo só aparece depois que o hook termina. O hook:
 // 1. lê do stdin o JSON do pedido (session_id, tool_name, tool_input, permission_suggestions...);
-// 2. manda para POST http://127.0.0.1:<porta>/api/permissions, com o token local (~/.expediente/host/token) no
-//    cabeçalho X-Expediente-Token. Se o arquivo do token faltar, ou o Expediente não responder, recusar
-//    (recurso desligado, token errado) ou disser que não há página aberta ou que não conhece a sessão, sai na hora,
+// 2. manda para POST http://127.0.0.1:<porta>/api/permissions. O token local (~/.expediente/host/token) nunca viaja:
+//    antes de cada chamada o hook pede um desafio (GET /api/token/desafio), confere a prova de que o servidor tem o token
+//    (se não conferir, quem responde na porta não é o Expediente: sai sem decidir) e manda no cabeçalho X-Expediente-Prova o
+//    HMAC do desafio, do método e do caminho. Se o arquivo do token faltar, ou o Expediente não responder, recusar
+//    (recurso desligado, prova errada) ou disser que não há página aberta ou que não conhece a sessão, sai na hora,
 //    sem decidir: o terminal segue normal;
-// 3. senão, espera a decisão em GET /api/permissions/:id/wait (respostas de até 25 s, em laço) até o
+// 3. senão, espera a decisão em GET /api/permissions/:id/wait (respostas de até 25 s, em laço, cada uma com a sua prova) até o
 //    tempo limite (padrão 5 min: --timeout <s> ou EXPEDIENTE_PERMISSION_TIMEOUT);
 // 4. aprovado/recusado: imprime a decisão (hookSpecificOutput.decision). Pergunta respondida: aprova
 //    a chamada com a entrada ORIGINAL mais `answers` ({texto da pergunta: rótulos escolhidos}, como a
@@ -22,6 +24,7 @@
 //
 // Regras: Node puro (22+), sem dependências; nunca trava nem quebra a sessão (todo erro = sair sem
 // decidir). Só fala com 127.0.0.1. EXPEDIENTE_HOOK_DEBUG=1 escreve o que acontece no stderr.
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -170,37 +173,87 @@ function readStdin() {
   });
 }
 
-/** O token local, ou undefined se o arquivo faltar, não puder ser lido ou não tiver 64 caracteres hexadecimais. Nunca vai para o debug. */
-export function readToken(env = process.env) {
+/** A chave dos HMAC (os 32 bytes do token local), ou undefined se o arquivo faltar, não puder ser lido ou não tiver 64 hexadecimais. Nunca é impressa. */
+export function readSecret(env = process.env) {
   try {
     const token = readFileSync(join(env.HOME || homedir(), '.expediente', 'host', 'token'), 'utf8').trim();
-    return /^[0-9a-f]{64}$/.test(token) ? token : undefined;
+    return /^[0-9a-f]{64}$/.test(token) ? Buffer.from(token, 'hex') : undefined;
   } catch {
     return undefined;
   }
 }
 
-/** Requisição ao Expediente local; null = fora do ar, tempo esgotado ou resposta ilegível. `token` só vai nas escritas. */
-async function call(base, method, path, body, timeoutMs, token) {
+const hmacHex = (chave, mensagem) => createHmac('sha256', chave).update(mensagem, 'utf8').digest('hex');
+
+/** O que o servidor responde ao nonce do cliente: só quem tem o token sabe. */
+export const serverProof = (chave, nonce) => hmacHex(chave, `servidor\n${nonce}`);
+
+/** O que o cliente manda numa chamada: preso ao desafio, ao método e ao caminho com a consulta. */
+export const clientProof = (chave, desafio, metodo, caminho) => hmacHex(chave, `cliente\n${desafio}\n${metodo}\n${caminho}`);
+
+/** Compara os resumos SHA-256 (tamanhos diferentes não lançam e não vazam). */
+export function sameHex(a, b) {
+  const resumo = (v) => createHash('sha256').update(String(v)).digest();
+  return timingSafeEqual(resumo(a), resumo(b));
+}
+
+/**
+ * Pede um desafio ao servidor e confere a prova de que ele tem o token. `{desafio}` se conferiu; `{erro: 'fora-do-ar'}` se não
+ * respondeu direito; `{erro: 'nao-confere'}` se respondeu com uma prova que não é a do seu token (quem ocupa a porta não é o Expediente).
+ */
+export async function pedirDesafio(base, chave, timeoutMs) {
+  const nonce = randomBytes(16).toString('hex');
+  let json;
   try {
-    const res = await fetch(`${base}${path}`, {
-      method,
-      headers: body === undefined ? {} : { 'Content-Type': 'application/json', ...(token ? { 'X-Expediente-Token': token } : {}) },
-      body: body === undefined ? undefined : JSON.stringify(body),
+    const res = await fetch(`${base}/api/token/desafio?n=${nonce}`, { signal: AbortSignal.timeout(timeoutMs) });
+    if (res.status !== 200) return { erro: 'fora-do-ar' };
+    json = await res.json();
+  } catch {
+    return { erro: 'fora-do-ar' };
+  }
+  if (typeof json?.desafio !== 'string' || !/^[0-9a-f]{32}$/.test(json.desafio) || typeof json?.prova !== 'string') return { erro: 'nao-confere' };
+  return sameHex(json.prova, serverProof(chave, nonce)) ? { desafio: json.desafio } : { erro: 'nao-confere' };
+}
+
+/**
+ * Uma chamada com a prova do token: desafio conferido, depois o pedido com X-Expediente-Prova. `caminho` leva a consulta.
+ * Devolve `{status, json}` ou `{erro}` (ver pedirDesafio, ou `fora-do-ar` se o pedido falhou). O token não sai daqui.
+ */
+export async function fetchComProva({ base, chave, metodo, caminho, corpo, timeoutMs }) {
+  const d = await pedirDesafio(base, chave, Math.min(timeoutMs, REGISTER_TIMEOUT_MS));
+  if (d.erro) return { erro: d.erro };
+  try {
+    const url = new URL(`${base}${caminho}`);
+    const res = await fetch(url, {
+      method: metodo,
+      headers: {
+        'X-Expediente-Prova': `${d.desafio}.${clientProof(chave, d.desafio, metodo, url.pathname + url.search)}`,
+        ...(corpo === undefined ? {} : { 'Content-Type': 'application/json' }),
+      },
+      body: corpo === undefined ? undefined : JSON.stringify(corpo),
       signal: AbortSignal.timeout(timeoutMs),
     });
-    const text = await res.text();
+    const texto = await res.text();
     let json;
     try {
-      json = text ? JSON.parse(text) : undefined;
+      json = texto ? JSON.parse(texto) : undefined;
     } catch {
       json = undefined;
     }
     return { status: res.status, json };
-  } catch (err) {
-    debug(`${method} ${path}: ${err?.name ?? 'erro'} ${err?.message ?? ''}`);
+  } catch {
+    return { erro: 'fora-do-ar' };
+  }
+}
+
+/** Chamada do hook ao Expediente local; null = fora do ar, servidor que não confere, tempo esgotado ou resposta ilegível. */
+async function call(base, chave, method, path, body, timeoutMs) {
+  const r = await fetchComProva({ base, chave, metodo: method, caminho: path, corpo: body, timeoutMs });
+  if (r.erro) {
+    debug(`${method} ${path}: ${r.erro === 'nao-confere' ? 'quem responde na porta não é o Expediente (a prova não confere)' : 'fora do ar'}`);
     return null;
   }
+  return r;
 }
 
 /** Decide o pedido (ou não). Devolve a saída a imprimir, ou undefined. Nunca lança. */
@@ -218,14 +271,14 @@ export async function run(argv = process.argv.slice(2), env = process.env, stdin
     if (!input || typeof input !== 'object' || typeof input.session_id !== 'string' || typeof input.tool_name !== 'string') return undefined;
     if (input.hook_event_name !== undefined && input.hook_event_name !== 'PermissionRequest') return undefined;
 
-    const token = readToken(env);
-    if (!token) {
+    const chave = readSecret(env);
+    if (!chave) {
       debug('sem o token local (~/.expediente/host/token): vale o terminal');
       return undefined;
     }
     const base = `http://127.0.0.1:${opts.port}`;
     const deadline = Date.now() + opts.timeoutMs;
-    const reg = await call(base, 'POST', '/api/permissions', requestBody(input, opts.timeoutMs), REGISTER_TIMEOUT_MS, token);
+    const reg = await call(base, chave, 'POST', '/api/permissions', requestBody(input, opts.timeoutMs), REGISTER_TIMEOUT_MS);
     if (!reg || reg.status !== 201 || typeof reg.json?.id !== 'string') {
       debug(`sem desvio (${reg ? `${reg.status} ${JSON.stringify(reg.json ?? null)}` : 'Expediente fora do ar'})`);
       return undefined;
@@ -238,7 +291,7 @@ export async function run(argv = process.argv.slice(2), env = process.env, stdin
         return undefined;
       }
       const waitS = Math.max(0.05, Math.min(WAIT_S, left / 1_000));
-      const r = await call(base, 'GET', `/api/permissions/${id}/wait?timeout=${waitS}`, undefined, waitS * 1_000 + 5_000);
+      const r = await call(base, chave, 'GET', `/api/permissions/${id}/wait?timeout=${waitS}`, undefined, waitS * 1_000 + 5_000);
       if (!r || r.status !== 200) return undefined;
       const status = r.json?.status;
       if (status === 'pending') continue;
