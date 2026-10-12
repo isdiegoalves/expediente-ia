@@ -144,11 +144,38 @@ function delegadaRecusaAntes(fonte: string, arquivo: string): boolean {
   return recusa >= 0 && JSON.stringify(depois.slice(0, recusa)) === JSON.stringify(d.antes);
 }
 
+const RECUSA_DE_LEITURA = /^if \((?:!isRead|method !== 'GET')\)/;
+
+/** A primeira instrução de uma rota de leitura tem de ser a recusa; escrita condicionada à própria recusa não vale. */
+function recusaVemPrimeiro(bloco: string): boolean {
+  const [, primeira = '', segunda = ''] = semComentario(bloco.split('\n'));
+  if (!RECUSA_DE_LEITURA.test(primeira)) return false;
+  return primeira.endsWith('{') ? segunda.startsWith('methodNotAllowed(') : /\) methodNotAllowed\(/.test(primeira);
+}
+
+const citaDepsOuOffice = (bloco: string) => semComentario(bloco.split('\n')).filter((l) => /\b(?:deps|office)\./.test(l));
+
+/** A recusa da rota delegada tem de encerrar a resposta: algum `return` entre ela e o `}` que a fecha. */
+function delegadaRecusaSemReturn(fonte: string, arquivo: string): boolean {
+  const d = DELEGADAS[arquivo];
+  if (!d) return false;
+  const linhas = fonte.split('\n');
+  const depois = semComentario(linhas.slice(linhas.findIndex((l) => l.startsWith(d.inicio)) + 1));
+  const recusa = depois.indexOf(d.recusa);
+  if (recusa < 0) return false;
+  const fecha = depois.indexOf('}', recusa);
+  return !depois.slice(recusa + 1, fecha < 0 ? undefined : fecha).some((l) => l.startsWith('return'));
+}
+
 /** Tudo o que faria uma rota escapar da trava: lista vazia quando o código está em ordem. */
 function violacoes(f: Fontes): string[] {
   const v: string[] = [];
   const corpo = entre(f.app, '  return (req, res, url) => {', '  };', 'app.ts');
   for (const l of corpo) if (/^ {4}\}./.test(l)) v.push(`instrução colada a um fechamento de bloco: ${l.trim()}`);
+  for (const l of corpo) {
+    const recuo = /^[ \t]*/.exec(l)![0];
+    if (l.trim() && (recuo.includes('\t') || recuo.length % 2)) v.push(`recuo com tab ou número ímpar de espaços, que a leitura por blocos não vê: ${l.trim()}`);
+  }
 
   const todas = corpo.filter(ehInstrucao).map((l) => l.trim());
   for (const i of todas) if (!rotaDe(i) && !PASSOS.includes(i)) v.push(`instrução sem classe: ${i}`);
@@ -165,8 +192,13 @@ function violacoes(f: Fontes): string[] {
     if (c.tipo === 'leitura' && (!/!isRead\b|method !== 'GET'/.test(bloco) || /['"](?:POST|PUT|PATCH|DELETE)['"]/.test(bloco))) {
       v.push(`rota de leitura que não recusa escrita: ${cabeca}`);
     }
+    if (c.tipo === 'leitura' && !recusaVemPrimeiro(bloco)) v.push(`rota de leitura cuja primeira instrução não é a recusa de escrita: ${cabeca}`);
+    if (c.tipo === 'sem-trava' && citaDepsOuOffice(bloco).length) v.push(`rota sem trava que cita deps ou office: ${cabeca}`);
     if (c.tipo === 'delegada' && !delegadaRecusaAntes(f.delegadas[c.arquivo] ?? '', c.arquivo)) {
       v.push(`rota delegada que atende algo antes de recusar escrita: ${c.arquivo}`);
+    }
+    if (c.tipo === 'delegada' && delegadaRecusaSemReturn(f.delegadas[c.arquivo] ?? '', c.arquivo)) {
+      v.push(`rota delegada cuja recusa de escrita não encerra com return: ${c.arquivo}`);
     }
   }
 
@@ -174,6 +206,7 @@ function violacoes(f: Fontes): string[] {
   if (JSON.stringify(pedido) !== JSON.stringify(PEDIDO) || f.index.split("server.on('request'").length !== 2) {
     v.push('o tratamento do pedido em index.ts não é só guard, API e o resto');
   }
+  if ((f.index.match(/['"`]request['"`]/g) ?? []).length !== 1) v.push("index.ts tem mais de um ouvinte de 'request', e só o primeiro passa pelo guard");
   return v;
 }
 
@@ -201,6 +234,16 @@ const QUEBRAS: Record<string, () => Fontes> = {
       "    if (path.startsWith('/api/agents/')) {\n      if (path.endsWith('/nota')) {\n        if (method !== 'POST') methodNotAllowed(res, 'POST');\n        else office.setDemo(true);\n        return true;\n      }\n",
     ),
   'rota de leitura sem recusar escrita': () => naApp("    if (path === '/api/snapshot') {\n      if (!isRead) methodNotAllowed(res, 'GET');\n      else ", "    if (path === '/api/snapshot') {\n      "),
+  'escrita em rota de leitura condicionada à própria recusa, com method': () =>
+    naApp("    if (path === '/api/snapshot') {\n", "    if (path === '/api/snapshot') {\n      if (method !== 'GET') { office.setDemo(true); return true; }\n"),
+  'escrita em rota de leitura condicionada à própria recusa, com isRead': () =>
+    naApp("    if (path === '/api/snapshot') {\n", "    if (path === '/api/snapshot') {\n      if (!isRead) { office.setDemo(true); return true; }\n"),
+  'rota sem trava que ganha escrita': () => naApp(DEMO + '\n', DEMO + '\n      deps.renameRoom?.();\n'),
+  'rota sem trava com captura que ganha escrita': () => naApp('    if (irMatch) {\n', '    if (irMatch) {\n      deps.renameRoom?.();\n'),
+  'rota nova com cinco espaços de recuo': () => naApp(DEMO, `     if (path === '/api/novo') {\n${NOVA}${DEMO}`),
+  'rota nova com tab no recuo': () => naApp(DEMO, `\tif (path === '/api/novo') {\n${NOVA}${DEMO}`),
+  'delegada cuja recusa não devolve': () => noTema("      sendJson(res, 405, { error: 'método não permitido' });\n      return true;\n", "      sendJson(res, 405, { error: 'método não permitido' });\n"),
+  'segundo ouvinte de request em index.ts': () => ({ ...FONTES, index: `${FONTES.index}\nserver.prependListener('request', () => {});\n` }),
   'começo de rota repetido antes da rota de verdade': () => naApp("    if (path === '/api/rooms/rename') {", "    if (path === '/api/rooms/rename') return true;\n    if (path === '/api/rooms/rename') {"),
   'rota com trava sem a trava': () => {
     const [antes, bloco, depois] = FONTES.app.split(/( {4}if \(path === '\/api\/rooms\/rename'\) \{[\s\S]*?\n {4}\}\n)/);
