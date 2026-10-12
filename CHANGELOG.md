@@ -10,6 +10,31 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+Mudar coisas no Expediente agora exige um token local, e o escritório passa a abrir já autorizado. Para atualizar:
+`git pull`, `npm run docker:up` (cria o token, se faltar), `npm run instalar` (o hook de permissões e o mod passam a
+mandar o token) e abra o escritório uma vez com `npm run abrir` (ou pelo botão **Abrir o escritório** do painel do
+`/escritorio`). Enquanto o hook instalado for o antigo, o pedido de permissão leva `401` e cai no terminal, como em
+qualquer erro: nada se perde, mas não dá para responder pelo escritório até rodar o `npm run instalar`. Pelo mesmo
+motivo, o pedido de foco feito no navegador só volta a funcionar com o mod novo.
+
+### Segurança
+
+- **Token local em toda ação que muda algo.** Antes, qualquer programa que alcançasse a porta do Expediente neste
+  computador podia, por exemplo, aprovar ou recusar uma permissão pendente. Agora decidir permissão, renomear sala,
+  editar o personagem, mudar o ritmo e pedir foco exigem um token de 32 bytes aleatórios guardado em
+  `~/.expediente/host/token` (modo 600): sem ele, o servidor responde `401`. O token protege contra quem alcança a
+  porta sem ler os seus arquivos (um container, um processo isolado, outro usuário da máquina); um programa rodando
+  como você consegue ler o arquivo, e contra ele o token não é barreira. Ler o escritório não pede nada.
+
+### Adicionado
+
+- **`npm run abrir`.** Abre o escritório no navegador padrão já autorizado: o token vai no fragmento do endereço
+  (`http://localhost:4848/#t=…`), que o navegador não manda ao servidor; a página o guarda e o tira da barra de
+  endereço. O mesmo botão, **Abrir o escritório**, está no painel do `/escritorio` do Claude Code.
+- **Aviso de ações bloqueadas.** Numa página sem o token (por exemplo, aberta por `http://localhost:4848` sem passar pelo
+  `npm run abrir`), o escritório continua mostrando tudo, mas responder, renomear e editar ficam bloqueados, com um aviso
+  que diz o que fazer, em passos. O `?mock=1` não precisa de token.
+
 ## [1.2.0] - 2026-10-11
 
 Escala, leveza e retomada: o escritório aguenta dezenas de subagentes sem lotar, gasta menos quando nada acontece, conta

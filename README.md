@@ -148,7 +148,8 @@ npm run docker:up
 ```
 
 O script detecta as suas contas do Claude Code, monta só as pastas necessárias (em modo somente leitura), constrói
-a imagem e sobe o container — que reinicia sozinho junto com o Docker. Abra **http://localhost:4848**.
+a imagem e sobe o container — que reinicia sozinho junto com o Docker. Abra **http://localhost:4848** (ou, já
+autorizado a mudar coisas, com `npm run abrir`: veja [Token local](#token-local)).
 
 **Opção B — Node, sem Docker**
 
@@ -157,7 +158,8 @@ npm run build
 npm start
 ```
 
-Abra **http://localhost:4848**. Para desenvolver, use `npm run dev` (servidor + Vite com recarga automática).
+Abra **http://localhost:4848** (ou `npm run abrir`: veja [Token local](#token-local)). Para desenvolver, use `npm run dev`
+(servidor + Vite com recarga automática).
 
 Agora abra o Claude Code em qualquer projeto e veja o seu agente chegar pelo elevador. 🎉
 
@@ -393,6 +395,44 @@ cada pergunta e o campo **Outro**, e **Responder** manda as respostas ao agente.
   computador e aberto por `http://localhost`. Confira com `npm run instalar:status`.
 - No modo demonstração, os agentes fictícios também pedem permissão (de mentira), para experimentar.
 
+### Token local
+
+Tudo o que muda alguma coisa no Expediente (aprovar ou recusar uma permissão, renomear uma sala, editar o personagem,
+mudar o ritmo, pedir o foco de uma sessão) precisa de um **token local**: um segredo de 32 bytes aleatórios, em
+hexadecimal, guardado em `~/.expediente/host/token` com modo 600. No Docker, quem cria o arquivo é o `npm run docker:up`
+(só se ele não existir; nunca troca o que já está lá); no modo nativo, o servidor cria ao subir. O servidor confere o
+cabeçalho `X-Expediente-Token` de todo pedido a `/api/` que não seja `GET` nem `HEAD` e responde `401` sem ele, e `503` se
+ele mesmo estiver sem token. Ler (o escritório, o terminal somente leitura, o `/api/health`) não pede nada.
+
+**O que o token protege e o que não protege.** Ele protege contra quem alcança a porta mas não lê os arquivos do seu
+usuário: um container, um processo isolado, outro usuário da máquina. Um programa rodando como você consegue ler o
+arquivo do token; contra ele o token não é barreira (nem o resto do Expediente: esse programa já lê as suas sessões).
+Trocar o token é apagar o arquivo e rodar `npm run docker:up` (ou reiniciar o servidor); as páginas abertas pedem a
+autorização de novo.
+
+**Abrir o escritório já autorizado.** A página recebe o token pelo fragmento da URL (`http://localhost:4848/#t=…`, que o
+navegador não manda ao servidor), guarda no `localStorage` daquele endereço e tira o fragmento da barra de endereço.
+Você não digita nada:
+
+- `npm run abrir`, na pasta do Expediente, abre o navegador padrão já com o token (sem imprimir o valor);
+- ou, no Claude Code, `/escritorio` e o botão **Abrir o escritório** do painel (no terminal, o link e o botão **Abrir**;
+  no app, o link).
+
+O endereço é sempre `http://localhost:<porta>`: o `localStorage` é por endereço, e `https://expediente.localhost` (que o
+servidor também aceita como `Host`) é outro endereço, sem o token guardado.
+
+**Se as ações aparecerem bloqueadas.** A página mostra um aviso quando não tem o token (ou quando o servidor está sem
+ele) e as ações que mudam algo não saem da página; ler continua normal. Faça isto, nesta ordem:
+
+1. Na pasta do Expediente, `npm run docker:up` (cria o token se faltar; no modo nativo, reinicie o servidor).
+2. `npm run abrir` (ou o botão **Abrir o escritório** do `/escritorio`). A página abre autorizada.
+3. Se o aviso continuar, confira que `~/.expediente/host/token` existe e tem 64 caracteres hexadecimais
+   (`/api/health` mostra `token.ok`); se não tiver, apague o arquivo e volte ao passo 1.
+
+O hook de permissões e o mod leem o mesmo arquivo. Se o plugin instalado for de antes do token (`npm run instalar` o
+atualiza), o pedido leva `401` e cai no terminal, como em qualquer erro. O `?mock=1` não usa token. Um `curl` seu precisa do
+cabeçalho: `curl -X POST -H "X-Expediente-Token: $(cat ~/.expediente/host/token)" -H 'Content-Type: application/json' …`.
+
 ### Editar o personagem
 
 Cada sessão chega com um nome e uma aparência sorteados. Para fixar o personagem de um projeto, abra os detalhes do
@@ -618,6 +658,9 @@ das contas (letra, e-mail, organização) são lidos no host pelo `docker:up` e 
   e-mail, a organização e o cache do `/usage`; o uso ao vivo vem do mod (ou do tap de statusline).
 - **Segredos mascarados:** tokens e senhas com formato conhecido (`Bearer`, `-u usuário:senha`, `TOKEN=`, chaves
   `sk-…`, `ghp_…`, `AKIA…`, JWTs, senhas em URLs) viram `***` antes de chegar ao navegador.
+- **Token local nas escritas:** toda chamada que muda estado (decidir permissão, renomear sala, personagem, ritmo, foco)
+  leva o token de `~/.expediente/host/token`, modo 600; sem ele o servidor responde `401`. Protege contra quem
+  alcança a porta sem ler os seus arquivos, não contra um programa que rode como você (veja [Token local](#token-local)).
 - **Protegido contra sites maliciosos:** o servidor recusa endereços que não sejam `localhost`/IP (DNS rebinding) e
   `POST` vindos de outras origens (CSRF), e não deixa a página ser embutida em outros sites.
 - **Terminal somente leitura só local:** a conversa completa das sessões (e o histórico das sessões encerradas, com os
@@ -634,9 +677,10 @@ das contas (letra, e-mail, organização) são lidos no host pelo `docker:up` e 
   aberto no navegador não consegue mandá-las), o hook só fala com `127.0.0.1` e, na dúvida — Expediente fora do ar,
   erro, tempo esgotado —, sai sem decidir: vale o terminal. O comando completo ou o diff só saem do servidor para
   quem abriu a página pelo próprio computador. "Sempre permitir" só aplica uma regra que o próprio Claude Code sugeriu
-  para aquele pedido. Atenção: qualquer programa ou pessoa que consiga abrir `http://localhost:4848` nesta máquina
-  também consegue responder; em computadores compartilhados com outros usuários, não instale o plugin de
-  permissões (ele só entra com `npm run instalar -- --com-permissoes`).
+  para aquele pedido. Decidir exige o [token local](#token-local): quem alcança a porta mas não lê os seus arquivos
+  (um container, um processo isolado, outro usuário da máquina) não consegue responder. Um programa rodando como você
+  lê o arquivo do token e consegue; em computadores compartilhados, mantenha a pasta pessoal fechada para os outros
+  usuários, ou não instale o plugin de permissões (ele só entra com `npm run instalar -- --com-permissoes`).
 - **Editor de personagem, só local:** salvar ou voltar ao sorteio muda o escritório e grava em `names.json`, então
   segue a mesma trava do terminal (bind local, `Host` local, nada de proxies ou túneis): sem ela, o lápis não aparece
   e o servidor responde `403`. As mudanças exigem JSON e origem local. `EXPEDIENTE_TERMINAL=0` desliga junto.
@@ -650,6 +694,7 @@ das contas (letra, e-mail, organização) são lidos no host pelo `docker:up` e 
 
 | Comando | O que faz |
 | --- | --- |
+| `npm run abrir` | Abre o escritório no navegador padrão já com o token local (veja [Token local](#token-local)). |
 | `npm run dev` | Servidor + Vite em http://localhost:4848, com recarga automática. |
 | `npm run dev:client` | Só o Vite, em http://localhost:5848 (abra com `?mock=1`; `/api` é repassado para a porta 4848). |
 | `npm run demo` | `npm run dev` com o modo demonstração ligado. |
@@ -706,6 +751,15 @@ trabalho, anote as mudanças em "Não lançado". Para lançar:
 Só aparecem sessões **abertas** do Claude Code. Confira se há alguma rodando e se a conta foi detectada em
 `http://localhost:4848/api/health`. Se as pastas das contas estiverem em outro lugar, use
 `EXPEDIENTE_CLAUDE_DIRS=/caminho/conta1,/caminho/conta2`.
+
+</details>
+
+<details>
+<summary><b>Aparece "ações bloqueadas" ou responder, renomear e editar não fazem nada</b></summary>
+
+A página está sem o token local (ou o servidor está sem ele). Rode `npm run docker:up` (cria o token se faltar), depois
+`npm run abrir` — ou, no Claude Code, `/escritorio` e **Abrir o escritório**. Detalhes e o que o token protege em
+[Token local](#token-local).
 
 </details>
 
