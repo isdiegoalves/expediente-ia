@@ -1,5 +1,5 @@
 // Transmissão em tempo real (Server-Sent Events) em GET /api/stream.
-// Eventos nomeados: snapshot | feed | notice (o `data` é o JSON do protocolo em shared/types.ts).
+// Eventos nomeados: snapshot | feed | notice (o `data` é o JSON do protocolo em shared/types.ts) e tema ({chave}).
 // Snapshots saem com throttle (~200 ms); feed e avisos vão em lote logo depois do snapshot.
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { OfficeSnapshot } from '../../shared/types';
@@ -18,6 +18,8 @@ export class Hub {
   private lastFlush = 0;
   private unsubscribe: (() => void) | null = null;
   private snapshotCbs = new Set<(snap: OfficeSnapshot) => void>();
+  /** Último aviso de tema: quem conecta depois o recebe, e a aba que perdeu a troca percebe que está desatualizada. */
+  private frameTema: string | null = null;
   private readonly throttleMs: number;
   private readonly pingMs: number;
 
@@ -77,12 +79,19 @@ export class Hub {
     res.write('retry: 2000\n\n');
     res.write(frame('snapshot', snapshot));
     res.write(frame('feed', this.office.recentFeed(50)));
+    if (this.frameTema) res.write(this.frameTema);
     this.clients.add(res);
     if (isLoopbackHost(req.headers.host)) this.local.add(res);
     const drop = () => this.clients.delete(res);
     req.on('close', drop);
     res.on('close', drop);
     res.on('error', drop);
+  }
+
+  /** O tema ativo mudou (ou é este, na partida): `chave` identifica o estado dele (ver chaveDoTema). */
+  avisarTema(chave: string): void {
+    this.frameTema = frame('tema', { chave });
+    this.writeAll(this.frameTema);
   }
 
   /** Fecha a revisão agora e transmite o que houver. Devolve o snapshot atual. */

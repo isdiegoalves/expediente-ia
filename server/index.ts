@@ -31,7 +31,7 @@ import { ClaudeWatcher } from './sources/watcher';
 import { createBuildReader } from './build';
 import { arquivoDoToken, garantirToken, lerToken } from './token';
 import { Autenticacao } from './http/autenticacao';
-import { carregarTema } from './tema/carregar';
+import { TemaAtivo, vigiarTema } from './tema/ativo';
 import { createVersaoReader } from './versao';
 
 const config = loadConfig();
@@ -144,8 +144,10 @@ const mapaTimer = setInterval(() => {
 }, 5_000);
 
 const pastasDoTema = { hostDir: config.hostDir, padraoDir: join(config.rootDir, config.dev ? 'client/public' : 'dist/client', 'temas/padrao') };
-const temaAtivo = carregarTema(pastasDoTema);
-if (temaAtivo.aviso) log.warn(temaAtivo.aviso);
+const temas = new TemaAtivo(pastasDoTema);
+const avisoDoTema = temas.get().aviso;
+if (avisoDoTema) log.warn(avisoDoTema);
+const pararTema = vigiarTema(temas, hub);
 
 const api = createApiHandler({
   renameRoom: (id, name) => {
@@ -171,7 +173,7 @@ const api = createApiHandler({
   stats,
   resumo: { presenca, inicio: startedAt },
   versao: createVersaoReader(join(config.hostDir, 'versao.json'), config.version),
-  tema: createTemaHandler(pastasDoTema, () => temaAtivo, sendJson),
+  tema: createTemaHandler(pastasDoTema, () => temas.get(), sendJson),
 });
 
 const server = createServer();
@@ -234,7 +236,7 @@ server.listen(config.port, config.host, () => {
     const usage = accounts.usageView(a.id).status;
     log.info(`   Conta ${a.detected.short} (${a.id}): ${src?.sessions ?? 0} sessão(ões) aberta(s) · uso: ${usage} · ${a.dir}`);
   }
-  log.info(`   Tema: ${temaAtivo.id}.`);
+  log.info(`   Tema: ${temas.get().id}.`);
   const token = lerTokenDoDono();
   if (token.ok) log.info('   Token local: pronto (toda escrita pela API o exige; npm run abrir abre o escritório já autorizado).');
   else log.warn(`   Token local: ${token.motivo}; toda escrita pela API fica bloqueada.`);
@@ -253,6 +255,7 @@ function shutdown(signal: string): void {
   log.info(`Encerrando (${signal})…`);
   clearInterval(ticker);
   clearInterval(mapaTimer);
+  pararTema();
   stats.stop();
   watcher.stop();
   accounts.stop();
