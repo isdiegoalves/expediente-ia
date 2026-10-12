@@ -78,7 +78,7 @@ export class Autenticacao {
   private readonly desafios: Validades;
   private readonly bilhetes: Validades;
   /** Os `/api/stream` que trouxeram prova válida: só eles contam como página aberta (ver `contaComoPagina`). */
-  private readonly provadas = new WeakSet<IncomingMessage>();
+  private readonly provadas = new WeakMap<IncomingMessage, Buffer>();
 
   constructor(
     private readonly lerToken: () => TokenLido,
@@ -119,11 +119,17 @@ export class Autenticacao {
     const prova = url.searchParams.getAll('prova');
     if (prova.length !== 1 || [...url.searchParams.keys()].some((k) => k !== 'prova')) return;
     const lido = this.lerToken();
-    if (lido.ok && this.confere(prova[0], 'GET', url.pathname, lido.chave)) this.provadas.add(req);
+    if (lido.ok && this.confere(prova[0], 'GET', url.pathname, lido.chave)) this.provadas.set(req, lido.chave);
   }
 
+  /**
+   * O stream provou com o token de AGORA? A marca guarda a chave com que ele provou e é conferida a cada contagem: se o token foi trocado
+   * (o servidor o relê), os streams que provaram com o anterior deixam de contar, porque a página deles perde a chave no primeiro 401.
+   */
   provou(req: IncomingMessage): boolean {
-    return this.provadas.has(req);
+    const chave = this.provadas.get(req);
+    const lido = this.lerToken();
+    return chave !== undefined && lido.ok && chave.equals(lido.chave);
   }
 
   /**

@@ -419,6 +419,27 @@ describe('OfficeStore: o stream leva a prova do token', () => {
     expect(urls[1]).toMatch(/^\/api\/stream\?prova=/);
   });
 
+  it('a chave some (401 que a apaga): o stream que provou é fechado e a página abre outro, sem prova', async () => {
+    store.connect();
+    await vi.waitFor(() => expect(urls).toHaveLength(1));
+    sources[0]!.open();
+    await tokenLocal.apagar();
+    expect(sources[0]!.closed).toBe(true);
+    expect(urls).toEqual([urls[0], '/api/stream']);
+    expect(store.connection).toBe('connecting');
+    // Sem a chave, nada mais a mexe: um stream que já abre sem prova segue como está.
+    await tokenLocal.apagar();
+    expect(urls).toHaveLength(2);
+  });
+
+  it('a chave some com o store desligado: nada reabre', async () => {
+    store.connect();
+    await vi.waitFor(() => expect(urls).toHaveLength(1));
+    store.disconnect();
+    await tokenLocal.apagar();
+    expect(urls).toHaveLength(1);
+  });
+
   it('disconnect() enquanto a prova é pedida: nenhum stream abre depois', async () => {
     let liberar!: () => void;
     respostaDoDesafio = () => new Promise<Response>((ok) => (liberar = () => ok(new Response(JSON.stringify({ desafio: DESAFIO, prova: 'x' }), { status: 200 }))));

@@ -363,4 +363,25 @@ describe('só o stream que provou o token conta como página, e é para ele que 
     expect(r).toMatchObject({ code: 0, stdout: '' });
     expect(r.ms).toBeLessThan(3_000);
   }, 40_000);
+
+  it('trocado o token com a aba aberta: o stream que provou com o anterior deixa de contar e o hook sai na hora, sem pedido pendente', async () => {
+    for (const a of abertos.splice(0)) a.destroy();
+    await esperar(300);
+    abertos.push(await abrirStream(true, porta3, token3));
+    await esperar(300);
+    // A aba conta: um hook com o token de agora é desviado (fica pendente) e o teste o solta antes do prazo.
+    const preso = rodarHook();
+    await ate('o pedido desviado', async () => (await agente())?.permission);
+    await preso;
+    // O pedido do hook que saiu ainda fica no registro até ser dado como órfão.
+    await ate('o pedido órfão sair', async () => (await agente())?.permission === undefined, 25_000);
+
+    const novo = 'ab'.repeat(32);
+    writeFileSync(join(casa, '.expediente', 'host', 'token'), `${novo}\n`, { mode: 0o600 });
+    await esperar(300);
+    const r = await rodarHook();
+    expect(r).toMatchObject({ code: 0, stdout: '' });
+    expect(r.ms).toBeLessThan(3_000);
+    expect((await agente())?.permission).toBeUndefined();
+  }, 90_000);
 });

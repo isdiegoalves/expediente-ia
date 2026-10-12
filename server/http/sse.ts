@@ -12,7 +12,8 @@ const MAX_BUFFERED = 8 * 1024 * 1024;
 export class Hub {
   private clients = new Set<ServerResponse>();
   /** Clientes que abriram a página por um Host local (os únicos que podem responder pedidos de permissão). */
-  private local = new WeakSet<ServerResponse>();
+  /** Os streams de Host local e o pedido de cada um: `conta` é consultado na hora de contar, não só na conexão. */
+  private local = new WeakMap<ServerResponse, IncomingMessage>();
   private timer: ReturnType<typeof setTimeout> | null = null;
   private pinger: ReturnType<typeof setInterval> | null = null;
   private lastFlush = 0;
@@ -23,7 +24,7 @@ export class Hub {
   private readonly throttleMs: number;
   private readonly pingMs: number;
 
-  /** Quais streams contam como página aberta (padrão: todos). */
+  /** Quais streams contam como página aberta, a cada contagem (padrão: todos). Em produção: os que provaram com o token de agora. */
   private readonly conta: (req: IncomingMessage) => boolean;
 
   constructor(
@@ -65,7 +66,10 @@ export class Hub {
   /** Páginas conectadas por um Host local (localhost/127.x) e que `conta` aceita (em produção, as que provaram o token): quem pode responder pelo escritório. */
   get localSize(): number {
     let n = 0;
-    for (const c of this.clients) if (this.local.has(c) && !c.destroyed && !c.writableEnded) n++;
+    for (const c of this.clients) {
+      const req = this.local.get(c);
+      if (req && !c.destroyed && !c.writableEnded && this.conta(req)) n++;
+    }
     return n;
   }
 
@@ -85,7 +89,7 @@ export class Hub {
     res.write(frame('feed', this.office.recentFeed(50)));
     if (this.frameTema) res.write(this.frameTema);
     this.clients.add(res);
-    if (isLoopbackHost(req.headers.host) && this.conta(req)) this.local.add(res);
+    if (isLoopbackHost(req.headers.host)) this.local.set(res, req);
     const drop = () => this.clients.delete(res);
     req.on('close', drop);
     res.on('close', drop);

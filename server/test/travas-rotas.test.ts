@@ -462,7 +462,7 @@ function violacoes(f: Fontes): string[] {
   }
 
   if (!/^const hub = new Hub\(office, \{ conta: \(req\) => autenticacao\.provou\(req\) \}\);$/m.test(f.index)) v.push('o hub em index.ts conta como página qualquer stream, e não só o que provou o token');
-  if (!/this\.local\.add\(res\)/.test(f.sse) || !/isLoopbackHost\(req\.headers\.host\) && this\.conta\(req\)\) this\.local\.add\(res\);/.test(f.sse)) v.push('o hub deixou de contar só os streams que `conta` aceita');
+  if (!/if \(isLoopbackHost\(req\.headers\.host\)\) this\.local\.set\(res, req\);/.test(f.sse) || !/if \(req && !c\.destroyed && !c\.writableEnded && this\.conta\(req\)\) n\+\+;/.test(f.sse)) v.push('o hub deixou de contar só os streams que `conta` aceita');
 
   const pedido = semComentario(entre(f.index, "server.on('request', (req, res) => {", '});', 'index.ts'));
   if (JSON.stringify(pedido) !== JSON.stringify(PEDIDO) || f.index.split("server.on('request'").length !== 2) {
@@ -563,7 +563,7 @@ const QUEBRAS: Record<string, () => Fontes> = {
   'conferência que compara antes de consumir o desafio': () => noAutenticacao('if (!this.desafios.consumir(m[1])) return false;\n    return iguais', 'return iguais'),
   'conferência com ===': () => noAutenticacao('return iguais(m[2], provaDoCliente(chave, m[1], metodo, caminho));', 'return m[2] === provaDoCliente(chave, m[1], metodo, caminho);'),
   'o hub conta qualquer stream como página': () => ({ ...FONTES, index: trocar(FONTES.index, 'new Hub(office, { conta: (req) => autenticacao.provou(req) })', 'new Hub(office)') }),
-  'o hub deixa de consultar `conta`': () => ({ ...FONTES, sse: trocar(FONTES.sse, ' && this.conta(req)) this.local.add(res);', ') this.local.add(res);') }),
+  'o hub deixa de consultar `conta`': () => ({ ...FONTES, sse: trocar(FONTES.sse, ' && this.conta(req)) n++;', ') n++;') }),
   'index.ts cria o guard sem a autenticação do dono': () => ({ ...FONTES, index: trocar(FONTES.index, 'new Autenticacao(lerTokenDoDono)', "new Autenticacao(() => ({ ok: true, token: '', chave: Buffer.alloc(0) }))") }),
   'rota de leitura: recusa em uma linha, sem else, e a escrita logo depois': () => naApp(SNAP, `${SNAP}      handleDemo(req, res).catch((err) => fail(res, err));\n`),
   'rota de leitura: recusa em bloco sem return, e a escrita depois do bloco': () =>

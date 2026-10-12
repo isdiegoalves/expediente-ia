@@ -482,6 +482,29 @@ describe('o stream conta como página só com prova', () => {
     expect(await conta(`/api/snapshot?prova=${await provaDoStream('GET', '/api/snapshot')}`)).toEqual({ status: 200, conta: false });
   });
 
+  it('a marca é conferida a cada contagem: trocado o token, o stream que provou com o anterior deixa de contar, e o que prova com o novo conta', async () => {
+    const auth = new Autenticacao(() => token, () => agora);
+    const guard = createRequestGuard(auth);
+    const abrir = async (provaDe: Buffer) => {
+      const desafio = auth.emitirDesafio();
+      const caminho = `/api/stream?prova=${desafio}.${provaDoCliente(provaDe, desafio, 'GET', '/api/stream')}`;
+      const req = { method: 'GET', url: caminho, headers: { host: '127.0.0.1:1' } } as unknown as http.IncomingMessage;
+      guard(req, { writeHead: () => undefined, end: () => undefined } as unknown as http.ServerResponse);
+      return req;
+    };
+    const antigo = await abrir(CHAVE);
+    expect(auth.provou(antigo)).toBe(true);
+    const novoToken = 'f'.repeat(64);
+    token = ok(novoToken);
+    expect(auth.provou(antigo)).toBe(false);
+    const novo = await abrir(chaveDoToken(novoToken));
+    expect(auth.provou(novo)).toBe(true);
+    expect(auth.provou(antigo)).toBe(false);
+    token = { ok: false, motivo: 'sumiu' };
+    expect(auth.provou(novo)).toBe(false);
+    token = ok(TOKEN);
+  });
+
   it('servidor sem token legível: o stream é atendido e não conta', async () => {
     const p = await provaDoStream();
     token = { ok: false, motivo: 'o arquivo do token não existe ou não pode ser lido' };

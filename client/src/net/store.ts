@@ -115,6 +115,15 @@ export class OfficeStore {
     this.mock = !!opts.mock;
     this.search = opts.search ?? (typeof location !== 'undefined' ? location.search : '');
     this.openStream = opts.eventSource ?? ((url) => new EventSource(url));
+    // A chave some (o 401 que a apaga): o stream que provou com ela não vale mais como página no servidor, e esta página já não pode
+    // responder aos pedidos. Fecha esse stream e abre outro, sem prova.
+    if (!this.mock) {
+      tokenLocal.aoMudar(() => {
+        if (!this.streamComProva || tokenLocal.tem()) return;
+        this.closeSource();
+        this.startSSE();
+      });
+    }
     // Rede de volta (Wi-Fi, VPN): não espera o próximo intervalo para religar.
     if (typeof addEventListener === 'function' && !this.mock) {
       addEventListener('online', () => {
@@ -394,6 +403,9 @@ export class OfficeStore {
     });
   }
 
+  /** O stream aberto agora levou uma prova (e portanto conta como página aberta no servidor). */
+  private streamComProva = false;
+
   private abrirStream(url: string): void {
     const comProva = url.includes('?prova=');
     let es: EventSourceLike;
@@ -406,6 +418,7 @@ export class OfficeStore {
       return;
     }
     this.source = es;
+    this.streamComProva = comProva;
     // Eventos de um stream já substituído (reconexão) não valem mais.
     const current = () => this.source === es;
     es.addEventListener('open', () => {
@@ -452,6 +465,7 @@ export class OfficeStore {
     this.abertura++;
     this.source?.close();
     this.source = null;
+    this.streamComProva = false;
   }
 
   private scheduleRetry(): void {
