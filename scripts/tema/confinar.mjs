@@ -1,6 +1,6 @@
-// Toda gravação ou remoção dos scripts fica dentro de <home>/.expediente/host/temas/<id>/. Nenhum componente do
-// caminho, de .expediente para baixo, pode ser link simbólico ou algo que não seja pasta.
-import { closeSync, constants, fstatSync, ftruncateSync, lstatSync, mkdirSync, openSync, writeSync } from 'node:fs';
+// Toda gravação ou remoção dos scripts fica dentro de <home>/.expediente/host/temas/<id>/ (e o tema-ativo ao lado de
+// temas/). Nenhum componente do caminho, de .expediente para baixo, pode ser link simbólico ou algo que não seja pasta.
+import { closeSync, constants, fstatSync, ftruncateSync, lstatSync, mkdirSync, openSync, readFileSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
 
 const ID = /^[a-z0-9][a-z0-9-]{0,39}$/;
@@ -74,4 +74,25 @@ export function arquivoComumParaLer(caminho, rotulo = 'arquivo') {
   const st = lstatSync(caminho);
   if (!st.isFile()) throw new Error(`${rotulo}: ${caminho} não é arquivo comum (link simbólico, pasta ou dispositivo)`);
   return caminho;
+}
+
+/** Grava `id` (um id de tema ou "padrao") em <home>/.expediente/host/tema-ativo, que é onde o servidor lê o tema ativo. */
+export function gravarTemaAtivo(home, id) {
+  cadeiaSegura(home);
+  const host = join(home, '.expediente', 'host');
+  mkdirSync(host, { recursive: true });
+  const destino = join(host, 'tema-ativo');
+  gravarArquivoComum(destino, `${id}\n`);
+  return destino;
+}
+
+/** O que está em tema-ativo, ou undefined (sem arquivo, que não seja arquivo comum, ou grande demais). */
+export function lerTemaAtivo(home) {
+  const destino = join(home, '.expediente', 'host', 'tema-ativo');
+  try {
+    const st = lstatSync(destino);
+    return st.isFile() && st.size <= 256 ? readFileSync(destino, 'utf8').trim() : undefined;
+  } catch {
+    return undefined;
+  }
 }

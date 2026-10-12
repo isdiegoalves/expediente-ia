@@ -1,7 +1,7 @@
 // Marca fictícia (Aurora Fictícia): nome, cores e logo inventados aqui; nada de marca real.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
@@ -564,5 +564,153 @@ describe('gravação confinada a ~/.expediente/host/temas/<id>', () => {
         intactos();
       }
     }
+  });
+});
+
+describe('aplicar e voltar ao padrão', () => {
+  const tema = () => join(home, '.expediente/host/tema-ativo');
+  const ativo = () => readFileSync(tema(), 'utf8');
+  const candidatoVerde = (extra) => {
+    novoHome();
+    assert.equal(cli('montar', marca(marcaBase(extra))).code, 0);
+    assert.equal(cli('contraste', 'aurora-ficticia', '--ajustar').code, 0);
+  };
+  const arvore = (pasta) => readdirSync(pasta, { recursive: true }).sort();
+
+  test('aplica o candidato que passa no pré-voo: só tema-ativo é escrito, com o id', () => {
+    candidatoVerde();
+    const antes = arvore(home);
+    const r = cli('aplicar', 'aurora-ficticia');
+    assert.equal(r.code, 0, r.saida + r.erro);
+    assert.match(r.saida, /PRÉ-VOO DO TEMA VERDE/);
+    assert.match(r.saida, /Tema "aurora-ficticia" aplicado \(antes: padrao\)/);
+    assert.equal(ativo(), 'aurora-ficticia\n');
+    assert.deepEqual(arvore(home), [...antes, '.expediente/host/tema-ativo'].sort());
+  });
+
+  test('diz qual era o tema ativo antes', () => {
+    candidatoVerde();
+    writeFileSync(tema(), 'outro-tema\n');
+    assert.match(cli('aplicar', 'aurora-ficticia').saida, /\(antes: outro-tema\)/);
+    assert.equal(ativo(), 'aurora-ficticia\n');
+  });
+
+  test('candidato reprovado na validação não é aplicado e o tema-ativo anterior fica', () => {
+    novoHome();
+    assert.equal(cli('montar', marca(marcaBase())).code, 0);
+    mkdirSync(join(home, '.expediente/host'), { recursive: true });
+    writeFileSync(tema(), 'anterior\n');
+    const r = cli('aplicar', 'aurora-ficticia');
+    assert.equal(r.code, 1);
+    assert.match(r.erro, /não passou no pré-voo; nada foi aplicado/);
+    assert.equal(ativo(), 'anterior\n');
+  });
+
+  test('candidato reprovado sem tema-ativo anterior: o arquivo nem nasce', () => {
+    novoHome();
+    assert.equal(cli('montar', marca(marcaBase())).code, 0);
+    assert.equal(cli('aplicar', 'aurora-ficticia').code, 1);
+    assert.equal(existsSync(tema()), false);
+  });
+
+  test('id inexistente, com caminho, em maiúscula, vazio e o reservado: recusa e nada é gravado', () => {
+    candidatoVerde();
+    const antes = arvore(home);
+    for (const id of ['nao-existe', '../aurora-ficticia', 'a/b', 'Aurora', '', 'padrao', '/etc']) {
+      const r = cli('aplicar', id);
+      assert.equal(r.code, 1, `"${id}"`);
+    }
+    assert.match(cli('aplicar', 'padrao').erro, /comando "padrao"/);
+    assert.deepEqual(arvore(home), antes);
+  });
+
+  test('tema.json com outro id dentro, ou que é link simbólico, não é aplicado', () => {
+    candidatoVerde();
+    const arq = join(pastaDoTema(), 'tema.json');
+    const original = readFileSync(arq, 'utf8');
+    writeFileSync(arq, original.replace('"id": "aurora-ficticia"', '"id": "outro"'));
+    const r = cli('aplicar', 'aurora-ficticia');
+    assert.equal(r.code, 1);
+    assert.match(r.erro, /id dentro de tema\.json/);
+    assert.equal(existsSync(tema()), false);
+
+    const fora = join(raiz, `tj-${Math.random().toString(36).slice(2)}.json`);
+    writeFileSync(fora, original);
+    rmSync(arq);
+    symlinkSync(fora, arq);
+    const l = cli('aplicar', 'aurora-ficticia');
+    assert.equal(l.code, 1);
+    assert.match(l.erro, /não é arquivo comum/);
+    assert.equal(existsSync(tema()), false);
+  });
+
+  test('tema-ativo que é link simbólico para fora: recusa e o arquivo de fora fica intacto', () => {
+    candidatoVerde();
+    const fora = join(raiz, `ativo-fora-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(fora);
+    const sentinela = join(fora, 'sentinela');
+    writeFileSync(sentinela, 'intacto');
+    mkdirSync(join(home, '.expediente/host'), { recursive: true });
+    symlinkSync(sentinela, tema());
+    for (const args of [['aplicar', 'aurora-ficticia'], ['padrao']]) {
+      const r = cli(...args);
+      assert.equal(r.code, 1, args.join(' '));
+      assert.match(r.erro, /link simbólico/);
+      assert.equal(readFileSync(sentinela, 'utf8'), 'intacto');
+      assert.deepEqual(readdirSync(fora), ['sentinela']);
+    }
+  });
+
+  test('tema-ativo que é pasta, e host ou .expediente como link simbólico: recusa sem escrever fora', () => {
+    candidatoVerde();
+    mkdirSync(tema());
+    assert.match(cli('padrao').erro, /não é arquivo comum/);
+    assert.match(cli('aplicar', 'aurora-ficticia').erro, /não é arquivo comum/);
+    rmSync(tema(), { recursive: true });
+
+    const fora = join(raiz, `host-fora-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(fora);
+    writeFileSync(join(fora, 'sentinela'), 'intacto');
+    const host = join(home, '.expediente/host');
+    const real = `${host}-real`;
+    renameSync(host, real);
+    symlinkSync(fora, host);
+    for (const args of [['aplicar', 'aurora-ficticia'], ['padrao']]) {
+      const r = cli(...args);
+      assert.equal(r.code, 1, args.join(' '));
+      assert.match(r.erro, /link simbólico/);
+      assert.deepEqual(readdirSync(fora), ['sentinela']);
+    }
+    rmSync(host);
+    renameSync(real, host);
+    rmSync(join(home, '.expediente'), { recursive: true });
+    const ex = join(raiz, `exp-fora-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(ex);
+    symlinkSync(ex, join(home, '.expediente'));
+    assert.equal(cli('padrao').code, 1);
+    assert.deepEqual(readdirSync(ex), []);
+  });
+
+  test('padrao restaura o tema padrão, com ou sem tema-ativo anterior, e cria a pasta do host se faltar', () => {
+    candidatoVerde();
+    assert.equal(cli('aplicar', 'aurora-ficticia').code, 0);
+    const r = cli('padrao');
+    assert.equal(r.code, 0, r.erro);
+    assert.match(r.saida, /Tema padrão restaurado/);
+    assert.equal(ativo(), 'padrao\n');
+    assert.equal(cli('padrao').code, 0);
+    assert.equal(ativo(), 'padrao\n');
+    novoHome();
+    assert.equal(cli('padrao').code, 0);
+    assert.equal(ativo(), 'padrao\n');
+  });
+
+  test('aplicar e padrao não encostam em referencias nem no tema', () => {
+    candidatoVerde();
+    const lista = () => arvore(pastaDoTema()).map((f) => `${f}:${statSync(join(pastaDoTema(), f)).mtimeMs}`);
+    const antes = lista();
+    cli('aplicar', 'aurora-ficticia');
+    cli('padrao');
+    assert.deepEqual(lista(), antes);
   });
 });

@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// Passos determinísticos do /tema (coleta de marca, paleta e pré-voo). Não aplica tema: não escreve tema-ativo.
-// Uso: node scripts/tema/tema.mjs <preparar|paleta|css|rasterizar|montar|contraste|validar> ...
+// Passos determinísticos do /tema (coleta de marca, paleta, pré-voo, aplicar e voltar ao padrão). Só `aplicar` e `padrao` escrevem tema-ativo.
+// Uso: node scripts/tema/tema.mjs <preparar|paleta|css|rasterizar|montar|contraste|validar|aplicar|padrao> ...
 import { spawnSync } from 'node:child_process';
 import { readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { aplicarPropostas, relatorio } from './contraste.mjs';
-import { arquivoComumParaLer, cadeiaSegura, criarPasta, destinoGravavel, gravarArquivoComum, idValido, nomePng, pastaDosTemas } from './confinar.mjs';
+import { arquivoComumParaLer, cadeiaSegura, criarPasta, destinoGravavel, gravarArquivoComum, gravarTemaAtivo, idValido, lerTemaAtivo, nomePng, pastaDosTemas } from './confinar.mjs';
 import { caminhoSeguro, montar, RAIZ } from './marca.mjs';
 import { ehPng, lerPng, MAX_BYTES_ENTRADA, quantizar } from './png.mjs';
 import { rasterizar } from './svg.mjs';
@@ -19,6 +19,7 @@ const pastaDoTema = (id) => {
   return join(pastaDosTemas(homedir()), id);
 };
 const lerTema = (id) => JSON.parse(readFileSync(join(pastaDoTema(id), 'tema.json'), 'utf8'));
+const validarTema = (id) => spawnSync(process.execPath, [join(RAIZ, 'scripts/preflight-tema.mjs'), pastaDoTema(id)], { stdio: 'inherit' }).status ?? 1;
 const pf = (n) => `${(n * 100).toFixed(1).replace('.', ',')}%`;
 
 function arquivoLocal(caminho) {
@@ -99,8 +100,20 @@ const comandos = {
   },
 
   validar([id]) {
-    const r = spawnSync(process.execPath, [join(RAIZ, 'scripts/preflight-tema.mjs'), pastaDoTema(id)], { stdio: 'inherit' });
-    process.exitCode = r.status ?? 1;
+    process.exitCode = validarTema(id);
+  },
+
+  aplicar([id]) {
+    if (id === 'padrao') throw new Error('para voltar ao tema padrão use o comando "padrao"');
+    const doTema = JSON.parse(readFileSync(arquivoComumParaLer(join(pastaDoTema(id), 'tema.json'), 'tema.json'), 'utf8'));
+    if (doTema.id !== id) throw new Error(`o id dentro de tema.json não é "${id}"; nada foi aplicado`);
+    if (validarTema(id) !== 0) throw new Error(`o tema "${id}" não passou no pré-voo; nada foi aplicado`);
+    const antes = lerTemaAtivo(homedir()) || 'padrao';
+    console.log(`\nTema "${id}" aplicado (antes: ${antes}) em ${gravarTemaAtivo(homedir(), id)}. O escritório troca sozinho em alguns segundos.`);
+  },
+
+  padrao() {
+    console.log(`Tema padrão restaurado em ${gravarTemaAtivo(homedir(), 'padrao')}. O escritório troca sozinho em alguns segundos.`);
   },
 };
 
