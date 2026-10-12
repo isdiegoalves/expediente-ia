@@ -162,6 +162,25 @@ function checarTiposDoMod() {
   return r.ok ? ok(`tsc do mod contra os tipos da ${dosTipos}`) : r;
 }
 
+export function opcoesDe(argv) {
+  return { comContainer: argv.includes('--com-container'), comNavegador: argv.includes('--com-navegador') };
+}
+
+export function mensagemFinal(opcoes) {
+  const faltam = [opcoes.comContainer ? null : '--com-container', opcoes.comNavegador ? null : '--com-navegador'].filter(Boolean);
+  return faltam.length ? `pré-voo verde (sem ${faltam.join(' nem ')}: a fatia ainda não fecha)` : 'pré-voo verde';
+}
+
+export async function etapaNavegador(opcoes) {
+  if (!opcoes.comNavegador) {
+    return pular('sem --com-navegador: a fatia não fecha sem esta etapa');
+  }
+  const build = comandoSimples('npm', ['run', 'build:client']);
+  if (!build.ok) return build;
+  const r = comandoSimples('node', ['scripts/prova-maquete.mjs']);
+  return r.ok ? ok('roteiro do modo maquete verde no Chromium headless') : r;
+}
+
 const REPORTER_DE_TEMPOS = './scripts/reporter-tempos.mjs';
 let registrosDeTempo = [];
 
@@ -243,6 +262,10 @@ const etapas = [
     },
   },
   {
+    nome: 'modo maquete no navegador',
+    rodar: etapaNavegador,
+  },
+  {
     nome: 'container',
     async rodar(opcoes) {
       if (!opcoes.comContainer) {
@@ -294,7 +317,7 @@ const etapas = [
 ];
 
 export async function main(argv) {
-  const opcoes = { comContainer: argv.includes('--com-container') };
+  const opcoes = opcoesDe(argv);
   for (const [i, etapa] of etapas.entries()) {
     const rotulo = `${i + 1}. ${etapa.nome}`;
     const r = await etapa.rodar(opcoes);
@@ -307,7 +330,7 @@ export async function main(argv) {
       return 1;
     }
   }
-  console.log(opcoes.comContainer ? 'pré-voo verde' : 'pré-voo verde (sem --com-container: a fatia ainda não fecha)');
+  console.log(mensagemFinal(opcoes));
   return 0;
 }
 

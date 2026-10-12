@@ -3,8 +3,11 @@ import assert from 'node:assert/strict';
 import {
   caminhosDeRegistro,
   escutasForaDoLoopback,
+  etapaNavegador,
+  mensagemFinal,
   mensagensComIdDeSessao,
   mensagensComTrailer,
+  opcoesDe,
   portasForaDoLoopback,
   temposDoPluginTest,
   testesAcimaDoTeto,
@@ -100,4 +103,19 @@ test('tempo do mod: lê arquivo e duração de cada teste e cobra acima de 1 s',
   assert.equal(falhas.length, 1);
   assert.equal(veredictoDeTempo(testesAcimaDoTeto(registros), new Map([['grupo > lento', 300]])).avisos.length, 1);
   assert.equal(avisos.length, 0);
+});
+
+test('navegador: sem a flag a etapa é pulada com aviso, e as flags valem cada uma por si', async () => {
+  const r = await etapaNavegador(opcoesDe([]));
+  assert.equal(r.pulado, true);
+  assert.match(r.detalhe, /^sem --com-navegador: a fatia não fecha/);
+  assert.deepEqual(opcoesDe(['--com-navegador']), { comContainer: false, comNavegador: true });
+  assert.deepEqual(opcoesDe(['--com-container', '--com-navegador']), { comContainer: true, comNavegador: true });
+});
+
+test('mensagem final: só fecha a fatia com as duas flags', () => {
+  assert.match(mensagemFinal(opcoesDe([])), /sem --com-container nem --com-navegador: a fatia ainda não fecha/);
+  assert.match(mensagemFinal(opcoesDe(['--com-container'])), /sem --com-navegador: a fatia ainda não fecha/);
+  assert.match(mensagemFinal(opcoesDe(['--com-navegador'])), /sem --com-container: a fatia ainda não fecha/);
+  assert.equal(mensagemFinal(opcoesDe(['--com-container', '--com-navegador'])), 'pré-voo verde');
 });
