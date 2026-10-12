@@ -2,7 +2,7 @@
 // demonstração (?mock=1, nunca o escritório real) com o tema em prévia e enquadra uma sala por captura.
 import { spawnSync } from 'node:child_process';
 import { accessSync, constants, existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
+import { homedir, tmpdir, userInfo } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { cadeiaSegura, criarPasta, gravarArquivoComum, idValido } from './confinar.mjs';
 import { ehPng } from './png.mjs';
@@ -50,6 +50,8 @@ export function argsDoNavegador({ perfil, saida, url }) {
     '--disable-sync',
     '--disable-breakpad',
     '--disable-background-networking',
+    '--use-mock-keychain',
+    '--password-store=basic',
     `--user-data-dir=${perfil}`,
     `--disk-cache-dir=${join(perfil, 'cache')}`,
     '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1',
@@ -61,6 +63,8 @@ export function argsDoNavegador({ perfil, saida, url }) {
   ];
 }
 
+// O navegador roda com o HOME verdadeiro do usuário (o do sistema, não o da variável de ambiente): com outro HOME ele
+// não acha as chaves do usuário e o macOS abre a janela do chaveiro. Os temas continuam na pasta de quem chamou.
 const umaLinha = (s) => String(s).replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ').trim().slice(0, 300);
 
 /** O servidor local aceita o candidato como prévia? Lança com código próprio se não responde ou o recusa. */
@@ -100,7 +104,7 @@ export async function capturar({ id, porta, home = homedir(), env = process.env,
       // O navegador às vezes trava na partida (visto no Chrome do macOS sob carga): quem passa do limite é morto e tenta de novo.
       for (let tentativa = 1; tentativa <= TENTATIVAS && !png; tentativa++) {
         r = spawnSync(navegador, argsDoNavegador({ perfil: join(temporaria, `perfil-${n}-${tentativa}`), saida, url: urlDaPrevia('127.0.0.1', porta, id, `mock=1&sessions=10&seed=12&sala=${n}&`) }), {
-          env: { PATH: env.PATH ?? '', HOME: env.HOME ?? home },
+          env: { PATH: env.PATH ?? '', HOME: userInfo().homedir },
           stdio: ['ignore', 'ignore', 'pipe'],
           timeout: limiteMs,
           killSignal: 'SIGKILL',
