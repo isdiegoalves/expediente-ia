@@ -59,7 +59,12 @@ async function chaveDaPagina(): Promise<Buffer> {
   const b = await hook.fetchComProva({ base: real.base, chave: K, metodo: 'POST', caminho: '/api/token/bilhete', corpo: {}, timeoutMs: 3000 });
   const r = await fetch(`${real.base}/api/token/troca`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bilhete: b.json?.bilhete }) });
   const j = (await r.json()) as { chave?: string };
-  return Buffer.from(String(j.chave), 'hex');
+  const chave = Buffer.from(String(j.chave), 'hex');
+  // Sem isto, um hook que não fala com o servidor deixa a "chave da página" vazia e o impostor assina com ela: o teste passaria sem provar nada.
+  expect(b.status, 'o bilhete foi emitido').toBe(200);
+  expect(r.status, 'a troca respondeu').toBe(200);
+  expect(chave).toHaveLength(32);
+  return chave;
 }
 
 interface Impostor {
@@ -131,12 +136,7 @@ describe('a chave que a página recebe não prova que o servidor é o Expediente
 
   it('a chave que a troca entrega assina como cliente: o guard aceita a prova dela', async () => {
     const real = await expedienteVerdadeiro();
-    const entregue = await (async () => {
-      const b = await hook.fetchComProva({ base: real.base, chave: K, metodo: 'POST', caminho: '/api/token/bilhete', corpo: {}, timeoutMs: 3000 });
-      const r = await fetch(`${real.base}/api/token/troca`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bilhete: b.json?.bilhete }) });
-      return (await r.json()) as { chave?: string };
-    })();
-    const chave = Buffer.from(String(entregue.chave), 'hex');
+    const chave = await chaveDaPagina();
     const n = randomBytes(16).toString('hex');
     const d = (await (await fetch(`${real.base}/api/token/desafio?n=${n}`)).json()) as { desafio: string };
     const prova = createHmac('sha256', chave).update(`cliente\n${d.desafio}\nPOST\n/api/demo`).digest('hex');
