@@ -7,6 +7,7 @@
 import type { AppearanceParts } from '../../../shared/appearance';
 import type { Activity, AgentDetail, AgentInfo, FeedItem, Notice, OfficeSnapshot, PermissionDecision, PermissionRequestInfo, RoomInfo } from '../../../shared/types';
 import { DemoSimulator } from '../../../shared/demo/simulator';
+import { tokenLocal } from './token';
 
 export type ConnectionState = 'connecting' | 'open' | 'closed' | 'mock';
 
@@ -177,7 +178,7 @@ export class OfficeStore {
   /** Liga/desliga os agentes de demonstração no servidor. */
   async setDemo(enabled: boolean): Promise<boolean> {
     if (this.mock) return true;
-    const res = await fetch('/api/demo', {
+    const res = await tokenLocal.escrever('/api/demo', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ enabled }),
@@ -189,7 +190,7 @@ export class OfficeStore {
   async setRitmo(ritmo: 'calm' | 'normal' | 'lively'): Promise<string | undefined> {
     let res: Response;
     try {
-      res = await fetch('/api/social/ritmo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ritmo }) });
+      res = await tokenLocal.escrever('/api/social/ritmo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ritmo }) });
     } catch {
       return 'Sem conexão com o Expediente.';
     }
@@ -257,7 +258,7 @@ export class OfficeStore {
       this.applySnapshot(sim.snapshot());
       return undefined;
     }
-    const res = await fetch(`/api/permissions/${encodeURIComponent(id)}/decision`, {
+    const res = await tokenLocal.escrever(`/api/permissions/${encodeURIComponent(id)}/decision`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(d),
@@ -289,7 +290,7 @@ export class OfficeStore {
     if (this.mock || this.replay) return 'Editar o personagem só funciona com o escritório ao vivo.';
     let res: Response;
     try {
-      res = await fetch(`/api/agents/${encodeURIComponent(id)}/character`, {
+      res = await tokenLocal.escrever(`/api/agents/${encodeURIComponent(id)}/character`, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),

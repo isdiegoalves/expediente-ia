@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { OfficeSnapshot } from '../../../shared/types';
 import { mockOptionsFrom, OfficeStore, pageBuild, reconnectDelay, type EventSourceLike } from './store';
+import { tokenLocal } from './token';
 
 /** EventSource falso: o teste dispara open/error e muda o readyState. */
 class FakeSource implements EventSourceLike {
@@ -259,18 +260,25 @@ describe('fonte alternativa (timelapse)', () => {
 });
 
 describe('personagem do projeto (store)', () => {
-  afterEach(() => vi.unstubAllGlobals());
+  const TOKEN = '5e17e11a'.repeat(8);
+  beforeEach(() => void tokenLocal.receber(`#t=${TOKEN}`));
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    tokenLocal.apagar();
+  });
+
+  /** O que `fetch` recebeu: método, corpo e o cabeçalho do token junto com os de sempre. */
+  const comToken = (method: string, body: string) => ({ method, body, headers: expect.any(Headers) });
+  const cabecalhosDaUltima = (fetchMock: { mock: { calls: unknown[][] } }) => new Headers((fetchMock.mock.calls.at(-1)![1] as RequestInit).headers);
 
   it('saveCharacter: PUT JSON na rota do agente; devolve undefined ou a mensagem de erro do servidor', async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ error: 'Ana já está no escritório em api' }), { status: 409 }));
     vi.stubGlobal('fetch', fetchMock);
     const store = new OfficeStore();
     expect(await store.saveCharacter('.claude:1', { name: 'Ana', seed: 1, parts: {} })).toBe('Ana já está no escritório em api');
-    expect(fetchMock).toHaveBeenCalledWith('/api/agents/.claude%3A1/character', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: '{"name":"Ana","seed":1,"parts":{}}',
-    });
+    expect(fetchMock).toHaveBeenCalledWith('/api/agents/.claude%3A1/character', comToken('PUT', '{"name":"Ana","seed":1,"parts":{}}'));
+    expect(cabecalhosDaUltima(fetchMock).get('content-type')).toBe('application/json');
+    expect(cabecalhosDaUltima(fetchMock).get('x-expediente-token')).toBe(TOKEN);
     fetchMock.mockResolvedValueOnce(new Response('{"ok":true}', { status: 200 }));
     expect(await store.saveCharacter('.claude:1', { name: 'Ana', seed: 1, parts: {} })).toBeUndefined();
   });
@@ -279,7 +287,8 @@ describe('personagem do projeto (store)', () => {
     const fetchMock = vi.fn(async () => new Response('{"ok":true}', { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
     expect(await new OfficeStore().resetCharacter('a')).toBeUndefined();
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/agents/a/character', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/agents/a/character', comToken('DELETE', '{}'));
+    expect(cabecalhosDaUltima(fetchMock).get('x-expediente-token')).toBe(TOKEN);
     fetchMock.mockRejectedValueOnce(new TypeError('failed to fetch'));
     expect(await new OfficeStore().resetCharacter('a')).toBe('Sem conexão com o Expediente.');
     const calls = fetchMock.mock.calls.length;

@@ -1,11 +1,14 @@
 // Ponto de entrada do cliente: tema -> store (dados) -> mundo (canvas) -> UI (painéis).
 import { OfficeStore } from './net/store';
+import { receberTokenDaUrl } from './net/token';
 import { carregarTema, tema } from './tema';
 import { aplicarFonte, aplicarPaleta } from './tema/aplicar';
 import { migrateLegacyKeys, safeLocalStorage } from './ui/prefs';
 
 // Antes de tudo: o mundo (carteiras) e a UI (preferências) leem o localStorage ao serem criados.
 migrateLegacyKeys(safeLocalStorage());
+// O token chega no fragmento da URL (o navegador não o manda ao servidor): guarda e tira da barra de endereço.
+receberTokenDaUrl(location, history);
 
 void (async () => {
   const { aviso } = await carregarTema();

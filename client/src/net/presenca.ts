@@ -1,12 +1,13 @@
 // Avisa o servidor quando esta aba fica visível ou oculta; é assim que ele sabe quando você saiu e quando voltou
 // (ver server/history/resumo.ts). Sem servidor (?mock=1) nada é enviado.
 import type { PresencaResposta } from '../../../shared/resumo';
+import { tokenLocal } from './token';
 
 export type EnviarPresenca = (aba: string, visivel: boolean) => Promise<PresencaResposta | null>;
 
 export const enviarPresencaHttp: EnviarPresenca = async (aba, visivel) => {
   try {
-    const res = await fetch('/api/resumo/presenca', {
+    const res = await tokenLocal.escrever('/api/resumo/presenca', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ aba, visivel }),

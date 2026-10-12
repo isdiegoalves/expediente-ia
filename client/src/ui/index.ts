@@ -33,6 +33,7 @@ import { SoundControl } from './sound';
 import { TERMINAL_UNAVAILABLE_HINT, TerminalPanel } from './terminal';
 import { TimelapsePlayer } from './timelapse';
 import { Toasts } from './toasts';
+import { TokenAviso } from './token-aviso';
 import { TopBar } from './topbar';
 import { UpdateBanner } from './update';
 import { versaoParaAvisar } from './version';
@@ -205,13 +206,14 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi,
   const empty = new EmptyState(ctx);
   const banner = new ConnectionBanner(ctx);
   const update = new UpdateBanner(store);
+  const tokenAviso = new TokenAviso(ctx);
   const tip = new HoverTip(ctx);
   const splash = new Splash(ctx);
   timelapse = new TimelapsePlayer(ctx);
   const scrim = h('div', { class: 'ui-scrim', attrs: { 'aria-hidden': 'true' }, on: { click: () => ctx.togglePanel('sidebar', false) } });
 
   root.classList.add('ui-root');
-  root.append(timelapse.vignette, topbar.el, sidebar.el, scrim, feed.el, drawer.el, terminal.el, timelapse.el, timelapse.badge, toasts.el, banner.el, update.el, empty.el, tip.el, settings.el, history.el, help.el, renamer.el, resumo.el, live, splash.el);
+  root.append(timelapse.vignette, topbar.el, sidebar.el, scrim, feed.el, drawer.el, terminal.el, timelapse.el, timelapse.badge, toasts.el, banner.el, update.el, tokenAviso.el, empty.el, tip.el, settings.el, history.el, help.el, renamer.el, resumo.el, live, splash.el);
   area = new FreeArea(world, { root, topbar: topbar.el, sidebar: sidebar.el, drawer: drawer.el, feed: feed.el }, () => ({
     sidebar: panels.sidebar,
     feed: panels.feed,
@@ -234,7 +236,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi,
   });
   versao.start();
 
-  const components: UiComponent[] = [topbar, sidebar, drawer, terminal, history, feed, toasts, settings, empty, banner, tip, notifier, splash, timelapse, sound, day, resumo];
+  const components: UiComponent[] = [topbar, sidebar, drawer, terminal, history, feed, toasts, settings, empty, banner, tokenAviso, tip, notifier, splash, timelapse, sound, day, resumo];
 
   // ---------------------------------------------------------------- renderização agrupada por quadro
   let rafId = 0;

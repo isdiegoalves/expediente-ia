@@ -2,6 +2,7 @@
 // O nome fica no servidor (POST /api/rooms/rename, model/room-aliases.ts) e vale para todas as abas; vazio volta ao
 // nome da pasta. Enter salva, Esc cancela, clicar fora salva. A gaveta da sala tem também um lápis ao lado do nome.
 import { isDemoId } from '../../../shared/timeline';
+import { tokenLocal } from '../net/token';
 import type { UiContext } from './context';
 import { h, setText } from './dom';
 import { isLocalHostname } from './permission';
@@ -27,7 +28,7 @@ export function canRenameRoom(ctx: UiContext, roomId: string): boolean {
 async function renameRequest(id: string, name: string): Promise<void> {
   let res: Response;
   try {
-    res = await fetch('/api/rooms/rename', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, name }) });
+    res = await tokenLocal.escrever('/api/rooms/rename', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, name }) });
   } catch {
     throw new Error('o Expediente não respondeu');
   }

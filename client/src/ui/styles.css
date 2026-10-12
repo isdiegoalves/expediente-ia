@@ -3184,6 +3184,18 @@ a.ui-btn {
   background: color-mix(in srgb, var(--st-done) 90%, var(--ink-dark));
 }
 
+/* Ações bloqueadas por falta do token local: abaixo dos outros avisos, com os passos em linhas. */
+.ui-banner--token {
+  z-index: 44;
+  top: calc(var(--top-h) + var(--gap) + 56px);
+  align-items: flex-start;
+  border-color: color-mix(in srgb, var(--st-waiting) 55%, transparent);
+}
+
+.ui-banner__text--passos {
+  white-space: pre-line;
+}
+
 /* ------------------------------------------------------------------ dica do personagem */
 
 .ui-tip {

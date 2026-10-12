@@ -3,6 +3,7 @@
 // mod do Claude Code que traga o painel da sessão à frente e só cai na cópia se isso não der certo.
 import { ESPERA_ASSUMIR_MS } from '../../../shared/foco';
 import type { IrInfo } from '../../../shared/types';
+import { tokenLocal } from '../net/token';
 import { copyText, h, setHidden, setText } from './dom';
 
 export function copiadoTexto(ir: Pick<IrInfo, 'aviso'>): string {
@@ -192,7 +193,7 @@ export class IrSection {
   private focoDeps(req: number): FocoDeps {
     const chamar = async (url: string, init?: RequestInit) => {
       try {
-        const res = await fetch(url, init);
+        const res = await (init?.method ? tokenLocal.escrever(url, init) : fetch(url, init));
         return { ok: res.ok, json: (await res.json().catch(() => undefined)) as unknown };
       } catch {
         return { ok: false, json: undefined };
