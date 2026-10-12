@@ -444,7 +444,8 @@ servida na porta não a usa para se passar pelo Expediente diante do hook, do mo
 60 s e uma vez; sem prova, ou com prova errada, o servidor responde `401`, e `503` se ele mesmo estiver sem token. Poucos `GET`
 também mudam estado no servidor (entregar a decisão ao hook, marcar que há um mod de pé, emitir o código de uso único do atalho
 para a sessão) e por isso também exigem a prova. Se o Expediente estiver parado e outro programa ocupar a porta, ele não recebe K
-nem a prova de ninguém (o hook, o mod, o `npm run abrir` e o pré-voo recusam falar com quem não prova ter K).
+nem as provas do hook, do mod, do `npm run abrir` e do pré-voo (eles recusam falar com quem não prova ter K). Uma página já aberta é
+outra história: ela não confere o servidor e manda provas de cliente a quem responder (veja o primeiro item abaixo).
 
 **Só página autorizada recebe pedidos de permissão.** O hook só desvia o pedido para o escritório quando há uma página aberta que pode
 respondê-lo. O `/api/stream` (a leitura ao vivo) continua atendido a qualquer um, mas só conta como página o stream que trouxer uma
@@ -468,7 +469,9 @@ continua, sem enfeite:
 - Ler (a conversa do terminal somente leitura, por exemplo) não pede prova.
 
 Trocar o token é apagar o arquivo e rodar `npm run docker:up` (ou reiniciar o servidor); as páginas abertas, que têm a chave
-derivada do token antigo, levam `401` e pedem a autorização de novo.
+derivada do token antigo, levam `401` e pedem a autorização de novo. Já no servidor, o stream de uma aba que provou com o token antigo
+deixa de contar como página aberta assim que o servidor relê o arquivo, e a aba, ao perder a chave, reabre o stream sem prova: os
+pedidos de permissão não ficam esperando uma página que não pode respondê-los.
 
 **Abrir o escritório já autorizado.** A página não guarda o token: guarda a chave do cliente, que não pode ser exportada, no
 IndexedDB do navegador, e assina cada escrita com ela. Para recebê-la, abra o escritório por um destes caminhos, sem digitar nada:

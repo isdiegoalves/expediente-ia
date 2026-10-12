@@ -30,13 +30,15 @@ mostra a faixa de ações bloqueadas até ser aberta de novo pelo `npm run abrir
   servidor prova de volta que tem o token antes de o hook, o mod, o `npm run abrir` e o pré-voo confiarem nele. Do token saem duas
   chaves, uma por papel: a página recebe só a do cliente (uma vez, na troca do bilhete) e ela não produz a prova do servidor, então
   uma página falsa servida na porta não a usa para se passar pelo Expediente. Se o Expediente estiver parado e outro programa
-  ocupar a porta, ele não recebe o token nem a prova de ninguém. O que ele ainda pode: servir uma página falsa que peça provas de
+  ocupar a porta, ele não recebe o token nem as provas do hook, do mod, do `npm run abrir` e do pré-voo. O que ele ainda pode: servir uma página falsa que peça provas de
   cliente à chave guardada no navegador e, se o Expediente voltar com a aba falsa aberta, escrever em seu nome enquanto ela
   estiver aberta. O token não autentica a página para você; só TLS com identidade faria isso. O corpo do pedido e a resposta
   também não são autenticados.
 - **Só página autorizada conta como página aberta.** O hook de permissões só desvia o pedido para o escritório se houver uma página
   que possa respondê-lo. O stream da leitura ao vivo segue atendido sem prova, mas só o que provar o token conta; antes, qualquer
   programa local que abrisse o stream fazia o hook segurar, por até 5 minutos, o pedido de um subagente em segundo plano.
+- **Trocar o token com a aba aberta não deixa o hook esperando por ela.** O stream de uma aba que provou com o token antigo deixa de
+  contar como página aberta quando o servidor relê o arquivo, e a aba, ao perder a chave, reabre o stream sem prova.
 - **Alguns `GET` também mudam estado e agora exigem a prova:** entregar ao hook a decisão que você deu (quem lesse o id no
   snapshot a roubaria), marcar que há um mod de pé e emitir o código de uso único do atalho para a sessão.
 

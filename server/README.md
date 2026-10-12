@@ -81,7 +81,7 @@ festa) ou 10 min. Push só avisa. O mesmo CI visto de novo em 2 min não repete 
 | `GET /api/health` | `{ok, version, demo, docker, terminal, permissions, token:{ok, motivo?}, sources, accounts:[{id, usageStatus}]}`; `token.ok` diz se o servidor tem um token legível (sem ele, toda escrita leva 503) |
 | `GET /api/token/desafio?n=` | desafio de uso único e a prova do servidor (ver Borda); sem prova de cliente |
 | `POST /api/token/bilhete` | bilhete de uso único (60 s) para levar o segredo ao navegador; com prova |
-| `POST /api/token/troca` | `{bilhete}` → `{token}` uma vez; sem prova de cliente (o bilhete é a credencial) |
+| `POST /api/token/troca` | `{bilhete}` → `{chave}` (a chave do cliente, nunca K) uma vez; sem prova de cliente (o bilhete é a credencial) |
 | `POST /api/demo` | `{enabled: boolean}` liga/desliga agentes simulados (misturados aos reais) |
 | `POST /api/social/ritmo` | `{ritmo: 'calm' \| 'normal' \| 'lively'}` muda o ritmo das rodas e dos passeios para todas as abas; trava do terminal e Host local |
 | `GET /api/resumo?account=&session=` | `ResumoView` "desde que você saiu": `{desde, agora, terminaram, travaram, esperam, trabalhando, sessoes:[{id, nome, sala, estado, motivo?, tarefa?:{rotulo, texto}, desde}]}`, sem o demo e sem a sessão de quem pergunta; `desde` é a última saída gravada (ou a hora em que o servidor subiu); só Host local |
