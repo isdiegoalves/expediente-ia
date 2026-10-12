@@ -1,7 +1,9 @@
 import { spawn } from 'node:child_process';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { HOME_DE_TESTE, hookJson } from './permission-server';
@@ -18,12 +20,16 @@ interface Reply {
 interface Fake {
   port: number;
   posted: string[];
+  /** O cabeçalho X-Expediente-Token de cada pedido, na ordem (undefined = sem o cabeçalho). */
+  tokens: Array<string | undefined>;
   close(): Promise<void>;
 }
 
 function fake(register: Reply, wait: Reply = { status: 200, body: '{"status":"pending"}' }): Promise<Fake> {
   const posted: string[] = [];
+  const tokens: Array<string | undefined> = [];
   const server = http.createServer((req, res) => {
+    tokens.push(req.headers['x-expediente-token'] as string | undefined);
     const chunks: Buffer[] = [];
     req.on('data', (c: Buffer) => chunks.push(c));
     req.on('end', () => {
@@ -40,6 +46,7 @@ function fake(register: Reply, wait: Reply = { status: 200, body: '{"status":"pe
       ok({
         port: (server.address() as AddressInfo).port,
         posted,
+        tokens,
         close: () =>
           new Promise<void>((done) => {
             server.closeAllConnections();
@@ -50,10 +57,10 @@ function fake(register: Reply, wait: Reply = { status: 200, body: '{"status":"pe
   );
 }
 
-function runHook(stdin: string, args: string[]): Promise<{ code: number | null; stdout: string; stderr: string; ms: number }> {
+function runHook(stdin: string, args: string[], env: NodeJS.ProcessEnv = {}): Promise<{ code: number | null; stdout: string; stderr: string; ms: number }> {
   return new Promise((ok, fail) => {
     const t0 = Date.now();
-    const child = spawn(process.execPath, [HOOK, ...args], { env: { PATH: process.env.PATH, HOME: HOME_DE_TESTE }, stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, [HOOK, ...args], { env: { PATH: process.env.PATH, HOME: HOME_DE_TESTE, ...env }, stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
     child.stdout.setEncoding('utf8').on('data', (c: string) => (stdout += c));
@@ -136,5 +143,45 @@ describe('permission-hook.mjs: qualquer falha devolve a decisão ao terminal', (
     expect(body.session_id).toBe(input.session_id);
     expect(Object.keys(body)).not.toContain('transcript_path');
     expect(srv.posted[0]).not.toContain('/tmp/x/projects');
+  });
+});
+
+describe('permission-hook.mjs: o token local e o servidor', () => {
+  const homes: string[] = [];
+  afterEach(() => {
+    for (const h of homes.splice(0)) rmSync(h, { recursive: true, force: true });
+  });
+  function homeCom(conteudo: string | undefined): string {
+    const home = mkdtempSync(join(tmpdir(), 'expediente-hook-'));
+    homes.push(home);
+    mkdirSync(join(home, '.expediente', 'host'), { recursive: true });
+    if (conteudo !== undefined) writeFileSync(join(home, '.expediente', 'host', 'token'), conteudo);
+    return home;
+  }
+  const VALOR = '5e17e11a'.repeat(8);
+
+  it.each([['ausente', undefined], ['curto', 'curto\n'], ['vazio', ''], ['com letras fora do hexadecimal', `${'g'.repeat(64)}\n`], ['maiúsculo', `${VALOR.toUpperCase()}\n`]])(
+    'arquivo do token %s: o hook nem chama o servidor e sai sem decisão',
+    async (_nome, conteudo) => {
+      srv = await fake(REGISTRADO);
+      const r = await runHook(JSON.stringify(hookJson()), ['--port', String(srv.port)], { HOME: homeCom(conteudo) });
+      expect(r).toMatchObject({ code: 0, stdout: '' });
+      expect(srv.tokens).toEqual([]);
+    },
+  );
+
+  it('com o token legível, só o registro (POST) leva o cabeçalho, com o valor do arquivo, e o corpo não tem o valor', async () => {
+    srv = await fake(REGISTRADO, { status: 200, body: '{"status":"decided","behavior":"deny"}' });
+    const r = await runHook(JSON.stringify(hookJson()), ['--port', String(srv.port)], { HOME: homeCom(`${VALOR}\n`) });
+    expect(r.code).toBe(0);
+    expect(srv.tokens).toEqual([VALOR, undefined]);
+    expect(srv.posted[0]).not.toContain(VALOR);
+  });
+
+  it.each([401, 403, 503])('o servidor recusa o registro com %i: sai sem decisão e não pergunta mais nada', async (status) => {
+    srv = await fake({ status, body: '{"error":"x"}' });
+    const r = await runHook(JSON.stringify(hookJson()), ['--port', String(srv.port)], { HOME: homeCom(`${VALOR}\n`) });
+    expect(r).toMatchObject({ code: 0, stdout: '' });
+    expect(srv.tokens).toEqual([VALOR]);
   });
 });
