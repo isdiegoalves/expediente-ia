@@ -334,14 +334,15 @@ da decoração são o bloco `paleta.sazonal` do `tema.json`; um tema de marca se
 ### Tema de uma marca (`/tema`)
 
 Com o mod instalado, `/tema trabalho na empresa X` numa sessão do Claude Code monta um tema do escritório com as cores
-e o logo de uma marca. A skill pergunta o que faltar, lê só as páginas e os arquivos que você indicar (baixar qualquer
-arquivo pede o seu sim, um a um) e escolhe as cores a partir da saída de scripts, nunca de memória. Depois monta um tema
-**candidato**, mede o contraste WCAG AA (mínimo 4,5:1 para texto) com proposta de ajuste, tira três capturas do modo
-demonstração e avalia as capturas e as referências da marca: nota de 0 a 10 e os pontos de falha (texto abaixo de 4,5:1,
-balão cortado, placa ilegível). O tema só vale depois do seu "aprovo" na conversa.
+e o logo de uma marca. A skill pergunta o que faltar, lê só o texto das páginas e os arquivos que você indicar (ela não
+baixa nada: você baixa o arquivo e passa o caminho, ou ela diz a URL exata e pede) e escolhe as cores a partir da saída
+de scripts, nunca de memória. Depois monta um tema **candidato**, mede o contraste WCAG AA (mínimo 4,5:1 para texto) com
+proposta de ajuste, tira três capturas do modo demonstração e avalia as capturas e as referências da marca: nota de 0 a
+10 e os pontos de falha (texto abaixo de 4,5:1, balão cortado, placa ilegível). O tema só vale depois do seu "aprovo" na
+conversa.
 
-- **Onde o tema fica:** `~/.expediente/host/temas/<id>/` (o `tema.json`, os PNG, a fonte livre, `referencias/` com o que
-  você autorizou baixar e `previa/` com as capturas), fora do repositório. O tema ativo é o nome gravado em
+- **Onde o tema fica:** `~/.expediente/host/temas/<id>/` (o `tema.json`, os PNG, a fonte livre, `referencias/` com os arquivos
+  que você passou e `previa/` com as capturas), fora do repositório. O tema ativo é o nome gravado em
   `~/.expediente/host/tema-ativo`; sem ele, vale o padrão.
 - **Prévia, sem mudar nada:** `http://localhost:4848/?tema=<id>` mostra o candidato com os seus agentes, e
   `http://localhost:4848/?mock=1&tema=<id>` na demonstração. Só a aba que abriu o link o vê, com uma faixa que diz isso;
