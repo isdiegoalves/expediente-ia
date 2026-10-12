@@ -143,6 +143,20 @@ describe('lista lateral que só toca o que mudou', () => {
     for (let s = 0; s < 10; s++) if (s !== 3) expect(tocadosEm(secaoDe(l, `sala${s}`)), `sala${s}`).toBe(0);
   });
 
+  it('um subagente muda: o outro principal da mesma sala não é tocado, nem a linha, nem o nó', () => {
+    const inicial = escritorio(2, 6);
+    inicial.agents.push(agente('m0b', 'sala0', { startedAt: T0 + 50 }), agente('s0b_0', 'sala0', { kind: 'sub', parentId: 'm0b', startedAt: T0 + 51 }));
+    const l = montar(inicial);
+    const outro = linhas(l).get('m0b')!.parentNode!.parentNode!;
+    expect(outro.classes.has('ui-node')).toBe(true);
+    zerarRegistro();
+    atualizar(l, (s) => {
+      s.agents.find((x) => x.id === 's0_3')!.title = 'novo';
+    });
+    expect(alteradosEm(linhas(l).get('s0_3')!)).toBeGreaterThan(0);
+    expect(tocadosEm(outro)).toBe(0);
+  });
+
   it('passa o tempo sem mudar nada: nada é tocado', () => {
     const l = montar(escritorio(10, 30));
     zerarRegistro();
@@ -329,6 +343,36 @@ describe('lista lateral que só toca o que mudou', () => {
       s.equipes = [equipe(3)];
     });
     expect(resumo()).toContain('3 trabalhando');
+  });
+
+  it('a contagem da sala acompanha um agente que o filtro esconde', () => {
+    const l = montar(escritorio(2, 3));
+    l.setStatus('esperando');
+    atualizar(l, (s) => {
+      s.agents.find((x) => x.id === 's0_0')!.status = 'waiting';
+    });
+    const contagem = () => secaoDe(l, 'sala0').descendentes().find((e) => e.classes.has('ui-room__count'))!.texto;
+    expect(contagem()).toBe('4');
+    atualizar(l, (s) => {
+      s.agents.find((x) => x.id === 's0_2')!.status = 'offline';
+    });
+    expect(contagem()).toBe('3');
+  });
+
+  it('o progresso das tarefas da sala acompanha uma tarefa que não aparece na linha', () => {
+    const l = montar(escritorio(2, 3));
+    atualizar(l, (s) => {
+      s.agents.find((x) => x.id === 's0_1')!.tasks = [{ id: '1', title: 'a', status: 'completed' }, { id: '2', title: 'b', status: 'pending' }];
+    });
+    expect(secaoDe(l, 'sala0').descendentes().find((e) => e.classes.has('ui-room__tasks-text'))!.texto).toBe('1/2 tarefas');
+  });
+
+  it('guarda a ordem mostrada de cada sala mesmo quando a sala não mudou', () => {
+    const l = montar(escritorio(2, 0));
+    const ordemMostrada = () => (l as unknown as { shown: Map<string, { agent: AgentInfo }[]> }).shown;
+    atualizar(l, () => {});
+    expect(ordemMostrada().get('sala1')!.map((n) => n.agent.id)).toEqual(['m1']);
+    expect(ordemMostrada().get('sala1')![0].agent).toBe(snap.agents.find((a) => a.id === 'm1'));
   });
 
   it('a conta renomeada reescreve as linhas dela', () => {
