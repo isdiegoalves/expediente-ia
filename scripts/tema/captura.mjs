@@ -12,6 +12,7 @@ export const SEM_PREVIA = 4;
 export const SEM_CAPTURA = 5;
 
 const SALAS = [1, 2, 3];
+const TENTATIVAS = 3;
 const MAX_CAPTURA = 8 * 1024 * 1024;
 const APLICATIVOS = ['Google Chrome.app/Contents/MacOS/Google Chrome', 'Microsoft Edge.app/Contents/MacOS/Microsoft Edge', 'Brave Browser.app/Contents/MacOS/Brave Browser', 'Chromium.app/Contents/MacOS/Chromium'];
 const NOMES_NO_PATH = ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser', 'chrome', 'microsoft-edge', 'brave-browser'];
@@ -81,7 +82,7 @@ async function conferirPrevia(porta, id) {
  * Grava `temas/<id>/previa/sala-<n>.png` (n de 1 a 3) com o tema em prévia, no modo demonstração. O navegador escreve
  * numa pasta temporária, apagada no fim junto com o perfil; só um PNG conferido entra na pasta do tema.
  */
-export async function capturar({ id, porta, home = homedir(), env = process.env, aviso = () => {} }) {
+export async function capturar({ id, porta, home = homedir(), env = process.env, aviso = () => {}, limiteMs = 40_000 }) {
   idValido(id);
   cadeiaSegura(home, id);
   if (!existsSync(join(home, '.expediente', 'host', 'temas', id, 'tema.json'))) throw new Error(`o tema "${id}" não existe em ~/.expediente/host/temas`);
@@ -94,20 +95,26 @@ export async function capturar({ id, porta, home = homedir(), env = process.env,
   try {
     for (const n of SALAS) {
       const saida = join(temporaria, `sala-${n}.png`);
-      const r = spawnSync(navegador, argsDoNavegador({ perfil: join(temporaria, `perfil-${n}`), saida, url: urlDaPrevia('127.0.0.1', porta, id, `mock=1&sessions=10&seed=12&sala=${n}&`) }), {
-        env: { PATH: env.PATH ?? '', HOME: env.HOME ?? home },
-        stdio: ['ignore', 'ignore', 'pipe'],
-        timeout: 90_000,
-        killSignal: 'SIGKILL',
-        encoding: 'utf8',
-      });
       let png;
-      try {
-        if (statSync(saida).size <= MAX_CAPTURA) png = readFileSync(saida);
-      } catch {
-        // sem arquivo: cai na mensagem abaixo
+      let r;
+      // O navegador às vezes trava na partida (visto no Chrome do macOS sob carga): quem passa do limite é morto e tenta de novo.
+      for (let tentativa = 1; tentativa <= TENTATIVAS && !png; tentativa++) {
+        r = spawnSync(navegador, argsDoNavegador({ perfil: join(temporaria, `perfil-${n}-${tentativa}`), saida, url: urlDaPrevia('127.0.0.1', porta, id, `mock=1&sessions=10&seed=12&sala=${n}&`) }), {
+          env: { PATH: env.PATH ?? '', HOME: env.HOME ?? home },
+          stdio: ['ignore', 'ignore', 'pipe'],
+          timeout: limiteMs,
+          killSignal: 'SIGKILL',
+          encoding: 'utf8',
+        });
+        try {
+          if (statSync(saida).size <= MAX_CAPTURA) png = readFileSync(saida);
+        } catch {
+          // sem arquivo: tenta de novo se o navegador estourou o limite, senão cai na mensagem abaixo
+        }
+        if (png && !ehPng(png)) png = undefined;
+        if (!png && r.error?.code !== 'ETIMEDOUT') break;
       }
-      if (!png || !ehPng(png)) throw falha(SEM_CAPTURA, `O navegador não gerou a captura da sala ${n} (saída ${r.status ?? r.signal}): ${umaLinha(r.stderr ?? '')}`);
+      if (!png) throw falha(SEM_CAPTURA, `O navegador não gerou a captura da sala ${n} (${r.error?.code === 'ETIMEDOUT' ? `passou de ${String(limiteMs / 1000).replace(".", ",")} s, ${TENTATIVAS} vezes` : `saída ${r.status ?? r.signal}`}): ${umaLinha(r.stderr ?? '')}`);
       const destino = join(pasta, `sala-${n}.png`);
       gravarArquivoComum(destino, png);
       gravadas.push(destino);

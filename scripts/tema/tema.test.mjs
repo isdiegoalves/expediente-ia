@@ -812,7 +812,7 @@ ${corpo || `for a in "$@"; do case "$a" in --screenshot=*) cp "${join(raiz, 'cap
       assert.ok(args.includes('--force-prefers-reduced-motion'));
       const perfil = valorDe(args, '--user-data-dir=');
       const saida = valorDe(args, '--screenshot=');
-      assert.match(perfil, new RegExp(`^/.+/expediente-captura-\\w+/perfil-${n}$`));
+      assert.match(perfil, new RegExp(`^/.+/expediente-captura-\\w+/perfil-${n}-1$`));
       assert.match(saida, new RegExp(`^/.+/expediente-captura-\\w+/sala-${n}\\.png$`));
       assert.ok(!perfil.startsWith(home) && !saida.startsWith(home), 'o navegador não escreve dentro do HOME nem na pasta do tema');
       assert.equal(args.filter((a) => /^https?:/.test(a) || /localhost|0\.0\.0\.0/.test(a)).length, 1, 'um só endereço, o 127.0.0.1');
@@ -835,11 +835,41 @@ ${corpo || `for a in "$@"; do case "$a" in --screenshot=*) cp "${join(raiz, 'cap
       const r = await cliAsync(['capturar', ID, '--porta', String(porta)], { PATH: `${bin}:/usr/bin:/bin` });
       assert.equal(r.code, SEM_CAPTURA, r.erro);
       assert.match(r.erro, /não gerou a captura da sala 1/);
+      assert.equal(chamadas().length, 1, 'falha rápida não é refeita: só o navegador que estoura o limite');
       assert.deepEqual(readdirSync(previa()), []);
       const perfil = valorDe(chamadas()[0], '--user-data-dir=');
       assert.equal(existsSync(perfil), false);
       assert.equal(existsSync(join(perfil, '..')), false);
     }
+  });
+
+  test('navegador que trava na partida é morto no limite e a captura tenta de novo', async () => {
+    comTemaEmHome();
+    const marca = join(raiz, `travou-${Math.random().toString(36).slice(2)}`);
+    navegadorFalso(`if [ ! -e "${marca}" ]; then : > "${marca}"; exec sleep 30; fi\nfor a in "$@"; do case "$a" in --screenshot=*) cp "${join(raiz, 'captura-pronta.png')}" "\${a#--screenshot=}";; esac; done`);
+    const { porta } = await aceita();
+    const t0 = Date.now();
+    const gravadas = await capturaMod.capturar({ id: ID, porta, home, env: { PATH: `${bin}:/usr/bin:/bin`, EXPEDIENTE_APLICATIVOS: apps }, limiteMs: 700 });
+    assert.ok(Date.now() - t0 < 10_000, 'o navegador travado não foi morto no limite');
+    assert.equal(gravadas.length, 3);
+    assert.equal(chamadas().length, 4, 'a primeira chamada travou e foi refeita');
+    assert.deepEqual(readdirSync(previa()).sort(), ['sala-1.png', 'sala-2.png', 'sala-3.png']);
+    const perfis = chamadas().map((a) => valorDe(a, '--user-data-dir='));
+    assert.equal(new Set(perfis).size, 4, 'cada tentativa usa um perfil novo');
+    for (const p of perfis) assert.equal(existsSync(p), false);
+  });
+
+  test('navegador que sempre trava: desiste na terceira tentativa com código próprio e não deixa nada', async () => {
+    comTemaEmHome();
+    navegadorFalso('exec sleep 30');
+    const { porta } = await aceita();
+    await assert.rejects(
+      capturaMod.capturar({ id: ID, porta, home, env: { PATH: `${bin}:/usr/bin:/bin`, EXPEDIENTE_APLICATIVOS: apps }, limiteMs: 300 }),
+      (e) => e.codigo === SEM_CAPTURA && /sala 1 \(passou de 0,3 s, 3 vezes\)/.test(e.message),
+    );
+    assert.equal(chamadas().length, 3);
+    assert.deepEqual(readdirSync(previa()), []);
+    for (const a of chamadas()) assert.equal(existsSync(valorDe(a, '--user-data-dir=')), false);
   });
 
   test('sem navegador instalado: código próprio, diz isso, entrega as URLs e não grava nada', async () => {
