@@ -58,8 +58,8 @@ function registro(over: Record<string, unknown>): string {
   return JSON.stringify({ sessionId: 's', cwd: `/projetos/${SENTINELA}`, name: SENTINELA, ...over })
 }
 
-function mundo(on: On, arquivos: Record<string, string>, opts: { semProcess?: boolean } = {}) {
-  const clock = mock.clock(on, { now: NOW })
+function mundo(on: On, arquivos: Record<string, string>, opts: { semProcess?: boolean; inicio?: number } = {}) {
+  const clock = mock.clock(on, { now: opts.inicio ?? NOW })
   mock.env(on, { HOME })
   const fs = new Map<string, Arquivo>(Object.entries(arquivos).map(([p, text]) => [p, { text, mtimeMs: NOW - 60_000 }]))
   const comandos: string[][] = []
@@ -121,13 +121,20 @@ describe('amostrador horário', () => {
     })
   })
 
-  test('uma amostra por hora: a segunda rodada na mesma hora não regrava; na hora seguinte grava outra', async ($, on) => {
-    const w = mundo(on, REGISTROS)
+  test('uma amostra por hora: a segunda rodada na mesma hora não regrava', async ($, on) => {
+    const w = mundo(on, REGISTROS, { inicio: Date.parse('2026-10-09T12:40:00Z') })
     await $.session.start(START)
     await w.clock.advance(1_000)
     await w.clock.advance(10 * 60_000)
     expect(w.escritas.length).toBe(1)
-    await w.clock.advance(60 * 60_000)
+  })
+
+  test('na hora seguinte grava outra amostra', async ($, on) => {
+    const w = mundo(on, REGISTROS, { inicio: Date.parse('2026-10-09T12:55:00Z') })
+    await $.session.start(START)
+    await w.clock.advance(1_000)
+    expect(w.escritas.length).toBe(1)
+    await w.clock.advance(10 * 60_000)
     expect(w.escritas.length).toBe(2)
   })
 
@@ -135,16 +142,16 @@ describe('amostrador horário', () => {
     const antigas = Object.fromEntries(
       Array.from({ length: 23 }, (_, i) => [arquivoAmostraOf(HOME, `2026-10-08T${String(i).padStart(2, '0')}`, '.claude'), '{}']),
     )
-    const w = mundo(on, { ...REGISTROS, ...antigas })
+    const w = mundo(on, { ...REGISTROS, ...antigas }, { inicio: Date.parse('2026-10-09T12:55:00Z') })
     await $.session.start(START)
     await w.clock.advance(1_000)
     expect(w.escritas).toEqual([arquivoAmostraOf(HOME, '2026-10-09T12', '.claude'), marcadorAmostraOf(HOME, '.claude')])
     const comandos = w.comandos.length
-    await w.clock.advance(60 * 60_000)
+    await w.clock.advance(10 * 60_000)
     expect(w.escritas.length).toBe(2)
     expect(w.comandos.length).toBe(comandos)
     w.fs.delete(marcadorAmostraOf(HOME, '.claude'))
-    await w.clock.advance(60 * 60_000)
+    await w.clock.advance(10 * 60_000)
     expect(w.escritas.length).toBe(4)
   })
 
