@@ -1,5 +1,6 @@
 // Ponto de entrada do cliente: tema -> store (dados) -> mundo (canvas) -> UI (painéis).
 import { OfficeStore } from './net/store';
+import { salaPedida, salaPelaOrdem } from './enquadrar';
 import { receberTokenDaUrl } from './net/token';
 import { carregarTema, tema } from './tema';
 import { aplicarFonte, aplicarPaleta } from './tema/aplicar';
@@ -28,6 +29,15 @@ void (async () => {
     if (chave !== undefined && t.chave !== chave) location.reload();
   });
   void aplicarFonte(tema(), ui);
+  const sala = salaPedida(location.search);
+  if (sala !== null) {
+    const parar = store.on('snapshot', (snap) => {
+      const alvo = salaPelaOrdem(snap.rooms, sala);
+      if (!alvo) return;
+      parar();
+      setTimeout(() => world.focusRoom(alvo.id), 1_500);
+    });
+  }
   store.connect();
 
   // Facilita a depuração pelo console do navegador.
