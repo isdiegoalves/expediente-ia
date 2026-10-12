@@ -76,7 +76,6 @@ export function relatorio(tema) {
   return { texto: linhas.join('\n'), reprovados: reprovados.length, propostas };
 }
 
-/** Cópia do tema com as propostas aplicadas; o texto sem proposta fica como está. */
 export function aplicarPropostas(tema, propostas) {
   const novo = clonar(tema);
   for (const [token, p] of propostas) if (p) definir(novo.paleta, token, p.para);

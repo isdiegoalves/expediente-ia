@@ -35,7 +35,6 @@ export function cadeiaSegura(home, ...partes) {
   }
 }
 
-/** Cria as pastas de `partes` (depois de conferir a cadeia) e devolve o caminho da última. */
 export function criarPasta(home, ...partes) {
   cadeiaSegura(home, ...partes);
   const alvo = join(pastaDosTemas(home), ...partes);
@@ -55,7 +54,6 @@ export function destinoGravavel(destino) {
   if (st && !st.isFile()) throw new Error(`${destino} não é arquivo comum; recusado`);
 }
 
-/** Grava `dados` em `destino` sem seguir link simbólico no último componente e só sobre arquivo comum. */
 export function gravarArquivoComum(destino, dados) {
   destinoGravavel(destino);
   const fd = openSync(destino, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW, 0o600);

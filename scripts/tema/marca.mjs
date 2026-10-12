@@ -9,14 +9,11 @@ import { misturar } from './cor.mjs';
 import { cadeiaSegura, pastaDosTemas } from './confinar.mjs';
 import { caber, ehPng, gravarPng, lerPng, MAX_BYTES_ENTRADA } from './png.mjs';
 
-export { pastaDosTemas };
-
 export const RAIZ = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 export const PADRAO = join(RAIZ, 'client/public/temas/padrao');
 const ID = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const COR = /^#[0-9a-fA-F]{6}$/;
 const CHAVES = { raiz: ['id', 'nome', 'cores', 'logo', 'tipografia', 'fontes', 'salas'], cores: ['primaria', 'secundaria', 'destaque', 'fundo', 'texto'] };
-
 
 export function caminhoSeguro(valor, rotulo) {
   if (typeof valor !== 'string' || !valor || valor.length > 500) return `${rotulo}: caminho ausente ou longo demais`;
@@ -85,7 +82,6 @@ function placaCom(logo, fundo, borda) {
   return placa;
 }
 
-/** O tema candidato (objeto) a partir da marca já conferida e do tema padrão. */
 export function temaDaMarca(m, padrao, hoje, nomeLogo) {
   const t = JSON.parse(JSON.stringify(padrao));
   const { primaria, destaque } = m.cores;
