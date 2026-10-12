@@ -47,12 +47,18 @@ export const aleatorioHex = (): string => randomBytes(16).toString('hex');
 const hmacHex = (chave: Buffer, mensagem: string): string => createHmac('sha256', chave).update(mensagem, 'utf8').digest('hex');
 
 /**
+ * SHA-256 sobre o rótulo e K, e não um HMAC com K: uma chave que "só assina HMAC com K" (a do desenho anterior, que a página
+ * guardava) não calcula a derivação, então a separação dos papéis vale por construção. K puro nunca assina texto de fora.
+ */
+const derivar = (k: Buffer, papel: 'cliente' | 'servidor'): Buffer => createHash('sha256').update(`expediente/${papel}\n`).update(k).digest();
+
+/**
  * Duas chaves derivadas de K, uma por papel. K nunca vai ao navegador: a página recebe só a do cliente, que assina provas de cliente e
  * não consegue produzir a prova do servidor. Com uma chave só, uma página falsa servida na porta (com o Expediente parado) pediria à
  * chave guardada no navegador a assinatura de `servidor\n<nonce>` e passaria na conferência que o hook, o mod e o abrir fazem.
  */
-export const chaveDoCliente = (k: Buffer): Buffer => createHmac('sha256', k).update('expediente/cliente').digest();
-export const chaveDoServidor = (k: Buffer): Buffer => createHmac('sha256', k).update('expediente/servidor').digest();
+export const chaveDoCliente = (k: Buffer): Buffer => derivar(k, 'cliente');
+export const chaveDoServidor = (k: Buffer): Buffer => derivar(k, 'servidor');
 
 /** O que o servidor responde ao nonce do cliente: só quem tem K sabe (a chave do servidor, derivada de K). */
 export const provaDoServidor = (k: Buffer, nonce: string): string => hmacHex(chaveDoServidor(k), `servidor\n${nonce}`);

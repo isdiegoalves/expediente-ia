@@ -433,7 +433,7 @@ servidor cria ao subir. Ler (o escritório, o terminal somente leitura, o `/api/
 o servidor estar acessível apenas pelo próprio computador, como antes.
 
 **O token não viaja; uma chave derivada dele viaja uma vez.** O token (K) fica no arquivo e nunca sai do computador em claro. Dele
-derivam duas chaves, uma por papel: `HMAC(K, "expediente/cliente")` e `HMAC(K, "expediente/servidor")`. Quem escreve com o arquivo
+derivam duas chaves, uma por papel, por um resumo SHA-256 do rótulo e de K (`SHA-256("expediente/cliente\n" ‖ K)` e `SHA-256("expediente/servidor\n" ‖ K)`; não por HMAC com K, que uma chave que só assina com K calcularia). Quem escreve com o arquivo
 em mãos (o hook de permissões, o mod, o `npm run abrir` e o pré-voo) pede ao servidor um desafio, **confere** que ele prova ter K
 (um HMAC do nonce que o cliente mandou, com a chave do servidor) e só então manda, no cabeçalho `X-Expediente-Prova`, o HMAC do
 desafio, do método e do caminho, com a chave do cliente. A **página não tem K** e não confere o servidor: ela recebe só a chave do

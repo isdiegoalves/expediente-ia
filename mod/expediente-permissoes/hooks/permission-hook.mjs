@@ -186,7 +186,8 @@ export function readSecret(env = process.env) {
 const hmacHex = (chave, mensagem) => createHmac('sha256', chave).update(mensagem, 'utf8').digest('hex');
 
 /** Uma chave por papel, derivadas de K (a do arquivo): a página só recebe a do cliente e não produz a prova do servidor. */
-const derivar = (k, papel) => createHmac('sha256', k).update(`expediente/${papel}`).digest();
+// SHA-256 sobre o rótulo e K, não um HMAC com K: uma chave que só assina HMAC com K não calcula a derivação. K puro nunca assina texto de fora.
+const derivar = (k, papel) => createHash('sha256').update(`expediente/${papel}\n`).update(k).digest();
 
 /** O que o servidor responde ao nonce do cliente: só quem tem K sabe (chave do servidor). */
 export const serverProof = (k, nonce) => hmacHex(derivar(k, 'servidor'), `servidor\n${nonce}`);

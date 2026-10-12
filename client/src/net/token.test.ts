@@ -2,12 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { type ArmazemDeChave, AVISO_SEM_TOKEN, AVISO_TOKEN_RECUSADO, TOKEN_CABECALHO, TokenLocal } from './token';
 
 // Os mesmos vetores dos outros lados (server/test/prova-vetores.test.ts), conferidos com openssl. TOKEN é K (a página nunca o tem);
-// CHAVE é a chave do cliente, HMAC(K, "expediente/cliente"), o que o servidor entrega na troca do bilhete.
+// CHAVE é a chave do cliente, SHA-256("expediente/cliente\n" ‖ K), o que o servidor entrega na troca do bilhete.
 const TOKEN = '5e17e11a'.repeat(8);
-const CHAVE = '3c01a1e8b8f48bc085164d9c845167934b7c9f28f36cea7d44b3cdc57376e0a2';
+const CHAVE = 'a69dc70bd79ca70a947af7c6984ae0f2e4dc1604dcb5b97ef9fca5374600e78c';
 const DESAFIO = 'fedcba9876543210fedcba9876543210';
 const BILHETE = '00112233445566778899aabbccddeeff';
-const CLIENTE_POST = '58746d354a58f1b4d8641b70553f441c3364a53c3b4d95fd4fa44b05636aa4f4';
+const CLIENTE_POST = '186816cb2fb8ea208d90176df76ed2b6053c76390b48f55a0a804453b0c3418e';
 const CAMINHO = '/api/permissions/p-1/decision?x=1';
 
 function armazem(inicial: CryptoKey | null = null) {

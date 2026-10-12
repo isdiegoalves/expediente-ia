@@ -89,11 +89,11 @@ export function hmacSha256(chave: Uint8Array, mensagem: string): string {
   return bytesParaHex(sha256(juntar(emBloco(chave, 0x5c), dentro)))
 }
 
-const bytesDe = (hex: string): Uint8Array => hexParaBytes(hex)
-
 /** Uma chave por papel, derivadas de K (a do arquivo): a página só recebe a do cliente e não produz a prova do servidor. */
-export const chaveDoCliente = (k: Uint8Array): Uint8Array => bytesDe(hmacSha256(k, 'expediente/cliente'))
-export const chaveDoServidor = (k: Uint8Array): Uint8Array => bytesDe(hmacSha256(k, 'expediente/servidor'))
+// SHA-256 sobre o rótulo e K, não um HMAC com K: uma chave que só assina HMAC com K não calcula a derivação. K puro nunca assina texto de fora.
+const derivar = (k: Uint8Array, papel: 'cliente' | 'servidor'): Uint8Array => sha256(juntar(new TextEncoder().encode(`expediente/${papel}\n`), k))
+export const chaveDoCliente = (k: Uint8Array): Uint8Array => derivar(k, 'cliente')
+export const chaveDoServidor = (k: Uint8Array): Uint8Array => derivar(k, 'servidor')
 
 /** O que o servidor responde ao nonce do cliente: só quem tem K sabe (chave do servidor). */
 export const provaDoServidor = (k: Uint8Array, nonce: string): string => hmacSha256(chaveDoServidor(k), `servidor\n${nonce}`)

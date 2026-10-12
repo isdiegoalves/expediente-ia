@@ -109,8 +109,8 @@ Borda (`http/guard.ts`, vale para API, estáticos e Vite): `Host` precisa ser `l
 
 1. `GET /api/token/desafio?n=<nonce do cliente, 32 hex>` (sem prova) → `{desafio, prova}`: `desafio` são 32 hex aleatórios (60 s, uso
    único, só em memória, no máximo 1000 vivos) e `prova = hex(HMAC-SHA256(Ks, "servidor\n" + n))`. O cliente com o arquivo confere a prova (só quem
-   tem K a sabe fazer) antes de confiar no servidor. `K` são os 32 bytes do token; as chaves por papel são `Ks = HMAC(K, "expediente/servidor")`
-   e `Kc = HMAC(K, "expediente/cliente")`. Com uma chave só, a página (que guarda a chave no navegador) assinaria `servidor\n<nonce>` para
+   tem K a sabe fazer) antes de confiar no servidor. `K` são os 32 bytes do token; as chaves por papel são `Ks = SHA-256("expediente/servidor\n" ‖ K)`
+   e `Kc = SHA-256("expediente/cliente\n" ‖ K)` (um resumo, não um HMAC com K: uma chave que só assina HMAC com K não as calcula). Com uma chave só, a página (que guarda a chave no navegador) assinaria `servidor\n<nonce>` para
    uma página falsa servida na porta, que passaria na conferência.
 2. A escrita leva `<desafio>.<hex(HMAC-SHA256(Kc, "cliente\n" + desafio + "\n" + MÉTODO + "\n" + caminho com a consulta, como foi enviado))>`.
    O guard consome o desafio antes de comparar e compara em tempo constante: desafio desconhecido, vencido ou reusado, de outro

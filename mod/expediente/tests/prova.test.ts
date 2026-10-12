@@ -44,14 +44,21 @@ describe('a prova do protocolo', () => {
   const chave = hexParaBytes(TOKEN)
 
   test('os vetores conhecidos (servidor e cliente)', () => {
-    expect(provaDoServidor(chave, NONCE)).toBe('d52bafb794934f32c57a85d84641389f3166e34912e92860d15080b3872d3739')
-    expect(provaDoCliente(chave, DESAFIO, 'POST', '/api/permissions/p-1/decision?x=1')).toBe('58746d354a58f1b4d8641b70553f441c3364a53c3b4d95fd4fa44b05636aa4f4')
-    expect(provaDoCliente(chave, DESAFIO, 'GET', '/api/mod/focos')).toBe('00f3d2544e984b408048a3627db28b1f6af846ca195470a19d1e8bf08652da9b')
+    expect(provaDoServidor(chave, NONCE)).toBe('cbdfad1b9f8b06d8dcfdc5fb64d511fedb458c3af9aa91777ecfa67998ab50a8')
+    expect(provaDoCliente(chave, DESAFIO, 'POST', '/api/permissions/p-1/decision?x=1')).toBe('186816cb2fb8ea208d90176df76ed2b6053c76390b48f55a0a804453b0c3418e')
+    expect(provaDoCliente(chave, DESAFIO, 'GET', '/api/mod/focos')).toBe('95e5599e827f86562e2d79ad4e555e8cb9360c958b29da16b7a982ffd05a666a')
   })
 
   test('K nunca assina diretamente: as chaves por papel são derivadas (vetores conferidos com openssl) e diferentes entre si', () => {
-    expect(bytesParaHex(chaveDoCliente(chave))).toBe('3c01a1e8b8f48bc085164d9c845167934b7c9f28f36cea7d44b3cdc57376e0a2')
-    expect(bytesParaHex(chaveDoServidor(chave))).toBe('58285adde0468523f566a31895ad763189371771b1bb77fdcce069958a9f3d0b')
+    expect(bytesParaHex(chaveDoCliente(chave))).toBe('a69dc70bd79ca70a947af7c6984ae0f2e4dc1604dcb5b97ef9fca5374600e78c')
+    expect(bytesParaHex(chaveDoServidor(chave))).toBe('7aa2f20fdfb2e6b8a5908f9dfa61cd70a55f39998fe757c58eab2046163b297f')
+  })
+
+  test('nenhuma chave derivada é HMAC(K, x), para os rótulos e para os formatos de mensagem do protocolo', () => {
+    for (const x of ['expediente/cliente', 'expediente/servidor', 'expediente/cliente\n', 'expediente/servidor\n', 'cliente', 'servidor', '', `servidor\n${NONCE}`, `cliente\n${DESAFIO}\nPOST\n/api/demo`]) {
+      expect(hmacSha256(chave, x), x).not.toBe(bytesParaHex(chaveDoCliente(chave)))
+      expect(hmacSha256(chave, x), x).not.toBe(bytesParaHex(chaveDoServidor(chave)))
+    }
   })
 
   test('a chave que a página recebe (a do cliente) não produz a prova do servidor', () => {
