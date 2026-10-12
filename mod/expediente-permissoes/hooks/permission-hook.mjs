@@ -8,8 +8,9 @@
 // O Claude Code mostra o diálogo no terminal e roda este hook AO MESMO TEMPO (vale o que responder
 // primeiro); em subagentes em segundo plano o diálogo só aparece depois que o hook termina. O hook:
 // 1. lê do stdin o JSON do pedido (session_id, tool_name, tool_input, permission_suggestions...);
-// 2. manda para POST http://127.0.0.1:<porta>/api/permissions. Se o Expediente não responder, recusar
-//    (recurso desligado) ou disser que não há página aberta ou que não conhece a sessão, sai na hora,
+// 2. manda para POST http://127.0.0.1:<porta>/api/permissions, com o token local (~/.expediente/host/token) no
+//    cabeçalho X-Expediente-Token. Se o arquivo do token faltar, ou o Expediente não responder, recusar
+//    (recurso desligado, token errado) ou disser que não há página aberta ou que não conhece a sessão, sai na hora,
 //    sem decidir: o terminal segue normal;
 // 3. senão, espera a decisão em GET /api/permissions/:id/wait (respostas de até 25 s, em laço) até o
 //    tempo limite (padrão 5 min: --timeout <s> ou EXPEDIENTE_PERMISSION_TIMEOUT);
@@ -21,7 +22,9 @@
 //
 // Regras: Node puro (22+), sem dependências; nunca trava nem quebra a sessão (todo erro = sair sem
 // decidir). Só fala com 127.0.0.1. EXPEDIENTE_HOOK_DEBUG=1 escreve o que acontece no stderr.
-import { realpathSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const DEFAULT_PORT = 4848;
@@ -167,12 +170,22 @@ function readStdin() {
   });
 }
 
-/** Requisição ao Expediente local; null = fora do ar, tempo esgotado ou resposta ilegível. */
-async function call(base, method, path, body, timeoutMs) {
+/** O token local, ou undefined se o arquivo faltar, não puder ser lido ou não tiver 64 caracteres hexadecimais. Nunca vai para o debug. */
+export function readToken(env = process.env) {
+  try {
+    const token = readFileSync(join(env.HOME || homedir(), '.expediente', 'host', 'token'), 'utf8').trim();
+    return /^[0-9a-f]{64}$/.test(token) ? token : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Requisição ao Expediente local; null = fora do ar, tempo esgotado ou resposta ilegível. `token` só vai nas escritas. */
+async function call(base, method, path, body, timeoutMs, token) {
   try {
     const res = await fetch(`${base}${path}`, {
       method,
-      headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
+      headers: body === undefined ? {} : { 'Content-Type': 'application/json', ...(token ? { 'X-Expediente-Token': token } : {}) },
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(timeoutMs),
     });
@@ -205,9 +218,14 @@ export async function run(argv = process.argv.slice(2), env = process.env, stdin
     if (!input || typeof input !== 'object' || typeof input.session_id !== 'string' || typeof input.tool_name !== 'string') return undefined;
     if (input.hook_event_name !== undefined && input.hook_event_name !== 'PermissionRequest') return undefined;
 
+    const token = readToken(env);
+    if (!token) {
+      debug('sem o token local (~/.expediente/host/token): vale o terminal');
+      return undefined;
+    }
     const base = `http://127.0.0.1:${opts.port}`;
     const deadline = Date.now() + opts.timeoutMs;
-    const reg = await call(base, 'POST', '/api/permissions', requestBody(input, opts.timeoutMs), REGISTER_TIMEOUT_MS);
+    const reg = await call(base, 'POST', '/api/permissions', requestBody(input, opts.timeoutMs), REGISTER_TIMEOUT_MS, token);
     if (!reg || reg.status !== 201 || typeof reg.json?.id !== 'string') {
       debug(`sem desvio (${reg ? `${reg.status} ${JSON.stringify(reg.json ?? null)}` : 'Expediente fora do ar'})`);
       return undefined;

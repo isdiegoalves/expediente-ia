@@ -10,13 +10,12 @@ import { START_COINS, TASK_REWARD } from '../../shared/social/carteiras';
 import type { AgentInfo, ModSummary, OfficeSnapshot } from '../../shared/types';
 import { AccountsService } from '../accounts/service';
 import { createApiHandler } from '../http/app';
-import { createRequestGuard } from '../http/guard';
 import { Hub } from '../http/sse';
 import { setQuiet } from '../log';
 import { NameStore } from '../model/names';
 import { Office } from '../model/office';
 import { LivroSocial, SOCIAL_ARQUIVO } from '../social/livro';
-import { tempDir } from './fixtures';
+import { tempDir, guardDeTeste } from './fixtures';
 
 setQuiet(true);
 
@@ -166,7 +165,7 @@ async function subir(terminal: boolean): Promise<Servidor> {
   const livro = new LivroSocial({ arquivo: join(dir, SOCIAL_ARQUIVO), agentes: () => hub.current().agents, mudou: () => office.markDirty() });
   late.livro = livro;
   const api = createApiHandler({ office, hub, accounts, sources: () => [], version: 't', inDocker: false, terminal, mudarRitmo: (r) => livro.mudarRitmo(r) });
-  const guard = createRequestGuard();
+  const guard = guardDeTeste();
   const server = http.createServer((req, res) => {
     if (guard(req, res)) return;
     api(req, res, new URL(req.url ?? '/', 'http://x'));

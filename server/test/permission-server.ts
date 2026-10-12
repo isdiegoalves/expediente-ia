@@ -1,8 +1,11 @@
 // Servidor de teste para "responder pelo escritório": Office + Hub + rotas de verdade (guard, app e
 // /api/permissions) numa porta livre do 127.0.0.1, com um agente principal na sessão "sess-1".
 // Usado pelos testes das rotas e do hook (mod/expediente-permissoes/hooks/permission-hook.mjs rodado como processo).
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { AccountsService } from '../accounts/service';
 import { createApiHandler } from '../http/app';
 import { createRequestGuard } from '../http/guard';
@@ -11,7 +14,16 @@ import { NameStore } from '../model/names';
 import { Office } from '../model/office';
 import { createPermissionRoutes } from '../permissions/http';
 import { PermissionRegistry, type RegistryOptions } from '../permissions/registry';
-import { tempDir } from './fixtures';
+import { arquivoDoToken, lerToken } from '../token';
+import { TOKEN_DE_TESTE, tempDir } from './fixtures';
+
+
+/** HOME fictício com o token de teste em .expediente/host/token: o hook de verdade lê dali. Apagado ao fim do processo. */
+export const HOME_DE_TESTE = mkdtempSync(join(tmpdir(), 'expediente-home-'));
+const PONTE_DE_TESTE = join(HOME_DE_TESTE, '.expediente', 'host');
+mkdirSync(PONTE_DE_TESTE, { recursive: true });
+writeFileSync(arquivoDoToken(PONTE_DE_TESTE), `${TOKEN_DE_TESTE}\n`, { mode: 0o600 });
+process.on('exit', () => rmSync(HOME_DE_TESTE, { recursive: true, force: true }));
 
 export const MAIN = 'acc:1';
 export const SESSION = 'sess-1';
@@ -65,7 +77,7 @@ export async function servePermissions(opts: { enabled?: boolean; viewers?: numb
     terminal: enabled,
     permissions: registry ? createPermissionRoutes(registry) : undefined,
   });
-  const guard = createRequestGuard();
+  const guard = createRequestGuard(() => lerToken(arquivoDoToken(PONTE_DE_TESTE)));
   const server = http.createServer((req, res) => {
     if (guard(req, res)) return;
     if (!api(req, res, new URL(req.url ?? '/', 'http://x'))) res.writeHead(404).end();
@@ -101,7 +113,7 @@ export function request(
 ): Promise<{ status: number; json: unknown; text: string }> {
   const u = new URL(base);
   const data = opts.body === undefined ? undefined : typeof opts.body === 'string' ? opts.body : JSON.stringify(opts.body);
-  const headers: Record<string, string> = { ...(data !== undefined ? { 'Content-Type': 'application/json' } : {}), ...opts.headers };
+  const headers: Record<string, string> = { ...(data !== undefined ? { 'Content-Type': 'application/json' } : {}), 'X-Expediente-Token': TOKEN_DE_TESTE, ...opts.headers };
   return new Promise((ok, fail) => {
     const req = http.request({ host: u.hostname, port: u.port, path, method: opts.method ?? 'GET', headers }, (res) => {
       let text = '';

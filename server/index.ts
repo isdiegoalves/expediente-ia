@@ -29,6 +29,7 @@ import { LivroSocial, SOCIAL_ARQUIVO } from './social/livro';
 import { SessoesAppReader } from './sources/sessoes-app';
 import { ClaudeWatcher } from './sources/watcher';
 import { createBuildReader } from './build';
+import { arquivoDoToken, garantirToken, lerToken } from './token';
 import { carregarTema } from './tema/carregar';
 import { createVersaoReader } from './versao';
 
@@ -37,6 +38,16 @@ usarArquivoDoDono(join(config.hostDir, 'precos.json'));
 // Terminal, histórico e permissões: no container só com a publicação da porta confirmada pelo docker-up.
 const gate = createTerminalGate({ terminal: config.terminal, inDocker: config.inDocker, file: join(config.dataDir, PUBLICACAO_ARQUIVO) });
 const startedAt = Date.now();
+// No container o arquivo vem do docker-up (a pasta é montada só para leitura); no modo nativo, é criado aqui se faltar.
+const arquivoToken = arquivoDoToken(config.hostDir);
+const lerTokenDoDono = () => lerToken(arquivoToken);
+if (!config.inDocker) {
+  try {
+    garantirToken(arquivoToken);
+  } catch (err) {
+    log.warn(`Não consegui criar o token local: ${errMsg(err)}`);
+  }
+}
 
 const names = new NameStore(join(config.dataDir, 'names.json'));
 names.load();
@@ -150,6 +161,7 @@ const api = createApiHandler({
   sources: () => watcher.sources(),
   version: config.version,
   inDocker: config.inDocker,
+  token: lerTokenDoDono,
   terminal: gate.on,
   terminals,
   sessions: history,
@@ -190,7 +202,7 @@ if (config.dev) {
 }
 
 // Host/Origin/Content-Type: barra DNS rebinding e CSRF antes de qualquer rota (inclusive o Vite).
-const guard = createRequestGuard();
+const guard = createRequestGuard(lerTokenDoDono);
 
 server.on('request', (req, res) => {
   const url = parseUrl(req);
@@ -221,6 +233,9 @@ server.listen(config.port, config.host, () => {
     log.info(`   Conta ${a.detected.short} (${a.id}): ${src?.sessions ?? 0} sessão(ões) aberta(s) · uso: ${usage} · ${a.dir}`);
   }
   log.info(`   Tema: ${temaAtivo.id}.`);
+  const token = lerTokenDoDono();
+  if (token.ok) log.info('   Token local: pronto (toda escrita pela API o exige; npm run abrir abre o escritório já autorizado).');
+  else log.warn(`   Token local: ${token.motivo}; toda escrita pela API fica bloqueada.`);
   if (office.isDemo()) log.info('   Modo demonstração ligado (agentes simulados misturados aos reais).');
   const off = gate.offReason();
   if (off === undefined) log.info('   Terminal somente leitura: ligado (acesso só local).');

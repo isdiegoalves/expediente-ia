@@ -1,8 +1,10 @@
 // Construtores de linhas JSONL SINTÉTICAS no formato dos transcripts do Claude Code (para testes).
 // Nada aqui vem de conversas reais.
 import { mkdirSync, mkdtempSync, writeFileSync, appendFileSync, rmSync } from 'node:fs';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createRequestGuard } from '../http/guard';
 
 let n = 0;
 const uuid = () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`;
@@ -135,4 +137,15 @@ export function writeLines(path: string, lines: string[]): void {
 
 export function appendLines(path: string, lines: string[]): void {
   appendFileSync(path, lines.map((l) => `${l}\n`).join(''));
+}
+
+export const TOKEN_DE_TESTE = 'ab'.repeat(32);
+
+/** O guard de verdade, com o token certo carimbado em todo pedido: para os testes de rota, que não tratam do token. */
+export function guardDeTeste(): (req: IncomingMessage, res: ServerResponse) => boolean {
+  const guard = createRequestGuard(() => ({ ok: true, token: TOKEN_DE_TESTE }));
+  return (req, res) => {
+    req.headers['x-expediente-token'] ??= TOKEN_DE_TESTE;
+    return guard(req, res);
+  };
 }

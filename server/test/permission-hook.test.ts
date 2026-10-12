@@ -4,13 +4,16 @@
 // abertas, e o tempo limite.
 // Os processos são assíncronos (spawn): o servidor roda neste mesmo processo.
 import { spawn } from 'node:child_process';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { createServer as createHttpServer } from 'node:http';
 import { createServer } from 'node:net';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { setQuiet } from '../log';
-import { hookJson, MAIN, servePermissions, type PermissionServer } from './permission-server';
+import { TOKEN_DE_TESTE } from './fixtures';
+import { HOME_DE_TESTE, hookJson, MAIN, servePermissions, type PermissionServer } from './permission-server';
 
 setQuiet(true);
 
@@ -49,7 +52,7 @@ interface HookRun {
 function runHook(stdin: string, args: string[], env: NodeJS.ProcessEnv = {}): Promise<HookRun> {
   return new Promise((ok, fail) => {
     const t0 = Date.now();
-    const child = spawn(process.execPath, [HOOK, ...args], { env: { PATH: process.env.PATH, HOME: '/nao/existe', ...env }, stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, [HOOK, ...args], { env: { PATH: process.env.PATH, HOME: HOME_DE_TESTE, ...env }, stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
     child.stdout.setEncoding('utf8').on('data', (c: string) => (stdout += c));
@@ -315,5 +318,71 @@ describe('permission-hook.mjs (funções)', () => {
     // Aprovar sem respostas não responde a pergunta: sem decisão. Recusar vale.
     expect(decisionOutput({ status: 'decided', behavior: 'allow' }, askJson())).toBeUndefined();
     expect(decisionOutput({ status: 'decided', behavior: 'deny' }, askJson())).toMatchObject({ hookSpecificOutput: { decision: { behavior: 'deny' } } });
+  });
+});
+
+describe('permission-hook.mjs e o token local (processo)', () => {
+  const homes: string[] = [];
+  afterEach(() => {
+    for (const h of homes.splice(0)) {
+      try {
+        chmodSync(join(h, '.expediente', 'host', 'token'), 0o600);
+      } catch {
+        // sem arquivo: nada a destravar
+      }
+      rmSync(h, { recursive: true, force: true });
+    }
+  });
+
+  /** HOME fictício; `conteudo` undefined = sem arquivo do token. */
+  function homeCom(conteudo: string | undefined, modo = 0o600): string {
+    const home = mkdtempSync(join(tmpdir(), 'expediente-hook-'));
+    homes.push(home);
+    mkdirSync(join(home, '.expediente', 'host'), { recursive: true });
+    if (conteudo !== undefined) writeFileSync(join(home, '.expediente', 'host', 'token'), conteudo, { mode: modo });
+    return home;
+  }
+
+  async function semDecisao(home: string, depuracao = false): Promise<HookRun> {
+    srv = await servePermissions();
+    const env: NodeJS.ProcessEnv = { HOME: home, ...(depuracao ? { EXPEDIENTE_HOOK_DEBUG: '1' } : {}) };
+    const r = await runHook(JSON.stringify(hookJson()), ['--port', String(srv.port), '--timeout', '5'], env);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toBe('');
+    expect(srv.registry!.size).toBe(0);
+    return r;
+  }
+
+  it('arquivo do token ausente: sai sem decisão e nem chega a pedir', async () => {
+    await semDecisao(homeCom(undefined));
+  });
+
+  it('arquivo ilegível (modo 000): sai sem decisão', async () => {
+    await semDecisao(homeCom(`${TOKEN_DE_TESTE}\n`, 0o000));
+  });
+
+  it('arquivo com formato inválido (curto, vazio, com lixo): sai sem decisão', async () => {
+    for (const conteudo of ['abc\n', '', `${TOKEN_DE_TESTE}x\n`, 'g'.repeat(64)]) {
+      await semDecisao(homeCom(conteudo));
+      await srv?.close();
+      srv = undefined;
+    }
+  });
+
+  it('token errado (o servidor responde 401): sai sem decisão, nada fica pendente e o valor não aparece na depuração', async () => {
+    const errado = 'e'.repeat(64);
+    const r = await semDecisao(homeCom(`${errado}\n`), true);
+    expect(r.stderr).toContain('401');
+    expect(r.stderr).not.toContain(errado);
+    expect(r.stderr).not.toContain(TOKEN_DE_TESTE);
+  });
+
+  it('token certo: o pedido é registrado e a decisão flui; a depuração não mostra o valor', async () => {
+    srv = await servePermissions();
+    const run = runHook(JSON.stringify(hookJson()), ['--port', String(srv.port)], { HOME: homeCom(`${TOKEN_DE_TESTE}\n`), EXPEDIENTE_HOOK_DEBUG: '1' });
+    expect(srv.registry!.decide(await pendingId(srv), { behavior: 'allow' })).toBe('ok');
+    const r = await run;
+    expect(JSON.parse(r.stdout).hookSpecificOutput.decision).toEqual({ behavior: 'allow' });
+    expect(r.stderr).not.toContain(TOKEN_DE_TESTE);
   });
 });

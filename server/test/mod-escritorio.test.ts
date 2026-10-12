@@ -7,12 +7,11 @@ import { acoesDaSessao, lerIr } from '../../mod/expediente/hooks/escritorio';
 import { parseSummary, statusText, summaryText } from '../../mod/expediente/hooks/resumo';
 import { AccountsService } from '../accounts/service';
 import { createApiHandler } from '../http/app';
-import { createRequestGuard } from '../http/guard';
 import { Hub } from '../http/sse';
 import { setQuiet } from '../log';
 import { NameStore } from '../model/names';
 import { Office } from '../model/office';
-import { tempDir } from './fixtures';
+import { tempDir, guardDeTeste } from './fixtures';
 
 setQuiet(true);
 
@@ -60,7 +59,7 @@ beforeEach(async () => {
   const hub = new Hub(office, { throttleMs: 10 });
   hub.start();
   const api = createApiHandler({ office, hub, accounts, sources: () => [], version: 't', inDocker: false });
-  const guard = createRequestGuard();
+  const guard = guardDeTeste();
   server = http.createServer((req, res) => {
     if (guard(req, res)) return;
     api(req, res, new URL(req.url ?? '/', 'http://x'));

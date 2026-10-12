@@ -14,9 +14,8 @@ import { NameStore } from '../model/names';
 import { Office } from '../model/office';
 import type { TerminalParser } from '../sources/terminal';
 import { ClaudeWatcher, encodeCwd } from '../sources/watcher';
-import { appendLines, L, tempDir, writeLines } from '../test/fixtures';
+import { appendLines, L, tempDir, writeLines, guardDeTeste } from '../test/fixtures';
 import { createApiHandler } from './app';
-import { createRequestGuard } from './guard';
 import { Hub } from './sse';
 import { MAX_STREAMS, TerminalStreams, type TerminalOptions } from './terminal';
 
@@ -101,7 +100,7 @@ async function serve(opts: { terminal?: boolean; streams?: Partial<TerminalOptio
   const paths = new Map<string, string>();
   const terminals = new TerminalStreams({ office, transcriptPathOf: (id) => paths.get(id), createParser: fakeParser, pollMs: 20, demoPollMs: 20, ...opts.streams });
   const api = createApiHandler({ office, hub, accounts, sources: () => [], version: 't', inDocker: false, terminal, terminals });
-  const guard = createRequestGuard();
+  const guard = guardDeTeste();
   const server = http.createServer((req, res) => {
     if (guard(req, res)) return;
     if (!api(req, res, new URL(req.url ?? '/', 'http://x'))) res.writeHead(404).end();

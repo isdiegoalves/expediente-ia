@@ -7,9 +7,8 @@ import { DayStatsService } from '../history/daystats';
 import { setQuiet } from '../log';
 import { NameStore } from '../model/names';
 import { Office } from '../model/office';
-import { tempDir } from '../test/fixtures';
+import { tempDir, guardDeTeste } from '../test/fixtures';
 import { createApiHandler } from './app';
-import { createRequestGuard } from './guard';
 import { Hub } from './sse';
 import { parseStatsQuery } from './stats';
 
@@ -62,7 +61,7 @@ describe('GET /api/stats', () => {
     stats = new DayStatsService({ dir: null, tz: 'UTC', snapshot: () => hub.current() });
     stats.load();
     const api = createApiHandler({ office, hub, accounts, sources: () => [], version: '9.9.9', inDocker: false, stats });
-    const guard = createRequestGuard();
+    const guard = guardDeTeste();
     const server = http.createServer((req, res) => {
       if (guard(req, res)) return;
       if (!api(req, res, new URL(req.url ?? '/', 'http://x'))) res.end();

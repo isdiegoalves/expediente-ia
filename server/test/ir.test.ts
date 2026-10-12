@@ -5,12 +5,11 @@ import type { IrInfo, OfficeSnapshot } from '../../shared/types';
 import { AccountsService } from '../accounts/service';
 import { Hub } from '../http/sse';
 import { createApiHandler } from '../http/app';
-import { createRequestGuard } from '../http/guard';
 import { NONCES_POR_AGENTE, urlPermitida } from '../http/ir';
 import { setQuiet } from '../log';
 import { NameStore } from '../model/names';
 import { Office } from '../model/office';
-import { tempDir } from './fixtures';
+import { tempDir, guardDeTeste } from './fixtures';
 
 setQuiet(true);
 
@@ -80,7 +79,7 @@ beforeEach(async () => {
   const hub = new Hub(office, { throttleMs: 10 });
   hub.start();
   const api = createApiHandler({ office, hub, accounts, sources: () => [], version: 't', inDocker: false, now: () => relogio });
-  const guard = createRequestGuard();
+  const guard = guardDeTeste();
   server = http.createServer((req, res) => {
     if (guard(req, res)) return;
     api(req, res, new URL(req.url ?? '/', 'http://x'));

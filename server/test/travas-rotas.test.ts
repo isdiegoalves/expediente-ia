@@ -7,12 +7,14 @@ const ler = (arquivo: string) => readFileSync(join(__dirname, '..', arquivo), 'u
 interface Fontes {
   app: string;
   index: string;
+  guard: string;
   delegadas: Record<string, string>;
 }
 
 const FONTES: Fontes = {
   app: ler('http/app.ts'),
   index: ler('index.ts'),
+  guard: ler('http/guard.ts'),
   delegadas: { 'tema.ts': ler('http/tema.ts'), 'timeline.ts': ler('http/timeline.ts'), 'stats.ts': ler('http/stats.ts') },
 };
 
@@ -99,6 +101,37 @@ const PEDIDO = [
   "if (!res.headersSent) sendJson(res, 500, { error: 'erro interno' });",
   'else res.destroy();',
   '}',
+];
+
+// O que o guard faz com um pedido que não é GET nem HEAD, do método até a saída de OPTIONS: o Origin, o caminho como a rota o lê,
+// e o token (cobrado em todo /api/, falhando fechado se o servidor não tem token). Qualquer instrução a mais ou a menos nesse trecho derruba o teste.
+const COBRANCA_DO_TOKEN = [
+  "const method = req.method ?? 'GET';",
+  "if (method === 'GET' || method === 'HEAD') return false;",
+  "const origin = typeof req.headers.origin === 'string' ? req.headers.origin : undefined;",
+  "if (method !== 'OPTIONS' && !originAllowed(origin, host)) {",
+  "reject(res, 403, 'Origem não permitida.');",
+  'return true;',
+  '}',
+  "let path = '/';",
+  'try {',
+  "path = new URL(req.url ?? '/', 'http://localhost').pathname;",
+  '} catch {',
+  '}',
+  "const api = path === '/api' || path.startsWith('/api/');",
+  'if (api) {',
+  'const lido = token();',
+  'if (!lido.ok) {',
+  'rejectJson(res, 503, `Escrita bloqueada: ${lido.motivo}. Rode npm run docker:up (ou reinicie o servidor) na pasta do Expediente.`);',
+  'return true;',
+  '}',
+  'const enviado = req.headers[TOKEN_CABECALHO];',
+  "if (!tokenConfere(typeof enviado === 'string' ? enviado : undefined, lido.token)) {",
+  "rejectJson(res, 401, 'Falta o token local, ou ele está errado. Abra o escritório pelo botão do painel do /escritorio ou rode npm run abrir na pasta do Expediente.');",
+  'return true;',
+  '}',
+  '}',
+  "if (method === 'OPTIONS') return false;",
 ];
 
 const semComentario = (linhas: string[]) => linhas.map((l) => l.trim()).filter((l) => l && !l.startsWith('//'));
@@ -202,6 +235,18 @@ function violacoes(f: Fontes): string[] {
     }
   }
 
+  const guardas = semComentario(f.guard.split('\n'));
+  const de = guardas.indexOf(COBRANCA_DO_TOKEN[0]!);
+  const ate = guardas.indexOf(COBRANCA_DO_TOKEN.at(-1)!);
+  if (de < 0 || ate < 0 || JSON.stringify(guardas.slice(de, ate + 1)) !== JSON.stringify(COBRANCA_DO_TOKEN)) {
+    v.push('o guard não cobra o token como deve: método, Origin, caminho, token (503 sem token, 401 com valor errado) e a saída de OPTIONS');
+  }
+  if (!/export const TOKEN_CABECALHO = 'x-expediente-token';/.test(f.guard)) v.push('o cabeçalho do token mudou no guard');
+  if (!/return timingSafeEqual\(resumo\(enviado \?\? ''\), resumo\(esperado\)\);/.test(f.guard)) v.push('o guard não compara o token em tempo constante');
+  if (!/^const guard = createRequestGuard\(lerTokenDoDono\);$/m.test(f.index) || !/^const lerTokenDoDono = \(\) => lerToken\(arquivoToken\);$/m.test(f.index)) {
+    v.push('o guard em index.ts não recebe o leitor do token do dono');
+  }
+
   const pedido = semComentario(entre(f.index, "server.on('request', (req, res) => {", '});', 'index.ts'));
   if (JSON.stringify(pedido) !== JSON.stringify(PEDIDO) || f.index.split("server.on('request'").length !== 2) {
     v.push('o tratamento do pedido em index.ts não é só guard, API e o resto');
@@ -217,6 +262,7 @@ function trocar(fonte: string, alvo: string, novo: string): string {
 
 const NOVA = "      office.setDemo(true);\n      return true;\n    }\n";
 const DEMO = "    if (path === '/api/demo') {";
+const noGuard = (alvo: string, novo: string): Fontes => ({ ...FONTES, guard: trocar(FONTES.guard, alvo, novo) });
 const naApp = (alvo: string, novo: string): Fontes => ({ ...FONTES, app: trocar(FONTES.app, alvo, novo) });
 const noTema = (alvo: string, novo: string): Fontes => ({ ...FONTES, delegadas: { ...FONTES.delegadas, 'tema.ts': trocar(FONTES.delegadas['tema.ts']!, alvo, novo) } });
 
@@ -252,6 +298,15 @@ const QUEBRAS: Record<string, () => Fontes> = {
   },
   'rota na delegada antes da recusa de escrita': () => noTema("    if (req.method !== 'GET' && req.method !== 'HEAD') {", "    if (path === '/api/tema/gravar') {\n      return true;\n    }\n    if (req.method !== 'GET' && req.method !== 'HEAD') {"),
   'delegada sem a recusa de escrita': () => noTema("if (req.method !== 'GET' && req.method !== 'HEAD') {", 'if (false) {'),
+  'guard sem a cobrança do token': () => noGuard('if (!tokenConfere(', 'if (false && !tokenConfere('),
+  'guard que falha aberto com o servidor sem token': () => noGuard('if (!lido.ok) {', 'if (false) {'),
+  'guard que deixa OPTIONS passar antes do token': () => noGuard("if (method === 'GET' || method === 'HEAD') return false;", "if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return false;"),
+  'guard que cobra o token só em POST': () => noGuard('if (api) {', "if (api && method === 'POST') {"),
+  'guard que lê o caminho sem normalizar': () => noGuard("path = new URL(req.url ?? '/', 'http://localhost').pathname;", "path = (req.url ?? '/').split('?')[0]!;"),
+  'guard que deixa uma rota da API sem token': () => noGuard('const api = path ===', "if (path.startsWith('/api/mod/')) return false;\n    const api = path ==="),
+  'guard que compara o token com ===': () => noGuard("return timingSafeEqual(resumo(enviado ?? ''), resumo(esperado));", "return enviado === esperado;"),
+  'guard que aceita token vazio': () => noGuard("const enviado = req.headers[TOKEN_CABECALHO];", "const enviado = req.headers[TOKEN_CABECALHO] || 'x';"),
+  'index.ts cria o guard sem o leitor do token do dono': () => ({ ...FONTES, index: trocar(FONTES.index, 'createRequestGuard(lerTokenDoDono)', "createRequestGuard(() => ({ ok: true, token: '' }))") }),
   'rota em index.ts, antes do handler da API': () => ({ ...FONTES, index: trocar(FONTES.index, '    if (guard(req, res)) return;\n', "    if (guard(req, res)) return;\n    if (url.pathname === '/api/novo') return;\n") }),
 };
 

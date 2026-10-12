@@ -55,7 +55,7 @@ describe('X-Forwarded-For', () => {
   afterEach(() => new Promise<void>((ok) => (server ? server.close(() => ok()) : ok())));
 
   async function status(xff: string): Promise<number> {
-    const guard = createRequestGuard();
+    const guard = createRequestGuard(() => ({ ok: false, motivo: 'sem token' }));
     server = http.createServer((req, res) => {
       if (!guard(req, res)) res.writeHead(200).end('ok');
     });

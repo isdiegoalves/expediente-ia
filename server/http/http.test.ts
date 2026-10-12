@@ -8,9 +8,9 @@ import { AccountsService } from '../accounts/service';
 import { setQuiet } from '../log';
 import { NameStore } from '../model/names';
 import { Office, type OfficeDeps } from '../model/office';
-import { tempDir } from '../test/fixtures';
+import { guardDeTeste, tempDir } from '../test/fixtures';
 import { createApiHandler, type ApiDeps } from './app';
-import { createRequestGuard, hostAllowed, hostnameOf, isLoopbackHost, originAllowed } from './guard';
+import { hostAllowed, hostnameOf, isLoopbackHost, originAllowed } from './guard';
 import { Hub } from './sse';
 import { createStaticHandler, IMMUTABLE, REVALIDATE } from './static';
 
@@ -49,7 +49,7 @@ async function start(extra: Partial<ApiDeps> = {}, officeExtra: Partial<OfficeDe
   hub.start();
   const api = createApiHandler({ office, hub, accounts, sources: () => [], version: '9.9.9', inDocker: false, ...extra });
   const serveStatic = createStaticHandler(dist);
-  const guard = createRequestGuard();
+  const guard = guardDeTeste();
   const server = http.createServer((req, res) => {
     if (guard(req, res)) return;
     const url = new URL(req.url ?? '/', 'http://x');

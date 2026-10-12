@@ -8,12 +8,11 @@ import { parseResumo, resumoTexto } from '../../mod/expediente/hooks/resumo';
 import { AccountsService } from '../accounts/service';
 import { Presenca } from '../history/resumo';
 import { createApiHandler } from '../http/app';
-import { createRequestGuard } from '../http/guard';
 import { Hub } from '../http/sse';
 import { setQuiet } from '../log';
 import { NameStore } from '../model/names';
 import { Office } from '../model/office';
-import { tempDir } from './fixtures';
+import { tempDir, guardDeTeste } from './fixtures';
 
 setQuiet(true);
 
@@ -34,7 +33,7 @@ async function subir(presenca: Presenca, terminal = true): Promise<void> {
   const hub = new Hub(office, { throttleMs: 10 });
   hub.start();
   const api = createApiHandler({ office, hub, accounts, sources: () => [], version: 't', inDocker: false, terminal, resumo: { presenca, inicio: T0 - 1_000 }, now: () => relogio });
-  const guard = createRequestGuard();
+  const guard = guardDeTeste();
   servidor = http.createServer((req, res) => {
     if (guard(req, res)) return;
     api(req, res, new URL(req.url ?? '/', 'http://x'));

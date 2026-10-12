@@ -13,9 +13,8 @@ import { NameStore } from '../model/names';
 import { Office } from '../model/office';
 import { openMainAgent, SessionHistory } from '../sources/history';
 import { encodeCwd } from '../sources/watcher';
-import { appendLines, L, tempDir, writeLines } from '../test/fixtures';
+import { appendLines, L, tempDir, writeLines, guardDeTeste } from '../test/fixtures';
 import { createApiHandler } from './app';
-import { createRequestGuard } from './guard';
 import { Hub } from './sse';
 import { TerminalStreams } from './terminal';
 
@@ -62,7 +61,7 @@ async function serve(opts: { terminal?: boolean } = {}): Promise<Served> {
   const terminals = new TerminalStreams({ office, transcriptPathOf: () => undefined, sessionPollMs: 20 });
   const history = new SessionHistory({ accounts: () => accounts.entries(), openAgentOf: (acc, sid) => openMainAgent(office.list(), acc, sid) });
   const api = createApiHandler({ office, hub, accounts, sources: () => [], version: 't', inDocker: false, terminal, terminals, sessions: history });
-  const guard = createRequestGuard();
+  const guard = guardDeTeste();
   const server = http.createServer((req, res) => {
     if (guard(req, res)) return;
     if (!api(req, res, new URL(req.url ?? '/', 'http://x'))) res.writeHead(404).end();

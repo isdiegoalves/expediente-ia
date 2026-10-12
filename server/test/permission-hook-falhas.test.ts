@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { hookJson } from './permission-server';
+import { HOME_DE_TESTE, hookJson } from './permission-server';
 
 const HOOK = resolve(__dirname, '../../mod/expediente-permissoes/hooks/permission-hook.mjs');
 const { parseOptions } = (await import(pathToFileURL(HOOK).href)) as { parseOptions(argv: string[], env: NodeJS.ProcessEnv): { port: number; timeoutMs: number } };
@@ -53,7 +53,7 @@ function fake(register: Reply, wait: Reply = { status: 200, body: '{"status":"pe
 function runHook(stdin: string, args: string[]): Promise<{ code: number | null; stdout: string; stderr: string; ms: number }> {
   return new Promise((ok, fail) => {
     const t0 = Date.now();
-    const child = spawn(process.execPath, [HOOK, ...args], { env: { PATH: process.env.PATH, HOME: '/nao/existe' }, stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, [HOOK, ...args], { env: { PATH: process.env.PATH, HOME: HOME_DE_TESTE }, stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
     child.stdout.setEncoding('utf8').on('data', (c: string) => (stdout += c));

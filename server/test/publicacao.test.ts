@@ -5,13 +5,12 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { AccountsService } from '../accounts/service';
 import { createApiHandler } from '../http/app';
-import { createRequestGuard } from '../http/guard';
 import { Hub } from '../http/sse';
 import { setQuiet } from '../log';
 import { NameStore } from '../model/names';
 import { Office } from '../model/office';
 import { createTerminalGate, planejarConfirmacao, PUBLICACAO_ARQUIVO } from '../publicacao';
-import { tempDir } from './fixtures';
+import { tempDir, guardDeTeste } from './fixtures';
 
 setQuiet(true);
 
@@ -126,7 +125,7 @@ describe('rotas atrás da trava da publicação', () => {
         res.writeHead(201).end('{}');
       },
     });
-    const guard = createRequestGuard();
+    const guard = guardDeTeste();
     server = http.createServer((req, res) => {
       if (guard(req, res)) return;
       if (!api(req, res, new URL(req.url ?? '/', 'http://x'))) res.writeHead(404).end();

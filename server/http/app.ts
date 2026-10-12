@@ -6,6 +6,7 @@ import { montarResumo } from '../../shared/resumo';
 import { RITMOS, type Ritmo } from '../../shared/social/regras';
 import type { VersaoView } from '../../shared/versao';
 import type { AgentInfo, ModAgentUsage, ModSummary, OfficeSnapshot, SourceInfo } from '../../shared/types';
+import type { TokenLido } from '../token';
 import type { AccountsService } from '../accounts/service';
 import type { DayStatsService } from '../history/daystats';
 import type { Presenca } from '../history/resumo';
@@ -51,6 +52,8 @@ export interface ApiDeps {
   versao?: () => VersaoView;
   /** Resumo "desde que você saiu" (GET /api/resumo e POST /api/resumo/presenca); `inicio` = quando o servidor subiu. */
   resumo?: { presenca: Presenca; inicio: number };
+  /** O token local, para o /api/health dizer se as escritas estão liberadas (a cobrança é do guard). */
+  token?: () => TokenLido;
   /** Relógio dos nonces do /ir (testes). */
   now?: () => number;
 }
@@ -188,6 +191,10 @@ function usageOf(a: AgentInfo, rooms: ReadonlyMap<string, string>, coins: number
   return out;
 }
 
+function tokenNoHealth(lido: TokenLido): { ok: boolean; motivo?: string } {
+  return lido.ok ? { ok: true } : { ok: false, motivo: lido.motivo };
+}
+
 /** Devolve um handler que trata /api/* e responde false para o resto. */
 export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: ServerResponse, url: URL) => boolean {
   const { office, hub, accounts } = deps;
@@ -259,6 +266,7 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
           docker: deps.inDocker,
           terminal: terminalOn() && !!deps.terminals,
           permissions: terminalOn() && !!deps.permissions,
+          token: deps.token ? tokenNoHealth(deps.token()) : { ok: false, motivo: 'sem leitor do token' },
           sources: deps.sources(),
           accounts: accounts.entries().map((a) => ({ id: a.id, usageStatus: accounts.usageView(a.id).status })),
         });
