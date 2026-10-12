@@ -276,7 +276,7 @@ ele sai. O hook manda o pedido (`session_id`, `agent_id`/`agent_type`, `cwd`, `t
 cortados, `permission_suggestions` e o próprio `timeout_ms`) e espera; com `decided` imprime
 `hookSpecificOutput.decision` (`allow`, com `updatedPermissions` = a sugestão original escolhida, ou `deny` com
 `message`/`interrupt`); com `released`, erro ou tempo esgotado sai sem imprimir nada (vale o terminal).
-`AskUserQuestion` não é desviado.
+As perguntas do agente (`AskUserQuestion`) passam pelo mesmo hook e dependem das mesmas condições.
 
 `permissions/registry.ts` (`PermissionRegistry`):
 
