@@ -25,7 +25,7 @@ Você orquestra. Tudo que um script resolve fica no script: quantização de ima
 
 1. **Entenda a marca.** Se `$ARGUMENTS` estiver vazio ou não disser qual marca, pergunte. Pergunte também se o dono tem logo (PNG), imagens de referência, kit de marca ou cores; se tiver, peça os caminhos de arquivos locais. Escolha um `id` curto (minúsculas, números e hífen, até 40 caracteres) e confirme o nome do tema.
 2. **Pasta de trabalho.** `... tema.mjs preparar <id>` cria `~/.expediente/host/temas/<id>/referencias/` e imprime o caminho. Copie para lá, sem baixar nada, só o que o dono apontou.
-3. **Coleta.** Leia as páginas oficiais da marca que o dono indicar ou que você achar no site dela. Para extrair cores de um CSS ou HTML, ele precisa estar no disco: peça permissão (regra 3), salve em `referencias/` e rode `... css <arquivo>`. Para imagens, rode `... paleta <imagem.png>`. Para SVG, `... rasterizar <entrada.svg> <saida.png> [lado]`.
+3. **Coleta.** Leia as páginas oficiais da marca que o dono indicar ou que você achar no site dela. Para extrair cores de um CSS ou HTML, ele precisa estar no disco: peça permissão (regra 3), salve em `referencias/` e rode `... css <arquivo>`. Para imagens, rode `... paleta <imagem.png>`. Para SVG, `... rasterizar <entrada.svg> <id> <nome.png> [lado]` (o PNG sai em `referencias/<nome.png>` do tema; o nome é só minúsculas, números, `_` e `-`).
 4. **Escolha as cores** e escreva `referencias/marca.json`:
 
    ```json

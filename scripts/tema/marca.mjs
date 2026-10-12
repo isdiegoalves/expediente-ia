@@ -6,7 +6,10 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validar } from '../../shared/tema/validar.ts';
 import { misturar } from './cor.mjs';
+import { cadeiaSegura, pastaDosTemas } from './confinar.mjs';
 import { caber, ehPng, gravarPng, lerPng, MAX_BYTES_ENTRADA } from './png.mjs';
+
+export { pastaDosTemas };
 
 export const RAIZ = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 export const PADRAO = join(RAIZ, 'client/public/temas/padrao');
@@ -14,7 +17,6 @@ const ID = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const COR = /^#[0-9a-fA-F]{6}$/;
 const CHAVES = { raiz: ['id', 'nome', 'cores', 'logo', 'tipografia', 'fontes', 'salas'], cores: ['primaria', 'secundaria', 'destaque', 'fundo', 'texto'] };
 
-export const pastaDosTemas = (home) => join(home, '.expediente', 'host', 'temas');
 
 export function caminhoSeguro(valor, rotulo) {
   if (typeof valor !== 'string' || !valor || valor.length > 500) return `${rotulo}: caminho ausente ou longo demais`;
@@ -152,6 +154,7 @@ export function montar(m, { home, baseDir, hoje = new Date().toISOString().slice
   const falhas = validar(esquema, tema);
   if (falhas.length) throw new Error(`o tema montado não passa no schema:\n- ${falhas.slice(0, 10).join('\n- ')}`);
 
+  cadeiaSegura(home, m.id, 'referencias');
   const temas = pastaDosTemas(home);
   const destino = join(temas, m.id);
   const jaTem = existsSync(destino) && readdirSync(destino).some((n) => n !== 'referencias');

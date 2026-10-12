@@ -1,7 +1,7 @@
 // Marca fictícia (Aurora Fictícia): nome, cores e logo inventados aqui; nada de marca real.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
@@ -326,25 +326,109 @@ describe('rasterizar', () => {
     ]) {
       const svg = join(raiz, 'ruim.svg');
       writeFileSync(svg, `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32">${corpo}</svg>`);
-      const r = cli('rasterizar', svg, join(raiz, 'saida.png'));
+      const r = cli('rasterizar', svg, 'aurora-ficticia', 'saida.png');
       assert.equal(r.code, 1);
       assert.match(r.erro, motivo);
     }
-    assert.equal(existsSync(join(raiz, 'saida.png')), false);
+    assert.equal(existsSync(join(pastaDoTema(), 'referencias/saida.png')), false);
   });
 
   test('recusa entrada que não é .svg e caminho com ".."', () => {
-    assert.match(cli('rasterizar', join(raiz, 'logo.png'), join(raiz, 'o.png')).erro, /precisa ser um arquivo \.svg/);
-    assert.match(cli('rasterizar', `${raiz}/../x.svg`, join(raiz, 'o.png')).erro, /"\.\."/);
+    assert.match(cli('rasterizar', join(raiz, 'logo.png'), 'aurora-ficticia', 'o.png').erro, /precisa ser um arquivo \.svg/);
+    assert.match(cli('rasterizar', `${raiz}/../x.svg`, 'aurora-ficticia', 'o.png').erro, /"\.\."/);
   });
 
   test('rasteriza um SVG limpo com o sips do macOS', { skip: process.platform !== 'darwin' }, () => {
     const svg = join(raiz, 'bom.svg');
     writeFileSync(svg, '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#c8285a"/><circle cx="32" cy="32" r="16" fill="#ffffff"/></svg>');
-    const saida = join(raiz, 'bom.png');
-    const r = cli('rasterizar', svg, saida, '64');
+    novoHome();
+    const r = cli('rasterizar', svg, 'aurora-ficticia', 'bom.png', '64');
+    const saida = join(pastaDoTema(), 'referencias/bom.png');
     assert.equal(r.code, 0, r.erro);
     const cores = quantizar(lerPng(readFileSync(saida)), 3).map((c) => c.cor);
     assert.ok(cores.includes('#c8285a') && cores.includes('#ffffff'), cores.join(','));
+  });
+});
+
+describe('gravação confinada a ~/.expediente/host/temas/<id>', () => {
+  const SVG_BOM = '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#c8285a"/><circle cx="32" cy="32" r="16" fill="#ffffff"/></svg>';
+  let fora;
+  let sentinela;
+  const comSentinela = () => {
+    novoHome();
+    fora = join(raiz, `fora-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(fora);
+    sentinela = join(fora, 'sentinela.png');
+    writeFileSync(sentinela, 'intacto');
+    writeFileSync(join(fora, 'tema.json'), 'intacto');
+    writeFileSync(join(raiz, 'bom.svg'), SVG_BOM);
+  };
+  const intactos = () => {
+    assert.equal(readFileSync(sentinela, 'utf8'), 'intacto');
+    assert.equal(readFileSync(join(fora, 'tema.json'), 'utf8'), 'intacto');
+    assert.deepEqual(readdirSync(fora).sort(), ['sentinela.png', 'tema.json']);
+  };
+  const temas = () => join(home, '.expediente/host/temas');
+  const vinculo = (alvo, caminho) => {
+    mkdirSync(dirname(caminho), { recursive: true });
+    symlinkSync(alvo, caminho);
+  };
+
+  test('saída com caminho absoluto fora da pasta do tema não sobrescreve nada', () => {
+    comSentinela();
+    const r = cli('rasterizar', join(raiz, 'bom.svg'), sentinela);
+    assert.equal(r.code, 1);
+    intactos();
+    const r2 = cli('rasterizar', join(raiz, 'bom.svg'), 'aurora-ficticia', sentinela);
+    assert.equal(r2.code, 1);
+    assert.match(r2.erro, /nome de arquivo/);
+    intactos();
+  });
+
+  test('nome com subpasta, "..", ou extensão que não é .png', () => {
+    comSentinela();
+    for (const nome of ['../x.png', 'a/b.png', 'x.svg', 'x.png.txt', '.oculto.png', 'X.PNG', '']) {
+      const r = cli('rasterizar', join(raiz, 'bom.svg'), 'aurora-ficticia', nome);
+      assert.equal(r.code, 1, nome);
+      assert.match(r.erro, /nome de arquivo/);
+    }
+    assert.equal(existsSync(join(temas(), 'aurora-ficticia')), false);
+  });
+
+  test('destino que é link simbólico para fora', () => {
+    comSentinela();
+    vinculo(sentinela, join(temas(), 'aurora-ficticia/referencias/logo.png'));
+    const r = cli('rasterizar', join(raiz, 'bom.svg'), 'aurora-ficticia', 'logo.png');
+    assert.equal(r.code, 1);
+    assert.match(r.erro, /link simbólico|não é arquivo comum/);
+    intactos();
+  });
+
+  test('referencias, o tema ou temas como link simbólico para fora: nada é gravado nem apagado', () => {
+    const rasterizarLogo = () => ['rasterizar', join(raiz, 'bom.svg'), 'aurora-ficticia', 'logo.png'];
+    const casos = [
+      [(alvo) => vinculo(alvo, join(temas(), 'aurora-ficticia/referencias')), () => [['preparar', 'aurora-ficticia'], rasterizarLogo(), ['montar', marca(marcaBase()), '--refazer']], true],
+      [(alvo) => vinculo(alvo, join(temas(), 'aurora-ficticia')), (m) => [['preparar', 'aurora-ficticia'], rasterizarLogo(), ['montar', m], ['montar', m, '--refazer'], ['contraste', 'aurora-ficticia', '--ajustar']], false],
+      [
+        (alvo) => {
+          mkdirSync(join(home, '.expediente/host'), { recursive: true });
+          symlinkSync(alvo, temas());
+        },
+        (m) => [['preparar', 'aurora-ficticia'], rasterizarLogo(), ['montar', m], ['montar', m, '--refazer'], ['contraste', 'aurora-ficticia', '--ajustar']],
+        false,
+      ],
+    ];
+    for (const [montarLink, comandos, comTemaReal] of casos) {
+      comSentinela();
+      const m = marca(marcaBase());
+      if (comTemaReal) assert.equal(cli('montar', m).code, 0);
+      montarLink(fora);
+      for (const args of comandos(m)) {
+        const r = cli(...args);
+        assert.equal(r.code, 1, args.join(' '));
+        assert.match(r.erro, /link simbólico/, args.join(' '));
+        intactos();
+      }
+    }
   });
 });
