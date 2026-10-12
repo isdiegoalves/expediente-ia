@@ -89,11 +89,17 @@ export function hmacSha256(chave: Uint8Array, mensagem: string): string {
   return bytesParaHex(sha256(juntar(emBloco(chave, 0x5c), dentro)))
 }
 
-/** O que o servidor responde ao nonce do cliente: só quem tem o token sabe. */
-export const provaDoServidor = (chave: Uint8Array, nonce: string): string => hmacSha256(chave, `servidor\n${nonce}`)
+const bytesDe = (hex: string): Uint8Array => hexParaBytes(hex)
 
-/** O que o cliente manda numa chamada: preso ao desafio, ao método e ao caminho com a consulta. */
-export const provaDoCliente = (chave: Uint8Array, desafio: string, metodo: string, caminho: string): string => hmacSha256(chave, `cliente\n${desafio}\n${metodo}\n${caminho}`)
+/** Uma chave por papel, derivadas de K (a do arquivo): a página só recebe a do cliente e não produz a prova do servidor. */
+export const chaveDoCliente = (k: Uint8Array): Uint8Array => bytesDe(hmacSha256(k, 'expediente/cliente'))
+export const chaveDoServidor = (k: Uint8Array): Uint8Array => bytesDe(hmacSha256(k, 'expediente/servidor'))
+
+/** O que o servidor responde ao nonce do cliente: só quem tem K sabe (chave do servidor). */
+export const provaDoServidor = (k: Uint8Array, nonce: string): string => hmacSha256(chaveDoServidor(k), `servidor\n${nonce}`)
+
+/** O que o cliente manda numa chamada: preso ao desafio, ao método e ao caminho com a consulta (chave do cliente). */
+export const provaDoCliente = (k: Uint8Array, desafio: string, metodo: string, caminho: string): string => hmacSha256(chaveDoCliente(k), `cliente\n${desafio}\n${metodo}\n${caminho}`)
 
 /** Comparação que não para no primeiro byte diferente. */
 export function iguaisHex(a: string, b: string): boolean {

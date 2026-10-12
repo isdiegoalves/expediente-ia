@@ -1,7 +1,8 @@
+import { createHmac } from 'node:crypto';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { aleatorioHex, chaveDoToken, provaDoCliente, provaDoServidor, type TokenLido } from '../token';
+import { aleatorioHex, chaveDoCliente, chaveDoToken, provaDoCliente, provaDoServidor, type TokenLido } from '../token';
 import { Autenticacao, BILHETE_VALIDADE_MS, DESAFIO_VALIDADE_MS, MAX_DESAFIOS } from './autenticacao';
 import { createRequestGuard } from './guard';
 
@@ -365,11 +366,12 @@ describe('bilhete e troca', () => {
     expect(r.headers['cache-control']).toBe('no-store');
   });
 
-  it('a troca devolve o segredo uma vez, sem prova de cliente, e sem guardar em cache', async () => {
+  it('a troca devolve a chave do cliente (nunca o token) uma vez, sem prova de cliente, e sem guardar em cache', async () => {
     const b = await bilhete();
     const r = await troca(b);
     expect(r.status).toBe(200);
-    expect(JSON.parse(r.body)).toEqual({ token: TOKEN });
+    expect(JSON.parse(r.body)).toEqual({ chave: chaveDoCliente(CHAVE).toString('hex') });
+    expect(r.body).not.toContain(TOKEN);
     expect(r.headers['cache-control']).toBe('no-store');
     const de = await troca(b);
     expect(de.status).toBe(401);
@@ -393,6 +395,20 @@ describe('bilhete e troca', () => {
     const limite = await bilhete();
     agora += BILHETE_VALIDADE_MS;
     expect((await troca(limite)).status).toBe(200);
+  });
+
+  it('a chave que a troca entrega assina provas de cliente que o guard aceita, mas não a prova do servidor; a do desenho anterior (o token como chave) leva 401', async () => {
+    const entregue = Buffer.from((JSON.parse((await troca(await bilhete())).body) as { chave: string }).chave, 'hex');
+    const assina = (chave: Buffer, mensagem: string) => createHmac('sha256', chave).update(mensagem).digest('hex');
+    const comoCliente = async (chave: Buffer) => {
+      const { desafio } = await pedirDesafio();
+      return enviar('POST', '/api/demo', { ...JSON_CT, 'X-Expediente-Prova': `${desafio}.${assina(chave, `cliente\n${desafio}\nPOST\n/api/demo`)}` });
+    };
+    expect((await comoCliente(entregue)).status).toBe(200);
+    expect((await comoCliente(CHAVE)).status).toBe(401);
+    const n = aleatorioHex();
+    expect(assina(entregue, `servidor\n${n}`)).not.toBe(provaDoServidor(CHAVE, n));
+    expect(assina(entregue, `servidor\n${n}`)).not.toBe(assina(CHAVE, `servidor\n${n}`));
   });
 
   it('o desafio não serve de bilhete, e o bilhete não serve de desafio', async () => {

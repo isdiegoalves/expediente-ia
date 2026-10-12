@@ -4,7 +4,7 @@
 import type { CommandRunInput, HttpResponse, On } from 'claude-code'
 import { describe, expect, mock, test } from 'claude-code/testing'
 import { htmlDoEscritorio } from '../hooks/abrir'
-import { chaveDoArquivo, provaDoCliente, provaDoServidor } from '../hooks/prova'
+import { chaveDoArquivo, chaveDoCliente, hmacSha256, provaDoCliente, provaDoServidor } from '../hooks/prova'
 
 const NOW = Date.parse('2026-10-12T12:00:00Z')
 const PORTA = '4853'
@@ -33,6 +33,8 @@ interface Mundo {
   token?: string
   /** O token que o servidor tem; diferente do arquivo = quem ocupa a porta não é o Expediente. */
   tokenDoServidor?: string
+  /** O impostor prova o servidor com a assinatura da chave que a página recebe (a do cliente). */
+  comAChaveDaPagina?: boolean
   mktemp?: string
   chmod?: number
 }
@@ -68,7 +70,7 @@ function mundo(on: On, m: Mundo = {}) {
     brutos.push(JSON.stringify([e.url, e.init ?? null]))
     if (e.url.includes('/api/token/desafio?n=')) {
       const n = new URL(e.url).searchParams.get('n') ?? ''
-      return { value: resposta(JSON.stringify({ desafio: DESAFIO, prova: provaDoServidor(chaveDoArquivo(m.tokenDoServidor ?? TOKEN)!, n) })) }
+      return { value: resposta(JSON.stringify({ desafio: DESAFIO, prova: m.comAChaveDaPagina ? hmacSha256(chaveDoCliente(chaveDoArquivo(TOKEN)!), `servidor\n${n}`) : provaDoServidor(chaveDoArquivo(m.tokenDoServidor ?? TOKEN)!, n) })) }
     }
     if (e.url.endsWith('/api/token/bilhete')) {
       const url = '/api/token/bilhete'
@@ -136,6 +138,17 @@ describe('"Abrir o escritório" no terminal', () => {
     expect(w.escritos).toEqual([])
     expect(w.saidas.join('\n')).toContain(`Quem responde na porta ${PORTA} não é o seu Expediente`)
     expect(w.brutos.join('\n')).not.toContain(TOKEN)
+  })
+
+  test('impostor que prova o servidor com a assinatura da chave da página: o mesmo que não ter o token, nada é pedido nem aberto', async ($, on) => {
+    const w = mundo(on, { token: TOKEN, comAChaveDaPagina: true })
+    await $.command.run(RUN)
+    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    await ui.press({ key: 'abrir-escritorio' })
+    await ui.unmount()
+    expect(w.bilhetes()).toBe(0)
+    expect(w.rodados.some((a) => ['mktemp', 'chmod', 'open'].includes(a[0]!))).toBe(false)
+    expect(w.saidas.join('\n')).toContain('não é o seu Expediente')
   })
 
   for (const mktemp of ['/etc', '/tmp/../etc/expediente-abrir.abcd1234', '/home/fulano/expediente-abrir.abcd1234', '', 'erro']) {

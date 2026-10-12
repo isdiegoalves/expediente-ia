@@ -1,7 +1,7 @@
 // A prova do token no mod: SHA-256 e HMAC em JavaScript puro, conferidos contra os vetores do NIST (FIPS 180-4) e da RFC 4231, e as duas
 // mensagens do protocolo contra os mesmos vetores do servidor (server/test/prova-vetores.test.ts), conferidos com openssl.
 import { describe, expect, test } from 'claude-code/testing'
-import { bytesParaHex, chaveDoArquivo, hexParaBytes, hmacSha256, iguaisHex, nonceAleatorio, provaDoCliente, provaDoServidor, sha256 } from '../hooks/prova'
+import { bytesParaHex, chaveDoArquivo, chaveDoCliente, chaveDoServidor, hexParaBytes, hmacSha256, iguaisHex, nonceAleatorio, provaDoCliente, provaDoServidor, sha256 } from '../hooks/prova'
 
 const texto = (s: string) => new TextEncoder().encode(s)
 const TOKEN = '5e17e11a'.repeat(8)
@@ -44,9 +44,19 @@ describe('a prova do protocolo', () => {
   const chave = hexParaBytes(TOKEN)
 
   test('os vetores conhecidos (servidor e cliente)', () => {
-    expect(provaDoServidor(chave, NONCE)).toBe('2bd2a945624115ad28aacc2465d4ed89a3135ae6f58c4e73e687f5d75ab8e4a3')
-    expect(provaDoCliente(chave, DESAFIO, 'POST', '/api/permissions/p-1/decision?x=1')).toBe('2475edeaa311b39075668ed854cbc3fd23334b904640120a3925f072b6e1be94')
-    expect(provaDoCliente(chave, DESAFIO, 'GET', '/api/mod/focos')).toBe('0d34a7211a64c5d2442a77242f4a59e5ada5ae83435d9f2795627537273f7385')
+    expect(provaDoServidor(chave, NONCE)).toBe('d52bafb794934f32c57a85d84641389f3166e34912e92860d15080b3872d3739')
+    expect(provaDoCliente(chave, DESAFIO, 'POST', '/api/permissions/p-1/decision?x=1')).toBe('58746d354a58f1b4d8641b70553f441c3364a53c3b4d95fd4fa44b05636aa4f4')
+    expect(provaDoCliente(chave, DESAFIO, 'GET', '/api/mod/focos')).toBe('00f3d2544e984b408048a3627db28b1f6af846ca195470a19d1e8bf08652da9b')
+  })
+
+  test('K nunca assina diretamente: as chaves por papel são derivadas (vetores conferidos com openssl) e diferentes entre si', () => {
+    expect(bytesParaHex(chaveDoCliente(chave))).toBe('3c01a1e8b8f48bc085164d9c845167934b7c9f28f36cea7d44b3cdc57376e0a2')
+    expect(bytesParaHex(chaveDoServidor(chave))).toBe('58285adde0468523f566a31895ad763189371771b1bb77fdcce069958a9f3d0b')
+  })
+
+  test('a chave que a página recebe (a do cliente) não produz a prova do servidor', () => {
+    expect(hmacSha256(chaveDoCliente(chave), `servidor\n${NONCE}`)).not.toBe(provaDoServidor(chave, NONCE))
+    expect(hmacSha256(chave, `servidor\n${NONCE}`)).not.toBe(provaDoServidor(chave, NONCE))
   })
 
   test('os prefixos separam as provas, e método e caminho entram na conta', () => {

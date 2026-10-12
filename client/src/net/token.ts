@@ -1,7 +1,8 @@
-// Prova do token local da página. O segredo nunca fica guardado como texto nem viaja: ele chega uma vez, trocado por um bilhete
-// de uso único que veio no fragmento da URL (`#b=<32 hex>`, que o navegador não manda ao servidor), vira uma chave HMAC que
-// não pode ser exportada, vai para o IndexedDB e o texto é descartado. Cada escrita pede um desafio ao servidor e manda a
-// assinatura dele, não o segredo. Sem chave, as escritas nem saem da página: respondem com o aviso dos passos.
+// Prova do token local da página. A página nunca tem o token (K): tem só a chave do cliente, derivada dele, que o servidor entrega
+// uma vez em troca de um bilhete de uso único que veio no fragmento da URL (`#b=<32 hex>`, que o navegador não manda ao servidor).
+// Ela vira uma chave HMAC que não pode ser exportada, vai para o IndexedDB e o texto é descartado. Cada escrita pede um desafio ao
+// servidor e manda a assinatura dele. Essa chave só assina provas de cliente: não produz a prova do servidor, então uma página
+// falsa na mesma origem não a usa para se passar pelo Expediente. Sem chave, as escritas nem saem da página: respondem com o aviso.
 
 export const TOKEN_CABECALHO = 'X-Expediente-Prova';
 
@@ -136,7 +137,7 @@ export class TokenLocal {
     try {
       const res = await this.buscar('/api/token/troca', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bilhete }) });
       if (!res.ok) return;
-      const texto = ((await res.json()) as { token?: unknown }).token;
+      const texto = ((await res.json()) as { chave?: unknown }).chave;
       if (typeof texto !== 'string' || !TOKEN_FORMATO.test(texto)) return;
       const bytes = doHex(texto);
       const chave = await this.cripto.subtle.importKey('raw', bytes, HMAC, false, ['sign']);

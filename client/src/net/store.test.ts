@@ -284,13 +284,14 @@ describe('fonte alternativa (timelapse)', () => {
 
 describe('personagem do projeto (store)', () => {
   const TOKEN = '5e17e11a'.repeat(8);
+  const CHAVE = '3c01a1e8b8f48bc085164d9c845167934b7c9f28f36cea7d44b3cdc57376e0a2';
   const BILHETE = '00112233445566778899aabbccddeeff';
   const DESAFIO = 'fedcba9876543210fedcba9876543210';
 
   /** `fetch` de um servidor que troca o bilhete, dá o desafio e responde o resto com `resto`. */
   const servidor = (resto: () => Response) =>
     vi.fn(async (url: string) => {
-      if (url === '/api/token/troca') return new Response(JSON.stringify({ token: TOKEN }), { status: 200 });
+      if (url === '/api/token/troca') return new Response(JSON.stringify({ chave: CHAVE }), { status: 200 });
       if (url.startsWith('/api/token/desafio')) return new Response(JSON.stringify({ desafio: DESAFIO, prova: 'x' }), { status: 200 });
       return resto();
     });

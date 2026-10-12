@@ -8,9 +8,9 @@ import { chaveDoToken, iguais, provaDoCliente, provaDoServidor } from '../token'
 const TOKEN = '5e17e11a'.repeat(8);
 const NONCE = '0123456789abcdef0123456789abcdef';
 const DESAFIO = 'fedcba9876543210fedcba9876543210';
-const SERVIDOR = '2bd2a945624115ad28aacc2465d4ed89a3135ae6f58c4e73e687f5d75ab8e4a3';
-const CLIENTE_POST = '2475edeaa311b39075668ed854cbc3fd23334b904640120a3925f072b6e1be94';
-const CLIENTE_GET = '0d34a7211a64c5d2442a77242f4a59e5ada5ae83435d9f2795627537273f7385';
+const SERVIDOR = 'd52bafb794934f32c57a85d84641389f3166e34912e92860d15080b3872d3739';
+const CLIENTE_POST = '58746d354a58f1b4d8641b70553f441c3364a53c3b4d95fd4fa44b05636aa4f4';
+const CLIENTE_GET = '00f3d2544e984b408048a3627db28b1f6af846ca195470a19d1e8bf08652da9b';
 const CAMINHO = '/api/permissions/p-1/decision?x=1';
 
 const hook = (await import(pathToFileURL(resolve(__dirname, '../../mod/expediente-permissoes/hooks/permission-hook.mjs')).href)) as {

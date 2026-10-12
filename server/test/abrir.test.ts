@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Autenticacao } from '../http/autenticacao';
 import { createRequestGuard } from '../http/guard';
-import { chaveDoToken, type TokenLido } from '../token';
+import { chaveDoCliente, chaveDoToken, type TokenLido } from '../token';
 
 const SCRIPT = resolve(__dirname, '../../scripts/abrir.mjs');
 const TOKEN = '5e17e11a'.repeat(8);
@@ -181,7 +181,7 @@ describe('abrir: o script de verdade, contra o servidor de verdade (com um "open
     expect(s.brutos.join('\n')).not.toContain(TOKEN);
     // O bilhete serve uma vez: a troca devolve o segredo e a segunda tentativa não.
     const troca = (b: string) => fetch(`http://127.0.0.1:${s.porta}/api/token/troca`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bilhete: b }) });
-    expect(await (await troca(bilhete)).json()).toEqual({ token: TOKEN });
+    expect(await (await troca(bilhete)).json()).toEqual({ chave: chaveDoCliente(chaveDoToken(TOKEN)).toString('hex') });
     expect((await troca(bilhete)).status).toBe(401);
   });
 

@@ -1,7 +1,7 @@
 // Autenticação das escritas: desafio e prova (HMAC) no lugar do token em claro, e o bilhete de uso único que leva o
 // segredo ao navegador. Quem cobra é o guard (guard.ts); aqui ficam o estado em memória e as três rotas /api/token/*.
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { aleatorioHex, iguais, NONCE_FORMATO, provaDoCliente, provaDoServidor, type TokenLido } from '../token';
+import { aleatorioHex, chaveDoCliente, iguais, NONCE_FORMATO, provaDoCliente, provaDoServidor, type TokenLido } from '../token';
 
 export const PROVA_CABECALHO = 'x-expediente-prova';
 export const DESAFIO_VALIDADE_MS = 60_000;
@@ -147,7 +147,7 @@ export class Autenticacao {
         const bilhete = (corpo as { bilhete?: unknown } | null)?.bilhete;
         if (typeof bilhete !== 'string' || !NONCE_FORMATO.test(bilhete)) return json(res, 400, { error: 'esperado {bilhete} com 32 hexadecimais minúsculos' });
         if (!this.bilhetes.consumir(bilhete)) return json(res, 401, { error: 'bilhete desconhecido, vencido ou já usado' });
-        json(res, 200, { token: lido.token });
+        json(res, 200, { chave: chaveDoCliente(lido.chave).toString('hex') });
       },
       () => json(res, 400, { error: 'JSON inválido' }),
     );

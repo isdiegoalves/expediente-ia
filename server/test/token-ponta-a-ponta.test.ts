@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { OfficeSnapshot } from '../../shared/types';
-import { aleatorioHex, chaveDoToken, provaDoCliente, provaDoServidor } from '../token';
+import { aleatorioHex, chaveDoCliente, chaveDoToken, provaDoCliente, provaDoServidor } from '../token';
 import { hookJson } from './permission-server';
 
 const ROOT = resolve(__dirname, '../..');
@@ -158,7 +158,8 @@ describe('token local, de ponta a ponta', () => {
     expect(b).toMatch(/^[0-9a-f]{32}$/);
     expect((await pedir('POST', '/api/token/troca', { body: { bilhete: aleatorioHex() } })).status).toBe(401);
     const troca = await pedir('POST', '/api/token/troca', { body: { bilhete: b } });
-    expect(JSON.parse(troca.text)).toEqual({ token: SENTINELA });
+    expect(JSON.parse(troca.text)).toEqual({ chave: chaveDoCliente(chaveDoToken(SENTINELA)).toString('hex') });
+    expect(troca.text).not.toContain(SENTINELA);
     expect((await pedir('POST', '/api/token/troca', { body: { bilhete: b } })).status).toBe(401);
   });
 

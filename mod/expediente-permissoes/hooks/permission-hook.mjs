@@ -185,11 +185,14 @@ export function readSecret(env = process.env) {
 
 const hmacHex = (chave, mensagem) => createHmac('sha256', chave).update(mensagem, 'utf8').digest('hex');
 
-/** O que o servidor responde ao nonce do cliente: só quem tem o token sabe. */
-export const serverProof = (chave, nonce) => hmacHex(chave, `servidor\n${nonce}`);
+/** Uma chave por papel, derivadas de K (a do arquivo): a página só recebe a do cliente e não produz a prova do servidor. */
+const derivar = (k, papel) => createHmac('sha256', k).update(`expediente/${papel}`).digest();
 
-/** O que o cliente manda numa chamada: preso ao desafio, ao método e ao caminho com a consulta. */
-export const clientProof = (chave, desafio, metodo, caminho) => hmacHex(chave, `cliente\n${desafio}\n${metodo}\n${caminho}`);
+/** O que o servidor responde ao nonce do cliente: só quem tem K sabe (chave do servidor). */
+export const serverProof = (k, nonce) => hmacHex(derivar(k, 'servidor'), `servidor\n${nonce}`);
+
+/** O que o cliente manda numa chamada: preso ao desafio, ao método e ao caminho com a consulta (chave do cliente). */
+export const clientProof = (k, desafio, metodo, caminho) => hmacHex(derivar(k, 'cliente'), `cliente\n${desafio}\n${metodo}\n${caminho}`);
 
 /** Compara os resumos SHA-256 (tamanhos diferentes não lançam e não vazam). */
 export function sameHex(a, b) {

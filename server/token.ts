@@ -46,11 +46,19 @@ export const aleatorioHex = (): string => randomBytes(16).toString('hex');
 
 const hmacHex = (chave: Buffer, mensagem: string): string => createHmac('sha256', chave).update(mensagem, 'utf8').digest('hex');
 
-/** O que o servidor responde ao nonce do cliente: só quem tem o token sabe. Os prefixos impedem usar a prova de um lado como a do outro. */
-export const provaDoServidor = (chave: Buffer, nonce: string): string => hmacHex(chave, `servidor\n${nonce}`);
+/**
+ * Duas chaves derivadas de K, uma por papel. K nunca vai ao navegador: a página recebe só a do cliente, que assina provas de cliente e
+ * não consegue produzir a prova do servidor. Com uma chave só, uma página falsa servida na porta (com o Expediente parado) pediria à
+ * chave guardada no navegador a assinatura de `servidor\n<nonce>` e passaria na conferência que o hook, o mod e o abrir fazem.
+ */
+export const chaveDoCliente = (k: Buffer): Buffer => createHmac('sha256', k).update('expediente/cliente').digest();
+export const chaveDoServidor = (k: Buffer): Buffer => createHmac('sha256', k).update('expediente/servidor').digest();
 
-/** O que o cliente manda numa chamada: preso ao desafio, ao método e ao caminho com a consulta, como o servidor os lê. */
-export const provaDoCliente = (chave: Buffer, desafio: string, metodo: string, caminho: string): string => hmacHex(chave, `cliente\n${desafio}\n${metodo}\n${caminho}`);
+/** O que o servidor responde ao nonce do cliente: só quem tem K sabe (a chave do servidor, derivada de K). */
+export const provaDoServidor = (k: Buffer, nonce: string): string => hmacHex(chaveDoServidor(k), `servidor\n${nonce}`);
+
+/** O que o cliente manda numa chamada: preso ao desafio, ao método e ao caminho com a consulta, como o servidor os lê. Assina com a chave do cliente. */
+export const provaDoCliente = (k: Buffer, desafio: string, metodo: string, caminho: string): string => hmacHex(chaveDoCliente(k), `cliente\n${desafio}\n${metodo}\n${caminho}`);
 
 /** Compara os resumos SHA-256: `timingSafeEqual` lança com tamanhos diferentes, e assim o tamanho também não vaza. */
 export function iguais(a: string, b: string): boolean {

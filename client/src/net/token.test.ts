@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import { type ArmazemDeChave, AVISO_SEM_TOKEN, AVISO_TOKEN_RECUSADO, TOKEN_CABECALHO, TokenLocal } from './token';
 
-// Os mesmos vetores dos outros lados (server/test/prova-vetores.test.ts), conferidos com openssl.
+// Os mesmos vetores dos outros lados (server/test/prova-vetores.test.ts), conferidos com openssl. TOKEN é K (a página nunca o tem);
+// CHAVE é a chave do cliente, HMAC(K, "expediente/cliente"), o que o servidor entrega na troca do bilhete.
 const TOKEN = '5e17e11a'.repeat(8);
+const CHAVE = '3c01a1e8b8f48bc085164d9c845167934b7c9f28f36cea7d44b3cdc57376e0a2';
 const DESAFIO = 'fedcba9876543210fedcba9876543210';
 const BILHETE = '00112233445566778899aabbccddeeff';
-const CLIENTE_POST = '2475edeaa311b39075668ed854cbc3fd23334b904640120a3925f072b6e1be94';
+const CLIENTE_POST = '58746d354a58f1b4d8641b70553f441c3364a53c3b4d95fd4fa44b05636aa4f4';
 const CAMINHO = '/api/permissions/p-1/decision?x=1';
 
 function armazem(inicial: CryptoKey | null = null) {
@@ -34,7 +36,7 @@ function servidor(opts: { troca?: () => Response; desafio?: () => Response; rest
   const chamadas: Chamada[] = [];
   const buscar = async (url: string, init: RequestInit = {}) => {
     chamadas.push({ url, init });
-    if (url === '/api/token/troca') return opts.troca?.() ?? new Response(JSON.stringify({ token: TOKEN }), { status: 200 });
+    if (url === '/api/token/troca') return opts.troca?.() ?? new Response(JSON.stringify({ chave: CHAVE }), { status: 200 });
     if (url.startsWith('/api/token/desafio')) return opts.desafio?.() ?? new Response(JSON.stringify({ desafio: DESAFIO, prova: 'x' }), { status: 200 });
     return opts.resto?.() ?? new Response('{}', { status: 200 });
   };
@@ -83,6 +85,7 @@ describe('bilhete no fragmento da URL', () => {
     try {
       const { arm } = await comChave();
       expect(setItem).not.toHaveBeenCalled();
+      expect(JSON.stringify(Object.entries(arm.estado))).not.toContain(CHAVE);
       expect(JSON.stringify(Object.entries(arm.estado))).not.toContain(TOKEN);
     } finally {
       vi.unstubAllGlobals();
@@ -114,8 +117,8 @@ describe('bilhete no fragmento da URL', () => {
     const respostas: Array<() => Response> = [
       () => new Response('{}', { status: 401 }),
       () => new Response('lixo', { status: 200 }),
-      () => new Response(JSON.stringify({ token: 'curto' }), { status: 200 }),
-      () => new Response(JSON.stringify({ token: 'G'.repeat(64) }), { status: 200 }),
+      () => new Response(JSON.stringify({ chave: 'curto' }), { status: 200 }),
+      () => new Response(JSON.stringify({ chave: 'G'.repeat(64) }), { status: 200 }),
       () => new Response(JSON.stringify({}), { status: 200 }),
     ];
     for (const troca of respostas) {
@@ -191,7 +194,11 @@ describe('escritas da página', () => {
     const { alvo, s } = await comChave();
     await alvo.escrever('/api/demo', { method: 'POST', body: '{"enabled":true}' });
     await alvo.escrever('/api/social/ritmo', { method: 'POST', body: '{"ritmo":"calm"}' });
-    for (const c of s.chamadas) expect(JSON.stringify([c.url, [...new Headers(c.init.headers)], c.init.body])).not.toContain(TOKEN);
+    for (const c of s.chamadas) {
+      const bruto = JSON.stringify([c.url, [...new Headers(c.init.headers)], c.init.body]);
+      expect(bruto).not.toContain(TOKEN);
+      expect(bruto).not.toContain(CHAVE);
+    }
   });
 
   it('sem chave a escrita nem sai da página: 401 com os passos para abrir autorizado', async () => {
