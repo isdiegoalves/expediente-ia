@@ -1,9 +1,9 @@
 // Capturas do tema candidato para o avaliador: um navegador da família Chromium, sem janela, abre a página em modo
 // demonstração (?mock=1, nunca o escritório real) com o tema em prévia e enquadra uma sala por captura.
 import { spawnSync } from 'node:child_process';
-import { accessSync, constants, existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { accessSync, constants, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs';
 import { homedir, tmpdir, userInfo } from 'node:os';
-import { delimiter, join } from 'node:path';
+import { delimiter, join, sep } from 'node:path';
 import { cadeiaSegura, criarPasta, gravarArquivoComum, idValido } from './confinar.mjs';
 import { ehPng } from './png.mjs';
 
@@ -63,9 +63,31 @@ export function argsDoNavegador({ perfil, saida, url }) {
   ];
 }
 
-// O navegador roda com o HOME verdadeiro do usuário (o do sistema, não o da variável de ambiente): com outro HOME ele
-// não acha as chaves do usuário e o macOS abre a janela do chaveiro. Os temas continuam na pasta de quem chamou.
 const umaLinha = (s) => String(s).replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ').trim().slice(0, 300);
+
+/**
+ * Trava dos testes: só eles definem EXPEDIENTE_TESTE_NAVEGADOR_DIR. Com ela, nenhum executável fora dessa pasta (depois
+ * de seguir links) é lançado, qualquer que seja o jeito que a procura o tenha achado.
+ */
+function conferirTrava(navegador, env) {
+  const dir = env.EXPEDIENTE_TESTE_NAVEGADOR_DIR;
+  if (dir === undefined) return;
+  const real = (c) => {
+    try {
+      return realpathSync(c);
+    } catch {
+      return c;
+    }
+  };
+  if (!dir || !real(navegador).startsWith(real(dir) + sep)) throw new Error(`o navegador ${navegador} está fora da pasta de navegadores falsos dos testes; não foi executado`);
+}
+
+function lancar(navegador, args, env, limiteMs) {
+  conferirTrava(navegador, env);
+  // O navegador roda com o HOME verdadeiro do usuário (o do sistema, não o da variável de ambiente): com outro HOME ele
+  // não acha as chaves do usuário e o macOS abre a janela do chaveiro. Os temas continuam na pasta de quem chamou.
+  return spawnSync(navegador, args, { env: { PATH: env.PATH ?? '', HOME: userInfo().homedir }, stdio: ['ignore', 'ignore', 'pipe'], timeout: limiteMs, killSignal: 'SIGKILL', encoding: 'utf8' });
+}
 
 /** O servidor local aceita o candidato como prévia? Lança com código próprio se não responde ou o recusa. */
 async function conferirPrevia(porta, id) {
@@ -103,13 +125,7 @@ export async function capturar({ id, porta, home = homedir(), env = process.env,
       let r;
       // O navegador às vezes trava na partida (visto no Chrome do macOS sob carga): quem passa do limite é morto e tenta de novo.
       for (let tentativa = 1; tentativa <= TENTATIVAS && !png; tentativa++) {
-        r = spawnSync(navegador, argsDoNavegador({ perfil: join(temporaria, `perfil-${n}-${tentativa}`), saida, url: urlDaPrevia('127.0.0.1', porta, id, `mock=1&sessions=10&seed=12&sala=${n}&`) }), {
-          env: { PATH: env.PATH ?? '', HOME: userInfo().homedir },
-          stdio: ['ignore', 'ignore', 'pipe'],
-          timeout: limiteMs,
-          killSignal: 'SIGKILL',
-          encoding: 'utf8',
-        });
+        r = lancar(navegador, argsDoNavegador({ perfil: join(temporaria, `perfil-${n}-${tentativa}`), saida, url: urlDaPrevia('127.0.0.1', porta, id, `mock=1&sessions=10&seed=12&sala=${n}&`) }), env, limiteMs);
         try {
           if (statSync(saida).size <= MAX_CAPTURA) png = readFileSync(saida);
         } catch {

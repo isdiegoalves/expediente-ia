@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import http from 'node:http';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { tmpdir, userInfo } from 'node:os';
 import { dirname, join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +21,10 @@ const CLI = join(dirname(fileURLToPath(import.meta.url)), 'tema.mjs');
 let raiz;
 let home;
 let cliEnv = {};
+// Pasta dos navegadores falsos: o tema.mjs recusa lançar qualquer executável de fora dela. Todo processo que um teste
+// cria passa por cli() ou cliAsync(), e as chamadas diretas a capturar() levam TRAVA(); nenhum caminho chega a um navegador de verdade.
+let falsos;
+const TRAVA = () => ({ EXPEDIENTE_TESTE_NAVEGADOR_DIR: falsos });
 
 const logoAurora = () => {
   const l = 64;
@@ -45,7 +49,7 @@ const marcaBase = (extra = {}) => ({
 });
 
 function cli(...args) {
-  const r = spawnSync(process.execPath, [CLI, ...args], { env: { PATH: process.env.PATH, HOME: home, ...cliEnv }, encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [CLI, ...args], { env: { PATH: process.env.PATH, HOME: home, ...TRAVA(), ...cliEnv }, encoding: 'utf8' });
   return { code: r.status, saida: r.stdout, erro: r.stderr };
 }
 
@@ -59,6 +63,9 @@ const lerTema = (id) => JSON.parse(readFileSync(join(pastaDoTema(id), 'tema.json
 
 before(() => {
   raiz = mkdtempSync(join(tmpdir(), 'tema-teste-'));
+  falsos = join(raiz, 'bin-navegador');
+  mkdirSync(falsos);
+  process.env.EXPEDIENTE_TESTE_NAVEGADOR_DIR = falsos;
   writeFileSync(join(raiz, 'logo.png'), logoAurora());
 });
 after(() => rmSync(raiz, { recursive: true, force: true }));
@@ -738,7 +745,7 @@ describe('capturar: capturas do modo demonstração para o avaliador', () => {
       filho.on('error', falha);
       filho.on('close', (code) => ok({ code, saida, erro }));
     });
-  const cliAsync = (args, env = {}) => aguardar(spawn(process.execPath, [CLI, ...args], { env: { PATH: '/usr/bin:/bin', HOME: home, EXPEDIENTE_APLICATIVOS: apps, ...env } }));
+  const cliAsync = (args, env = {}) => aguardar(spawn(process.execPath, [CLI, ...args], { env: { PATH: '/usr/bin:/bin', HOME: home, EXPEDIENTE_APLICATIVOS: apps, ...TRAVA(), ...env } }));
 
   /** Um Expediente falso em 127.0.0.1; devolve a porta e o que foi pedido. */
   async function servidor(responder) {
@@ -764,7 +771,7 @@ describe('capturar: capturas do modo demonstração para o avaliador', () => {
       join(bin, 'chromium'),
       `#!/bin/sh
 printf '%s\\n' "$@" >> "${registro}"
-printf -- '--- SECRETO=%s\\n' "$SECRETO" >> "${registro}"
+printf -- '--- SECRETO=%s HOME=%s\\n' "$SECRETO" "$HOME" >> "${registro}"
 for a in "$@"; do case "$a" in
   --user-data-dir=*) mkdir -p "\${a#--user-data-dir=}/Default"; echo x > "\${a#--user-data-dir=}/Default/Cookies";;
 esac; done
@@ -783,7 +790,7 @@ ${corpo || `for a in "$@"; do case "$a" in --screenshot=*) cp "${join(raiz, 'cap
   };
 
   before(() => {
-    bin = join(raiz, 'bin-navegador');
+    bin = falsos;
     apps = join(raiz, 'sem-aplicativos');
     mkdirSync(apps, { recursive: true });
     servidores = [];
@@ -821,6 +828,12 @@ ${corpo || `for a in "$@"; do case "$a" in --screenshot=*) cp "${join(raiz, 'cap
     for (const p of perfis) assert.equal(existsSync(p), false, `perfil temporário sobrou: ${p}`);
     assert.equal(existsSync(join(perfis[0], '..')), false, 'a pasta temporária das capturas sobrou');
     assert.equal(readFileSync(registro, 'utf8').includes('nao-pode-chegar'), false, 'o ambiente do dono chegou ao navegador');
+    const homes = [...readFileSync(registro, 'utf8').matchAll(/ HOME=(.*)$/gm)].map((m) => m[1]);
+    assert.deepEqual(homes, Array(3).fill(userInfo().homedir), 'o navegador roda com o HOME verdadeiro do usuário, não com o da variável de ambiente');
+    assert.notEqual(userInfo().homedir, home);
+    for (const args of chamadasFeitas) {
+      assert.ok(args.includes('--use-mock-keychain') && args.includes('--password-store=basic'), 'sem tocar no chaveiro do usuário');
+    }
 
     assert.deepEqual(readdirSync(previa()).sort(), ['sala-1.png', 'sala-2.png', 'sala-3.png']);
     for (const f of readdirSync(previa())) assert.equal(lerPng(readFileSync(join(previa(), f))).largura, 64);
@@ -849,7 +862,7 @@ ${corpo || `for a in "$@"; do case "$a" in --screenshot=*) cp "${join(raiz, 'cap
     navegadorFalso(`if [ ! -e "${marca}" ]; then : > "${marca}"; exec sleep 30; fi\nfor a in "$@"; do case "$a" in --screenshot=*) cp "${join(raiz, 'captura-pronta.png')}" "\${a#--screenshot=}";; esac; done`);
     const { porta } = await aceita();
     const t0 = Date.now();
-    const gravadas = await capturaMod.capturar({ id: ID, porta, home, env: { PATH: `${bin}:/usr/bin:/bin`, EXPEDIENTE_APLICATIVOS: apps }, limiteMs: 700 });
+    const gravadas = await capturaMod.capturar({ id: ID, porta, home, env: { PATH: `${bin}:/usr/bin:/bin`, EXPEDIENTE_APLICATIVOS: apps, ...TRAVA() }, limiteMs: 700 });
     assert.ok(Date.now() - t0 < 10_000, 'o navegador travado não foi morto no limite');
     assert.equal(gravadas.length, 3);
     assert.equal(chamadas().length, 4, 'a primeira chamada travou e foi refeita');
@@ -864,7 +877,7 @@ ${corpo || `for a in "$@"; do case "$a" in --screenshot=*) cp "${join(raiz, 'cap
     navegadorFalso('exec sleep 30');
     const { porta } = await aceita();
     await assert.rejects(
-      capturaMod.capturar({ id: ID, porta, home, env: { PATH: `${bin}:/usr/bin:/bin`, EXPEDIENTE_APLICATIVOS: apps }, limiteMs: 300 }),
+      capturaMod.capturar({ id: ID, porta, home, env: { PATH: `${bin}:/usr/bin:/bin`, EXPEDIENTE_APLICATIVOS: apps, ...TRAVA() }, limiteMs: 300 }),
       (e) => e.codigo === SEM_CAPTURA && /sala 1 \(passou de 0,3 s, 3 vezes\)/.test(e.message),
     );
     assert.equal(chamadas().length, 3);
@@ -939,6 +952,39 @@ ${corpo || `for a in "$@"; do case "$a" in --screenshot=*) cp "${join(raiz, 'cap
     assert.match(arquivo.erro, /link simbólico/);
     assert.equal(readFileSync(join(fora, 'sentinela.png'), 'utf8'), 'intacto');
     assert.deepEqual(readdirSync(fora), ['sentinela.png']);
+  });
+
+  test('trava dos testes: executável fora da pasta de navegadores falsos não é lançado, pela PATH, por aplicativo, por link ou com a variável vazia', async () => {
+    comTemaEmHome();
+    const marcaDeExecucao = join(raiz, `executou-${Math.random().toString(36).slice(2)}`);
+    const outro = join(raiz, `outro-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(join(outro, 'Google Chrome.app/Contents/MacOS'), { recursive: true });
+    const script = `#!/bin/sh\necho executou > "${marcaDeExecucao}"\nexit 1\n`;
+    for (const caminho of [join(outro, 'chrome'), join(outro, 'Google Chrome.app/Contents/MacOS/Google Chrome')]) {
+      writeFileSync(caminho, script);
+      chmodSync(caminho, 0o755);
+    }
+    const { porta } = await aceita();
+    const direto = (env) => capturaMod.capturar({ id: ID, porta, home, env: { EXPEDIENTE_APLICATIVOS: apps, ...TRAVA(), ...env }, limiteMs: 2000 });
+    const fora = /fora da pasta de navegadores falsos dos testes; não foi executado/;
+
+    await assert.rejects(direto({ PATH: `${outro}:/usr/bin:/bin` }), fora, 'achado pela PATH');
+    await assert.rejects(direto({ PATH: '/usr/bin:/bin', EXPEDIENTE_APLICATIVOS: outro }), fora, 'achado como aplicativo');
+    rmSync(join(falsos, 'chromium'), { force: true });
+    symlinkSync(join(outro, 'chrome'), join(falsos, 'chromium'));
+    try {
+      await assert.rejects(direto({ PATH: `${falsos}:/usr/bin:/bin` }), fora, 'link dentro da pasta falsa para um executável de fora');
+    } finally {
+      rmSync(join(falsos, 'chromium'));
+    }
+    await assert.rejects(direto({ PATH: `${outro}:/usr/bin:/bin`, EXPEDIENTE_TESTE_NAVEGADOR_DIR: '' }), fora, 'variável vazia');
+
+    const r = await cliAsync(['capturar', ID, '--porta', String(porta)], { PATH: `${outro}:/usr/bin:/bin` });
+    assert.equal(r.code, 1);
+    assert.match(r.erro, fora);
+    assert.equal(existsSync(marcaDeExecucao), false, 'o executável de fora foi lançado');
+    assert.equal(existsSync(previa()), true);
+    assert.deepEqual(readdirSync(previa()), []);
   });
 
   test('acharNavegador: pasta de aplicativos antes do PATH; arquivo sem permissão e pasta com o nome não valem', () => {
