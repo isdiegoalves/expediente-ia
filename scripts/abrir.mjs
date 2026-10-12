@@ -11,7 +11,7 @@
 //
 //   npm run abrir
 import { spawn, spawnSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -84,7 +84,16 @@ export async function abrir({ env = process.env, home = env.HOME || homedir(), p
   return { codigo: 0, linhas: [`Abrindo http://127.0.0.1:${porta} no navegador padrão, já autorizado.`] };
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+// realpath dos dois lados: por um caminho com link simbólico (/var → /private/var no macOS) o script não rodaria.
+const ehOPrincipal = () => {
+  try {
+    return !!process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+};
+
+if (ehOPrincipal()) {
   const r = await abrir({ executar: (comando, argv) => spawnSync(comando, argv, { stdio: 'ignore' }).status ?? 1 });
   for (const l of r.linhas) console.log(l);
   process.exitCode = r.codigo;
