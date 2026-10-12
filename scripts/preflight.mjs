@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -24,6 +24,36 @@ export function portasForaDoLoopback(configJson) {
       }
     }
   }
+  return falhas;
+}
+
+/** O token local do dono (~/.expediente/host/token), ou undefined se faltar ou não tiver 64 hexadecimais. Nunca é impresso. */
+export function lerTokenDoHost(home = homedir()) {
+  try {
+    const token = readFileSync(resolve(home, '.expediente', 'host', 'token'), 'utf8').trim();
+    return /^[0-9a-f]{64}$/.test(token) ? token : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * O que a prova do token local exige: escrita sem o cabeçalho ou com valor errado leva 401 (inclusive a decisão de uma permissão), com o
+ * cabeçalho certo passa pelo guard (o registro responde 2xx ou 4xx da própria rota, a decisão de um id que não existe responde 404), e a
+ * permissão pendente que houver continua a mesma.
+ */
+export function falhasDoToken(r) {
+  const falhas = [];
+  const exige401 = (nome, status) => {
+    if (status !== 401) falhas.push(`${nome} respondeu ${status}, esperado 401`);
+  };
+  exige401('POST /api/permissions sem o cabeçalho', r.registroSem);
+  exige401('POST /api/permissions com token errado', r.registroErrado);
+  exige401('POST da decisão sem o cabeçalho', r.decisaoSem);
+  exige401('POST da decisão com token errado', r.decisaoErrado);
+  if (typeof r.registroCom !== 'number' || [401, 403, 404, 503].includes(r.registroCom)) falhas.push(`POST /api/permissions com o cabeçalho respondeu ${r.registroCom}, esperado que passasse pelo guard`);
+  if (r.decisaoCom !== 404) falhas.push(`POST da decisão de um id inexistente, com o cabeçalho, respondeu ${r.decisaoCom}, esperado 404 da própria rota`);
+  if (r.pendenteAntes !== r.pendenteDepois) falhas.push(`a permissão pendente ${r.pendenteAntes ?? '(nenhuma)'} virou ${r.pendenteDepois ?? '(nenhuma)'} depois das escritas recusadas`);
   return falhas;
 }
 
@@ -109,11 +139,11 @@ function mensagensDaFeature() {
   return r.stdout.split('\0').map((m) => m.trim()).filter(Boolean);
 }
 
-async function http(metodo, caminho, corpo) {
+async function http(metodo, caminho, corpo, token) {
   try {
     const res = await fetch(`${BASE}${caminho}`, {
       method: metodo,
-      headers: corpo ? { 'Content-Type': 'application/json' } : {},
+      headers: { ...(corpo ? { 'Content-Type': 'application/json' } : {}), ...(token ? { 'X-Expediente-Token': token } : {}) },
       body: corpo ? JSON.stringify(corpo) : undefined,
       signal: AbortSignal.timeout(5000),
     });
@@ -283,16 +313,35 @@ const etapas = [
       const saude = await http('GET', '/api/health');
       if (saude !== 200) return falha(`GET /api/health respondeu ${saude}`);
 
-      const hook = await http('POST', '/api/permissions', {
-        session_id: 'preflight',
-        hook_event_name: 'PermissionRequest',
-        tool_name: 'Bash',
-        tool_input: { command: 'true' },
-      });
-      if (hook === 403 || hook === 404 || typeof hook !== 'number') {
-        return falha(`POST /api/permissions respondeu ${hook}`);
-      }
-      return ok(`compose só em 127.0.0.1, ${PORTA} só em loopback, health 200, permissions ${hook}`);
+      const token = lerTokenDoHost();
+      if (!token) return falha('sem o token local em ~/.expediente/host/token: rode npm run docker:up (ele cria o token) e tente de novo');
+      const errado = 'f'.repeat(64);
+      const pedido = { session_id: 'preflight', hook_event_name: 'PermissionRequest', tool_name: 'Bash', tool_input: { command: 'true' } };
+      const pendente = async () => {
+        try {
+          const snap = await (await fetch(`${BASE}/api/snapshot`, { signal: AbortSignal.timeout(5000) })).json();
+          return snap.agents?.find((a) => a.permission)?.permission?.id;
+        } catch {
+          return undefined;
+        }
+      };
+      const pendenteAntes = await pendente();
+      // Decidir com "terminal" (devolve a pergunta ao terminal), nunca allow nem deny: se o guard falhar, nada que o dono não possa responder lá fica decidido.
+      const idDaDecisao = pendenteAntes ?? 'preflight-sem-pedido';
+      const decisao = `/api/permissions/${encodeURIComponent(idDaDecisao)}/decision`;
+      const prova = {
+        registroSem: await http('POST', '/api/permissions', pedido),
+        registroErrado: await http('POST', '/api/permissions', pedido, errado),
+        decisaoSem: await http('POST', decisao, { behavior: 'terminal' }),
+        decisaoErrado: await http('POST', decisao, { behavior: 'terminal' }, errado),
+        registroCom: await http('POST', '/api/permissions', pedido, token),
+        decisaoCom: await http('POST', '/api/permissions/preflight-sem-pedido/decision', { behavior: 'terminal' }, token),
+        pendenteAntes,
+        pendenteDepois: await pendente(),
+      };
+      const falhas = falhasDoToken(prova);
+      if (falhas.length) return falha(`token local:\n${falhas.join('\n')}`);
+      return ok(`compose só em 127.0.0.1, ${PORTA} só em loopback, health 200, escrita sem token 401, com token ${prova.registroCom}${pendenteAntes ? ', permissão pendente do dono intacta' : ''}`);
     },
   },
   {

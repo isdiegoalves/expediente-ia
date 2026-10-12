@@ -15,7 +15,7 @@ export interface EstadoDoToken {
 const PASSOS_DA_PAGINA = [
   'As ações que mudam algo (responder permissões, renomear salas, mudar o personagem ou o ritmo, focar sessões) estão bloqueadas: esta página não tem o token local. O que é só leitura segue funcionando.',
   'Para liberar:',
-  '1. No Claude Code, rode /escritorio e use "Abrir o escritório"; ou, na pasta do Expediente, rode npm run abrir.',
+  '1. No Claude Code, rode /escritorio e use "Abrir o escritório"; ou, na pasta do Expediente, rode npm run abrir',
   '2. A página abre já autorizada.',
 ].join('\n');
 
@@ -27,7 +27,7 @@ export function textoDoAviso(e: EstadoDoToken): string | null {
       `O servidor está sem token local (${e.servidorSemToken}), então as ações que mudam algo estão bloqueadas.`,
       'Para liberar:',
       '1. Na pasta do Expediente, rode npm run docker:up (no modo nativo, reinicie o servidor: ele cria o token se faltar).',
-      '2. Abra o escritório de novo com npm run abrir.',
+      '2. Abra o escritório de novo com npm run abrir',
     ].join('\n');
   }
   return e.paginaTemToken ? null : PASSOS_DA_PAGINA;

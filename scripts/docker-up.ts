@@ -12,6 +12,8 @@
 //    credenciais e configurações — e a ponte do mod (~/.expediente/host, criada se faltar) em /host,
 //    também somente leitura. Passa EXPEDIENTE_CLAUDE_DIRS, EXPEDIENTE_ACCOUNTS, EXPEDIENTE_USAGE_DIR (/host/uso)
 //    e o fuso do host (TZ) ao container.
+//    Antes disso cria o token local (~/.expediente/host/token, modo 600) se ele não existir: sem ele o servidor
+//    recusa toda escrita. Nunca sobrescreve o arquivo e nunca imprime o valor.
 // 3. Roda `docker compose up -d --build`, espera o /api/health e mostra a URL.
 //
 // Uso de 5h/semanal ao vivo: o mod do Expediente (npm run instalar; Claude Code 2.1.287+) grava os números em
@@ -24,6 +26,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { AccountInfo, SourceInfo } from '../shared/types';
 import { detectAccounts, discoverClaudeDirs, type DetectedAccount } from '../server/accounts/detect';
 import { PUBLICACAO_ARQUIVO, planejarConfirmacao } from '../server/publicacao';
+import { arquivoDoToken, garantirToken, lerToken } from '../server/token';
 import { installDir, MIN_CLAUDE_VERSION } from './instalar';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -290,6 +293,15 @@ function ensureHostDir(): string | undefined {
   }
 }
 
+export type EstadoDoToken = 'criado' | 'mantido' | 'invalido';
+
+/** Cria o token local na ponte se faltar. Um arquivo que já existe fica como está, mesmo fora do formato. Nunca devolve o valor. */
+export function prepararToken(hostDir: string): EstadoDoToken {
+  const arquivo = arquivoDoToken(hostDir);
+  if (garantirToken(arquivo)) return 'criado';
+  return lerToken(arquivo).ok ? 'mantido' : 'invalido';
+}
+
 /** Grava o override com modo 600: ele tem caminhos do host e e-mails das contas. */
 export function writeOverride(file: string, yml: string): void {
   const tmp = `${file}.tmp`;
@@ -437,6 +449,15 @@ async function up(opts: Options, port: number): Promise<void> {
 
   const hostDir = ensureHostDir();
   if (hostDir) say(`Ponte do mod: monta ${tildify(HOST_DIR)} em ${CONTAINER_HOST_DIR}, somente leitura.`);
+  if (hostDir) {
+    try {
+      const token = prepararToken(hostDir);
+      if (token === 'invalido') warn(`${tildify(arquivoDoToken(HOST_DIR))} existe mas não tem 64 caracteres hexadecimais; o servidor vai recusar toda escrita. Apague o arquivo e rode de novo para criar outro.`);
+      else say(token === 'criado' ? `Token local criado em ${tildify(arquivoDoToken(HOST_DIR))} (modo 600).` : 'Token local já existia: mantido.');
+    } catch (err) {
+      warn(`não consegui criar o token local (${(err as Error).message}); o servidor vai recusar toda escrita.`);
+    }
+  }
   writeOverride(OVERRIDE_FILE, renderOverride(mounts, new Date(), hostDir, hostTimeZone()));
   say('docker-compose.override.yml gerado.');
 
@@ -459,6 +480,7 @@ async function up(opts: Options, port: number): Promise<void> {
     say(`  Conta ${acc.short} (${acc.id}): ${state}${usage ? ` · ${USAGE_STATUS[usage]}` : ''}`);
   }
   for (const line of modHint(existsSync(installDir(HOME)))) say(line);
+  say('  Abrir o escritório já autorizado: npm run abrir');
   say('  Logs: npm run docker:logs · Parar: npm run docker:down');
 }
 

@@ -1,9 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   caminhosDeRegistro,
   escutasForaDoLoopback,
+  falhasDoToken,
   etapaNavegador,
+  lerTokenDoHost,
   mensagemFinal,
   mensagensComIdDeSessao,
   mensagensComTrailer,
@@ -118,4 +123,40 @@ test('mensagem final: só fecha a fatia com as duas flags', () => {
   assert.match(mensagemFinal(opcoesDe(['--com-container'])), /sem --com-navegador: a fatia ainda não fecha/);
   assert.match(mensagemFinal(opcoesDe(['--com-navegador'])), /sem --com-container: a fatia ainda não fecha/);
   assert.equal(mensagemFinal(opcoesDe(['--com-container', '--com-navegador'])), 'pré-voo verde');
+});
+
+const PROVA_DO_TOKEN = { registroSem: 401, registroErrado: 401, decisaoSem: 401, decisaoErrado: 401, registroCom: 200, decisaoCom: 404, pendenteAntes: undefined, pendenteDepois: undefined };
+
+test('token: a prova passa com 401 sem cabeçalho e com valor errado, e o pedido passando com o certo', () => {
+  assert.deepEqual(falhasDoToken(PROVA_DO_TOKEN), []);
+  assert.deepEqual(falhasDoToken({ ...PROVA_DO_TOKEN, registroCom: 201, pendenteAntes: 'p1', pendenteDepois: 'p1' }), []);
+});
+
+test('token: cada resposta fora do esperado reprova', () => {
+  for (const campo of ['registroSem', 'registroErrado', 'decisaoSem', 'decisaoErrado']) {
+    for (const status of [200, 403, 404, 503, 'erro: fetch failed']) assert.equal(falhasDoToken({ ...PROVA_DO_TOKEN, [campo]: status }).length, 1, `${campo} ${status}`);
+  }
+  for (const status of [401, 403, 404, 503, 'erro: fetch failed']) assert.equal(falhasDoToken({ ...PROVA_DO_TOKEN, registroCom: status }).length, 1, `registroCom ${status}`);
+  for (const status of [200, 401, 403, 503]) assert.equal(falhasDoToken({ ...PROVA_DO_TOKEN, decisaoCom: status }).length, 1, `decisaoCom ${status}`);
+});
+
+test('token: permissão pendente que muda ou some depois das escritas recusadas reprova', () => {
+  assert.equal(falhasDoToken({ ...PROVA_DO_TOKEN, pendenteAntes: 'p1', pendenteDepois: undefined }).length, 1);
+  assert.equal(falhasDoToken({ ...PROVA_DO_TOKEN, pendenteAntes: 'p1', pendenteDepois: 'p2' }).length, 1);
+});
+
+test('token: lê o arquivo do host só com 64 hexadecimais minúsculos', () => {
+  const casa = mkdtempSync(join(tmpdir(), 'expediente-pre-'));
+  try {
+    assert.equal(lerTokenDoHost(casa), undefined);
+    mkdirSync(join(casa, '.expediente', 'host'), { recursive: true });
+    const arquivo = join(casa, '.expediente', 'host', 'token');
+    const token = 'ab'.repeat(32);
+    for (const [conteudo, esperado] of [[`${token}\n`, token], ['curto', undefined], [token.toUpperCase(), undefined], ['', undefined]]) {
+      writeFileSync(arquivo, conteudo);
+      assert.equal(lerTokenDoHost(casa), esperado, JSON.stringify(conteudo));
+    }
+  } finally {
+    rmSync(casa, { recursive: true, force: true });
+  }
 });

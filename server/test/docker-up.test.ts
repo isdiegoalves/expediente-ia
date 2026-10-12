@@ -1,5 +1,5 @@
 // Funções puras de scripts/docker-up.ts (importar o módulo não sobe nada).
-import { mkdirSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { DetectedAccount } from '../accounts/detect';
@@ -9,6 +9,7 @@ import {
   modHint,
   parseArgs,
   planMounts,
+  prepararToken,
   renderOverride,
   sanitizeCachedUsage,
   writeOverride,
@@ -143,5 +144,85 @@ describe('docker-up: dica do mod', () => {
   it('só aparece sem a cópia fixa do mod e manda rodar o instalar', () => {
     expect(modHint(true)).toEqual([]);
     expect(modHint(false).join('\n')).toContain('npm run instalar');
+  });
+});
+
+describe('docker-up: token local', () => {
+  const arquivoDe = (host: string) => join(host, 'token');
+
+  it('cria o arquivo (modo 600, 32 bytes em hexadecimal) se faltar, e nunca devolve o valor', () => {
+    const tmp = tempDir();
+    try {
+      const host = join(tmp.dir, 'host');
+      mkdirSync(host);
+      const estado = prepararToken(host);
+      expect(estado).toBe('criado');
+      expect(statSync(arquivoDe(host)).mode & 0o777).toBe(0o600);
+      const valor = readFileSync(arquivoDe(host), 'utf8').trim();
+      expect(valor).toMatch(/^[0-9a-f]{64}$/);
+      expect(JSON.stringify(estado)).not.toContain(valor);
+    } finally {
+      tmp.cleanup();
+    }
+  });
+
+  it('cada instalação tem o seu token: dois criados em pastas diferentes não se repetem', () => {
+    const tmp = tempDir();
+    try {
+      const [a, b] = [join(tmp.dir, 'a'), join(tmp.dir, 'b')];
+      prepararToken(a);
+      prepararToken(b);
+      expect(readFileSync(arquivoDe(a), 'utf8')).not.toBe(readFileSync(arquivoDe(b), 'utf8'));
+    } finally {
+      tmp.cleanup();
+    }
+  });
+
+  it('cria a pasta da ponte se ela ainda não existir', () => {
+    const tmp = tempDir();
+    try {
+      const host = join(tmp.dir, 'novo', 'host');
+      expect(prepararToken(host)).toBe('criado');
+      expect(statSync(arquivoDe(host)).mode & 0o777).toBe(0o600);
+    } finally {
+      tmp.cleanup();
+    }
+  });
+
+  it('não sobrescreve: com o arquivo já lá, o conteúdo e o modo ficam, e duas subidas dão o mesmo token', () => {
+    const tmp = tempDir();
+    try {
+      const host = join(tmp.dir, 'host');
+      mkdirSync(host);
+      expect(prepararToken(host)).toBe('criado');
+      const antes = readFileSync(arquivoDe(host), 'utf8');
+      expect(prepararToken(host)).toBe('mantido');
+      expect(prepararToken(host)).toBe('mantido');
+      expect(readFileSync(arquivoDe(host), 'utf8')).toBe(antes);
+    } finally {
+      tmp.cleanup();
+    }
+  });
+
+  it('arquivo que o dono já tem, mesmo fora do formato, não é trocado: só avisa', () => {
+    const tmp = tempDir();
+    try {
+      const host = join(tmp.dir, 'host');
+      mkdirSync(host);
+      for (const conteudo of ['meu-segredo\n', '', 'a'.repeat(63)]) {
+        writeFileSync(arquivoDe(host), conteudo);
+        expect(prepararToken(host)).toBe('invalido');
+        expect(readFileSync(arquivoDe(host), 'utf8')).toBe(conteudo);
+      }
+    } finally {
+      tmp.cleanup();
+    }
+  });
+
+  it('o script nunca manda o valor do token para a saída: só o estado e o caminho', () => {
+    const fonte = readFileSync(join(__dirname, '../../scripts/docker-up.ts'), 'utf8');
+    expect(fonte).toContain('prepararToken(hostDir)');
+    expect(fonte).not.toMatch(/(?:say|warn|fail|console\.\w+)\([^)]*lerToken/);
+    expect(fonte.match(/lerToken\(/g)).toHaveLength(1);
   });
 });
