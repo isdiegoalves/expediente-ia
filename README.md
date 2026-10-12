@@ -427,7 +427,7 @@ IndexedDB do navegador, e assina cada escrita com ela. Para recebê-la, abra o e
   `http://127.0.0.1:<porta>/#b=<bilhete>`. A página troca o bilhete pela chave e tira o fragmento da barra de endereço. O
   token e o bilhete não aparecem em argumento de programa, em saída de comando nem em histórico do terminal;
 - no Claude Code, no terminal, `/escritorio` e o botão **Abrir o escritório** do painel (mesmo caminho). No app desktop o
-  painel só diz para rodar `npm run abrir`: o motor do mod só desenha links para `https:` ou `http://localhost`, e
+  painel mostra o comando `node ~/.expediente/mod-instalado/scripts/abrir.mjs`, que roda de qualquer pasta depois do `npm run instalar`: o motor do mod só desenha links para `https:` ou `http://localhost`, e
   `localhost` pode ser outro programa em `::1`.
 
 O endereço é sempre `http://127.0.0.1:<porta>`, o mesmo em que o servidor provou ter o token (`localhost` pode resolver para

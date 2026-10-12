@@ -67,8 +67,10 @@ partir da 2.1.287; a API ainda é "early access" e pode mudar entre versões. A 
   envia nada. No terminal, o painel do `/escritorio` ganha o botão **Abrir o escritório**: pede um bilhete de uso único (60 s) e
   grava um HTML que redireciona a `http://127.0.0.1:<porta>/#b=<bilhete>` numa pasta de `mktemp -d` (modo 700; o `$.fs.write` do
   mod não tem parâmetro de modo, então o que protege é a pasta, e o arquivo recebe `chmod 600`); o `open` recebe só o caminho, e a
-  pasta é apagada quando o bilhete vence. No app desktop o motor só desenha `Link` para `https:` ou `http://localhost`, e
-  `localhost` pode resolver para `::1`: ali o painel só diz para rodar `npm run abrir`. O token e o bilhete nunca são texto de
+  arquivo e pasta somem quando o bilhete vence (`rm -f` do arquivo e `rmdir` da pasta, com o caminho exato; sem `rm -rf`), e o `open` só
+  aceita o caminho igual ao que o mod acabou de criar a partir do `mktemp`. Se o mod terminar antes dos 60 s, sobra um HTML com um bilhete
+  vencido numa pasta de modo 700. No app desktop o motor só desenha `Link` para `https:` ou `http://localhost`, e `localhost` pode
+  resolver para `::1`: ali o painel mostra num `Code` o comando `node ~/.expediente/mod-instalado/scripts/abrir.mjs`, que roda de qualquer pasta. O token e o bilhete nunca são texto de
   comando, linha de status nem aviso (chegam ao modelo).
 
 - **Ponte do app desktop:** a cada 5 s lê `~/Library/Application Support/Claude/claude-code-sessions/*/*/local_*.json`,
@@ -94,7 +96,7 @@ carregar o módulo; nada fora desta lista é chamado):
 
 Em palavras: só observa (nenhum hook decide nada: não aprova ferramentas, não muda prompts, não lê mensagens),
 grava três tipos de arquivo em `~/.expediente/host` (o de uso, o `sessoes-app.json`, este por `mv`, e uma amostra por hora em
-`amostras/`) e, a pedido do botão do painel, um HTML de redirecionamento numa pasta temporária, roda `$.process` só para o `mv`, para `ps -o ppid=,comm=` e, a pedido no painel do `/escritorio`, para `ps -o comm=` (o pid ainda é o `claude`?), `ps -o tty=`, o leitor do painel, `open` (lista permitida: URLs do Claude e o `abrir.html` da pasta temporária do escritório), `mktemp -d`, `chmod 600` e `rm -rf` dessa pasta, `zellij`, `pgrep` e `osascript`, fala só com `127.0.0.1` e lê quatro variáveis de ambiente (e o arquivo do token, para provar quem fala e pedir o bilhete do botão do painel). `$.clock.after` é o
+`amostras/`) e, a pedido do botão do painel, um HTML de redirecionamento numa pasta temporária, roda `$.process` só para o `mv`, para `ps -o ppid=,comm=` e, a pedido no painel do `/escritorio`, para `ps -o comm=` (o pid ainda é o `claude`?), `ps -o tty=`, o leitor do painel, `open` (lista permitida: URLs do Claude e o `abrir.html` da pasta temporária do escritório), `mktemp -d`, `chmod 600`, `rm -f` e `rmdir` dessa pasta e desse arquivo, `zellij`, `pgrep` e `osascript`, fala só com `127.0.0.1` e lê quatro variáveis de ambiente (e o arquivo do token, para provar quem fala e pedir o bilhete do botão do painel). `$.clock.after` é o
 prazo de 2 s de cada pergunta ao Expediente (`$.http.fetch` não aceita AbortSignal).
 
 ## `expediente-permissoes` — responder permissões pelo escritório

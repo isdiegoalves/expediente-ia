@@ -40,7 +40,7 @@ mostra a faixa de ações bloqueadas até ser aberta de novo pelo `npm run abrir
   apagada em seguida) que leva a `http://127.0.0.1:4848/#b=…`. A página troca o bilhete por uma chave que não pode ser
   exportada, guardada no IndexedDB do navegador, e tira o fragmento da barra de endereço; o token e o bilhete não aparecem
   em argumento de programa nem em saída de comando. O botão **Abrir o escritório** do painel do `/escritorio` faz o mesmo no
-  terminal; no app desktop o painel manda rodar `npm run abrir`.
+  terminal; no app desktop o painel mostra o comando `node ~/.expediente/mod-instalado/scripts/abrir.mjs`, que roda de qualquer pasta (depois do `npm run instalar`).
 - **As ações ficam liberadas em `http://127.0.0.1:<porta>`.** Aberto por `http://localhost:4848` (ou
   `https://expediente.localhost`), o escritório mostra tudo, mas a faixa de aviso diz que a autorização vale só naquele
   endereço e como obtê-la.
