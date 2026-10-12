@@ -1074,3 +1074,90 @@ describe('skill /tema: o que ela promete é o que os scripts fazem', () => {
     assert.doesNotMatch(skill, /nunca escreva o arquivo `tema-ativo`/);
   });
 });
+
+describe('guardar: o que é documento SVG não fica, o que é só texto com SVG dentro fica', () => {
+  const guardarTexto = (nome, conteudo) => {
+    novoHome();
+    const o = join(raiz, `g-${randomBytes(3).toString('hex')}`);
+    writeFileSync(o, conteudo);
+    return cli('guardar', 'aurora-ficticia', o, nome);
+  };
+  const guardado = (nome) => existsSync(join(pastaDoTema(), 'referencias', nome));
+  const ICONE = '<svg viewBox="0 0 8 8"><path d="M0 0h8v8z" fill="#e4572e"/></svg>';
+
+  test('HTML e CSS com SVG embutido são guardados e o css lê as cores deles', () => {
+    const html = guardarTexto('pagina.html', `<!doctype html><html><body><a>${ICONE}</a><svg:svg xmlns:svg="http://www.w3.org/2000/svg"/><svg/onload=x></body></html>`);
+    assert.equal(html.code, 0, html.erro);
+    assert.equal(guardado('pagina.html'), true);
+    const css = cli('css', join(pastaDoTema(), 'referencias/pagina.html'));
+    assert.equal(css.saida, '#e4572e  1x\n');
+    assert.equal(guardarTexto('icones.css', `.a{background:url("data:image/svg+xml;utf8,${ICONE}")}`).code, 0);
+  });
+
+  test('documento SVG é recusado em qualquer extensão e em qualquer grafia da abertura', () => {
+    const documentos = {
+      simples: `<svg xmlns="http://www.w3.org/2000/svg"/>`,
+      'com prefixo': `<svg:svg xmlns:svg="http://www.w3.org/2000/svg"/>`,
+      'com barra': `<svg/onload=x>`,
+      'com declaração xml': `<?xml version="1.0"?>\n${ICONE}`,
+      'com BOM e comentário': `\uFEFF<!-- logo -->\n  ${ICONE}`,
+      'com DOCTYPE svg': `<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "x.dtd">${ICONE}`,
+      'em maiúsculas': `<SVG viewBox="0 0 1 1"/>`,
+    };
+    for (const nome of ['logo.html', 'logo.css']) {
+      for (const [tipo, texto] of Object.entries(documentos)) {
+        const r = guardarTexto(nome, texto);
+        assert.equal(r.code, 1, `${nome} ${tipo}`);
+        assert.match(r.erro, /SVG não é guardado/, `${nome} ${tipo}`);
+        assert.equal(guardado(nome), false);
+      }
+    }
+  });
+
+  test('a recusa diz o que fazer com o SVG e não confunde com a página que o contém', () => {
+    const r = guardarTexto('logo.html', ICONE);
+    assert.match(r.erro, /rasterize com "rasterizar"/);
+  });
+});
+
+describe('guardar: uma prova por extensão e por tipo de conteúdo', () => {
+  const tentar = (nome, conteudo) => {
+    novoHome();
+    const o = join(raiz, `e-${randomBytes(3).toString('hex')}`);
+    writeFileSync(o, conteudo);
+    return { r: cli('guardar', 'aurora-ficticia', o, nome), guardado: existsSync(join(pastaDoTema(), 'referencias', nome)) };
+  };
+  const png = () => gravarPng({ largura: 8, altura: 8, rgba: new Uint8Array(8 * 8 * 4).fill(120) });
+
+  test('png, css e html são aceitos', () => {
+    for (const [nome, conteudo] of [['a.png', png()], ['a.css', 'a{color:#c8285a}'], ['a.html', '<p>oi</p>']]) {
+      const { r, guardado } = tentar(nome, conteudo);
+      assert.equal(r.code, 0, `${nome}: ${r.erro}`);
+      assert.equal(guardado, true);
+    }
+  });
+
+  test('cada outra extensão é recusada pelo nome, com o conteúdo que fosse', () => {
+    for (const nome of ['a.json', 'a.js', 'a.mjs', 'a.htm', 'a.txt', 'a.zip', 'a.woff2', 'a.ttf', 'a.svg', 'a.PNG', 'a.CSS', 'a.Html', 'a', 'a.png.js', '.png', 'a.css.exe', 'Logo.png', 'a b.png', 'a.png ']) {
+      const { r, guardado } = tentar(nome, 'a{color:#c8285a}');
+      assert.equal(r.code, 1, nome);
+      assert.match(r.erro, /nome de arquivo inválido|SVG não é guardado/, nome);
+      assert.equal(guardado, false, nome);
+    }
+  });
+
+  test('byte nulo, PNG e binário não passam por texto', () => {
+    for (const [nome, conteudo, padrao] of [
+      ['a.css', 'a{color:#c8285a}\u0000', /byte nulo/],
+      ['a.html', Buffer.from([0x3c, 0x70, 0x3e, 0x00, 0x3c, 0x2f, 0x70, 0x3e]), /byte nulo/],
+      ['a.css', png(), /PNG, não css|UTF-8/],
+      ['a.html', Buffer.from([0xff, 0xfe, 0x00, 0x01]), /UTF-8|byte nulo/],
+      ['a.png', 'a{color:#c8285a}', /não é PNG/],
+    ]) {
+      const { r, guardado } = tentar(nome, conteudo);
+      assert.equal(r.code, 1, nome);
+      assert.match(r.erro, padrao, nome);
+      assert.equal(guardado, false);
+    }
+  });
+});
