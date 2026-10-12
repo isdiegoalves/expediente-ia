@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Passos determinísticos do /tema (coleta de marca, paleta, pré-voo, aplicar e voltar ao padrão). Só `aplicar` e `padrao` escrevem tema-ativo.
-// Uso: node scripts/tema/tema.mjs <preparar|paleta|css|rasterizar|montar|contraste|validar|capturar|aplicar|padrao> ...
+// Uso: node scripts/tema/tema.mjs <preparar|guardar|marca|paleta|css|rasterizar|montar|contraste|validar|capturar|aplicar|padrao> ...
 import { spawnSync } from 'node:child_process';
 import { readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -8,11 +8,13 @@ import { dirname, join, resolve } from 'node:path';
 import { aplicarPropostas, relatorio } from './contraste.mjs';
 import { arquivoComumParaLer, cadeiaSegura, criarPasta, destinoGravavel, gravarArquivoComum, gravarTemaAtivo, idValido, lerTemaAtivo, nomePng, pastaDosTemas, recusarSeEmUso } from './confinar.mjs';
 import { capturar, urlDaPrevia } from './captura.mjs';
-import { caminhoSeguro, montar, RAIZ } from './marca.mjs';
+import { conferirTamanho, conteudoParaGuardar, nomeDeReferencia } from './guardar.mjs';
+import { caminhoSeguro, conferirMarca, montar, RAIZ } from './marca.mjs';
 import { ehPng, lerPng, MAX_BYTES_ENTRADA, quantizar } from './png.mjs';
 import { rasterizar } from './svg.mjs';
 
 const MAX_TEXTO = 1024 * 1024;
+const MAX_MARCA = 64 * 1024;
 
 const pastaDoTema = (id) => {
   idValido(id);
@@ -33,6 +35,46 @@ const comandos = {
   preparar([id]) {
     idValido(id);
     console.log(criarPasta(homedir(), id, 'referencias'));
+  },
+
+  guardar([id, origem, nome]) {
+    if (!id || !origem || nome === undefined) throw new Error('uso: guardar <id-do-tema> <arquivo-de-origem> <nome.png|.css|.html>');
+    idValido(id);
+    const tipo = nomeDeReferencia(nome);
+    cadeiaSegura(homedir(), id, 'referencias');
+    destinoGravavel(join(pastaDosTemas(homedir()), id, 'referencias', nome));
+    const arq = arquivoComumParaLer(arquivoLocal(origem), origem);
+    conferirTamanho(arq, tipo, origem);
+    const dados = conteudoParaGuardar(tipo, readFileSync(arq));
+    const pasta = criarPasta(homedir(), id, 'referencias');
+    gravarArquivoComum(join(pasta, nome), dados);
+    console.log(`${join(pasta, nome)}: ${dados.length} bytes`);
+  },
+
+  async marca([id]) {
+    if (!id) throw new Error('uso: marca <id-do-tema>   (o JSON da marca vem pela entrada padrão)');
+    idValido(id);
+    const partes = [];
+    let total = 0;
+    for await (const parte of process.stdin) {
+      total += parte.length;
+      if (total > MAX_MARCA) throw new Error('marca.json acima de 64 KB');
+      partes.push(parte);
+    }
+    let m;
+    try {
+      m = JSON.parse(Buffer.concat(partes).toString('utf8'));
+    } catch {
+      throw new Error('a entrada não é JSON');
+    }
+    const erros = conferirMarca(m);
+    if (m?.id !== id) erros.unshift(`o id da marca ("${m?.id}") não é o do comando ("${id}")`);
+    if (erros.length) throw new Error(`marca recusada:\n- ${erros.join('\n- ')}`);
+    cadeiaSegura(homedir(), id, 'referencias');
+    const destino = join(pastaDosTemas(homedir()), id, 'referencias', 'marca.json');
+    destinoGravavel(destino);
+    gravarArquivoComum(join(criarPasta(homedir(), id, 'referencias'), 'marca.json'), `${JSON.stringify(m, null, 2)}\n`);
+    console.log(destino);
   },
 
   paleta(args) {
@@ -79,7 +121,7 @@ const comandos = {
   montar([arquivo, ...opcoes]) {
     if (!arquivo) throw new Error('uso: montar <marca.json> [--refazer]');
     const caminho = arquivoComumParaLer(arquivoLocal(arquivo), arquivo);
-    if (statSync(caminho).size > 64 * 1024) throw new Error('marca.json acima de 64 KB');
+    if (statSync(caminho).size > MAX_MARCA) throw new Error('marca.json acima de 64 KB');
     const pasta = montar(JSON.parse(readFileSync(caminho, 'utf8')), { home: homedir(), baseDir: dirname(caminho), refazer: opcoes.includes('--refazer') });
     const id = pasta.split('/').pop();
     console.log(`Tema candidato gravado em ${pasta} (não aplicado).\n`);
