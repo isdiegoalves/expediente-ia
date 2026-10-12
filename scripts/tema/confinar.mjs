@@ -1,6 +1,6 @@
 // Toda gravação ou remoção dos scripts fica dentro de <home>/.expediente/host/temas/<id>/. Nenhum componente do
 // caminho, de .expediente para baixo, pode ser link simbólico ou algo que não seja pasta.
-import { closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, writeSync } from 'node:fs';
+import { closeSync, constants, fstatSync, ftruncateSync, lstatSync, mkdirSync, openSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
 
 const ID = /^[a-z0-9][a-z0-9-]{0,39}$/;
@@ -52,13 +52,17 @@ export function destinoGravavel(destino) {
   }
   if (st && st.isSymbolicLink()) throw new Error(`${destino} é link simbólico; recusado`);
   if (st && !st.isFile()) throw new Error(`${destino} não é arquivo comum; recusado`);
+  if (st && st.nlink > 1) throw new Error(`${destino} tem mais de um nome (hard link); recusado`);
 }
 
 export function gravarArquivoComum(destino, dados) {
   destinoGravavel(destino);
-  const fd = openSync(destino, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW, 0o600);
+  const fd = openSync(destino, constants.O_WRONLY | constants.O_CREAT | constants.O_NOFOLLOW, 0o600);
   try {
-    if (!fstatSync(fd).isFile()) throw new Error(`${destino} não é arquivo comum; recusado`);
+    const st = fstatSync(fd);
+    if (!st.isFile()) throw new Error(`${destino} não é arquivo comum; recusado`);
+    if (st.nlink > 1) throw new Error(`${destino} tem mais de um nome (hard link); recusado`);
+    ftruncateSync(fd, 0);
     writeSync(fd, dados);
   } finally {
     closeSync(fd);
