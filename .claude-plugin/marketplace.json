@@ -2,7 +2,7 @@
   "name": "expediente",
   "owner": { "name": "Diego Silva" },
   "description": "Plugins do Expediente, o escritório virtual em pixel art das suas sessões do Claude Code.",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "plugins": [
     {
       "name": "expediente",

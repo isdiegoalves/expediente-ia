@@ -10,7 +10,11 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
-Mudar coisas no Expediente agora exige provar que se conhece um token local, e o escritório passa a abrir já autorizado.
+## [1.3.0] - 2026-10-12
+
+Token local, escritório que abre já autorizado e o `/tema`. Mudar coisas no Expediente passa a exigir a prova de um token que
+só o seu usuário lê, e dá para montar o tema de uma marca de dentro do Claude Code, ver a prévia e só então aplicar.
+
 Para atualizar: `git pull`, `npm run docker:up` (cria o token, se faltar), `npm run instalar` (o hook de permissões e o mod
 passam a provar o token) e abra o escritório uma vez com `npm run abrir` (no terminal, também pelo botão **Abrir o
 escritório** do painel do `/escritorio`). Enquanto o hook instalado for o antigo, o pedido de permissão leva `401` e cai no
@@ -61,6 +65,11 @@ mostra a faixa de ações bloqueadas até ser aberta de novo pelo `npm run abrir
   responde com o comando que roda de qualquer pasta.
 - **Faixa de ações bloqueadas.** Numa página sem a chave, o escritório continua mostrando tudo, mas responder, renomear e
   editar ficam bloqueados, com uma faixa que diz o que fazer, em passos. O `?mock=1` não precisa de token.
+- **`/tema`: o tema de uma marca, de dentro do Claude Code.** `/tema <descrição>` (por exemplo, "trabalho na empresa X")
+  monta um tema candidato a partir das cores e do logo que você passar: lê as cores de CSS, HTML e imagens, converte logo
+  em SVG para PNG, grava o tema como dado em `~/.expediente/host/temas/<id>/` e mostra o relatório de contraste, com cada
+  par reprovado, a razão medida e o ajuste proposto. O comando não baixa nada: você passa os arquivos, ou ele diz o
+  endereço exato e pede. Fonte proprietária fica de fora, e nada de marca de terceiros entra no repositório.
 - **`/tema`: prévia, nota e aprovação.** Depois de montar o tema de uma marca, o `/tema` tira três capturas do modo
   demonstração, avalia cores, logo e legibilidade (nota de 0 a 10 e os pontos de falha, como texto com contraste abaixo
   de 4,5:1 ou balão cortado) e mostra o tema numa prévia: `?tema=<id>` na URL abre o candidato só naquela aba, com uma
@@ -70,6 +79,14 @@ mostra a faixa de ações bloqueadas até ser aberta de novo pelo `npm run abrir
 - **O escritório troca de tema sem reiniciar.** Ao aprovar, as páginas abertas recarregam sozinhas em poucos segundos.
 - **`/escritorio tema padrao`** devolve o escritório ao tema padrão, sem o modelo e sem gastar uso.
 - **Demonstração repetível:** `?seed=<n>` gera sempre as mesmas salas e agentes, e `?sala=<n>` enquadra a n-ésima sala.
+
+### Alterado
+
+- **Lista lateral mais leve.** Quando só um agente muda, a lista redesenha só a linha dele. Com 300 subagentes, o tempo
+  da interface por atualização caiu cerca da metade na medição lado a lado.
+- Para quem desenvolve: o pré-voo ganhou a etapa `--com-navegador` (roteiro do modo maquete), cobra 1 s por teste do mod
+  e prova o token na etapa do container; o teste das travas de rota confere mais formatos de rota, e os scripts do
+  `/tema` têm uma prova por trava.
 
 ## [1.2.0] - 2026-10-11
 
@@ -224,7 +241,8 @@ Até a 0.4.0 o histórico é o do projeto de origem, o Habblaud, de onde o Exped
 [README](README.md)): o [CHANGELOG dele no commit `cb0c0bb`](https://github.com/marmottajr/habblaud/blob/cb0c0bb/CHANGELOG.md)
 lista o que entrou em cada versão. O Expediente tem releases próprias a partir da 1.0.0.
 
-[Não lançado]: https://github.com/isdiegoalves/expediente-ia/compare/v1.2.0...HEAD
+[Não lançado]: https://github.com/isdiegoalves/expediente-ia/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/isdiegoalves/expediente-ia/releases/tag/v1.3.0
 [1.2.0]: https://github.com/isdiegoalves/expediente-ia/releases/tag/v1.2.0
 [1.1.0]: https://github.com/isdiegoalves/expediente-ia/releases/tag/v1.1.0
 [1.0.0]: https://github.com/isdiegoalves/expediente-ia/releases/tag/v1.0.0
