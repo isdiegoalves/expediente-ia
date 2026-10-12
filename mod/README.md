@@ -58,12 +58,18 @@ partir da 2.1.287; a API ainda é "early access" e pode mudar entre versões. A 
   ainda é o `claude` e roda o mesmo plano do botão "Focar"; depois `POST .../resultado` com `focado`, `sem-painel` ou
   `nao-e-claude`. Nada além do pid inteiro vindo do servidor chega ao `$.process`.
 
-- **Token local:** as chamadas do mod que mudam estado (`POST .../assumir` e `.../resultado`) levam o token de
-  `~/.expediente/host/token` no cabeçalho `X-Expediente-Token`; o servidor recusa escrita sem ele. Sem o arquivo (ou com
-  conteúdo fora de 64 hexadecimais), o mod não posta nada. O painel do `/escritorio` ganha o link "Abrir o escritório"
-  (`http://localhost:<porta>/#t=<token>`, mais o botão "Abrir" no terminal, que roda `open` só com essa forma): a página
-  guarda o token do fragmento e o tira da barra de endereço. O valor do token nunca é texto de comando, linha de status
-  nem aviso (eles chegam ao modelo); só o cabeçalho e o destino desse link.
+- **Token local:** o mod nunca manda o token. Antes de cada chamada que muda estado do servidor (`POST .../assumir`,
+  `.../resultado` e `/api/token/bilhete`) e de cada `GET` que também muda (`/api/mod/focos` e `/api/agentes/:id/ir`), pede um
+  desafio (`GET /api/token/desafio`), confere a prova de que o servidor tem o token em `~/.expediente/host/token` e manda o HMAC dele
+  em `X-Expediente-Prova` (`hooks/prova.ts`: SHA-256 e HMAC em JavaScript puro, porque o ambiente do mod só tem
+  `crypto.subtle.digest`, assíncrono demais para o relógio simulado dos testes; conferido contra os vetores do NIST e da RFC 4231 e
+  contra o `node:crypto`). Sem o arquivo (ou com conteúdo fora de 64 hexadecimais), ou com um servidor que não prova, o mod não
+  envia nada. No terminal, o painel do `/escritorio` ganha o botão **Abrir o escritório**: pede um bilhete de uso único (60 s) e
+  grava um HTML que redireciona a `http://127.0.0.1:<porta>/#b=<bilhete>` numa pasta de `mktemp -d` (modo 700; o `$.fs.write` do
+  mod não tem parâmetro de modo, então o que protege é a pasta, e o arquivo recebe `chmod 600`); o `open` recebe só o caminho, e a
+  pasta é apagada quando o bilhete vence. No app desktop o motor só desenha `Link` para `https:` ou `http://localhost`, e
+  `localhost` pode resolver para `::1`: ali o painel só diz para rodar `npm run abrir`. O token e o bilhete nunca são texto de
+  comando, linha de status nem aviso (chegam ao modelo).
 
 - **Ponte do app desktop:** a cada 5 s lê `~/Library/Application Support/Claude/claude-code-sessions/*/*/local_*.json`,
   seleciona por nome `sessionId`, `cliSessionId` e `isArchived` (nada mais do arquivo é copiado) e grava
@@ -81,14 +87,14 @@ carregar o módulo; nada fora desta lista é chamado):
 ```
 ❯ ./register.tsx hooks: session.start, session.measure, command.run{command=escritorio}, ui.render{component=Pane, requestId=escritorio}
 ❯ ./register.tsx answers its own command: command.run{command=escritorio}
-❯ ./register.tsx calls: $.clock.after (via getExpediente), $.clock.every (via expedienteText, ligarAmostrador, ligarFocos, ligarPonte, schedule), $.clock.now, $.command.register, $.env.get (via amostrarRegistro, readEnv, rodarPonte), $.fs.list (via amostrarRegistro, arquivosDoApp), $.fs.read (via amostrarRegistro, lerTokenLocal, rodarPonte), $.fs.stat (via amostrarRegistro, rodarPonte), $.fs.write (via amostrarRegistro, rodarPonte, writeUsage), $.http.fetch (via getExpediente), $.process.run (via abrirNoApp, amostrarRegistro, executarFoco, lerFoco, rodarPonte), $.session.id (via consulta, rodarPonte), $.session.surfaces (via atenderFocos, atualizarPainel, expedienteText, ligarAmostrador, ligarFocos, ligarPonte, poll), $.session.usage, $.ui.copy (via copiarComando), $.ui.invalidate (via atualizarPainel), $.ui.open (via expedienteText), $.ui.resolve, $.ui.status (via setStatus), $.ui.toast (via abrirNoApp, copiarComando, focar)
+❯ ./register.tsx calls: $.clock.after (via abrirEscritorio, buscar), $.clock.every (via expedienteText, ligarAmostrador, ligarFocos, ligarPonte, schedule), $.clock.now, $.command.register, $.env.get (via amostrarRegistro, readEnv, rodarPonte), $.fs.list (via amostrarRegistro, arquivosDoApp), $.fs.read (via amostrarRegistro, lerChave, rodarPonte), $.fs.stat (via amostrarRegistro, rodarPonte), $.fs.write (via abrirEscritorio, amostrarRegistro, rodarPonte, writeUsage), $.http.fetch (via buscar), $.process.run (via abrirEscritorio, abrirNoApp, amostrarRegistro, executarFoco, lerFoco, rodarPonte), $.session.id (via consulta, rodarPonte), $.session.surfaces (via atenderFocos, atualizarPainel, expedienteText, ligarAmostrador, ligarFocos, ligarPonte, poll), $.session.usage, $.ui.copy (via copiarComando), $.ui.invalidate (via atualizarPainel), $.ui.open (via expedienteText), $.ui.resolve, $.ui.status (via setStatus), $.ui.toast (via abrirEscritorio, abrirNoApp, copiarComando, focar)
 ❯ ./register.tsx env writes: nothing
 ❯ ./register.tsx env reads: CLAUDE_CONFIG_DIR, EXPEDIENTE_PORT, EXPEDIENTE_USAGE_DIR, HOME
 ```
 
 Em palavras: só observa (nenhum hook decide nada: não aprova ferramentas, não muda prompts, não lê mensagens),
 grava três tipos de arquivo em `~/.expediente/host` (o de uso, o `sessoes-app.json`, este por `mv`, e uma amostra por hora em
-`amostras/`), roda `$.process` só para o `mv`, para `ps -o ppid=,comm=` e, a pedido no painel do `/escritorio`, para `ps -o comm=` (o pid ainda é o `claude`?), `ps -o tty=`, o leitor do painel, `open` (lista permitida), `zellij`, `pgrep` e `osascript`, fala só com `127.0.0.1` e lê quatro variáveis de ambiente (e o arquivo do token, para o cabeçalho e para o link do painel). `$.clock.after` é o
+`amostras/`) e, a pedido do botão do painel, um HTML de redirecionamento numa pasta temporária, roda `$.process` só para o `mv`, para `ps -o ppid=,comm=` e, a pedido no painel do `/escritorio`, para `ps -o comm=` (o pid ainda é o `claude`?), `ps -o tty=`, o leitor do painel, `open` (lista permitida: URLs do Claude e o `abrir.html` da pasta temporária do escritório), `mktemp -d`, `chmod 600` e `rm -rf` dessa pasta, `zellij`, `pgrep` e `osascript`, fala só com `127.0.0.1` e lê quatro variáveis de ambiente (e o arquivo do token, para provar quem fala e pedir o bilhete do botão do painel). `$.clock.after` é o
 prazo de 2 s de cada pergunta ao Expediente (`$.http.fetch` não aceita AbortSignal).
 
 ## `expediente-permissoes` — responder permissões pelo escritório
@@ -100,8 +106,9 @@ Um hook `PermissionRequest` comum (sem mod), em `expediente-permissoes/hooks/hoo
 ```
 
 O script `hooks/permission-hook.mjs` é o único script do hook (fonte única; Node puro, só
-`node:*`, porque o Claude Code copia apenas a pasta do plugin para o cache). Ele manda o pedido ao Expediente local
-e espera a resposta por até 5 min; o diálogo continua no terminal e vale o que você responder primeiro. Sem o
+`node:*`, porque o Claude Code copia apenas a pasta do plugin para o cache). Ele manda o pedido ao Expediente local,
+provando que conhece o token local (`~/.expediente/host/token`) sem mandá-lo (desafio e HMAC; sem o arquivo, ou com um servidor que
+não prove ter o token, sai sem decidir), e espera a resposta por até 5 min; o diálogo continua no terminal e vale o que você responder primeiro. Sem o
 Expediente no ar ou sem nenhuma página aberta, sai na hora. Porta: `EXPEDIENTE_PORT` (padrão 4848); espera:
 `EXPEDIENTE_PERMISSION_TIMEOUT` (padrão 300 s; o tempo limite do hook no plugin é fixo em 330 s, então valores
 maiores que 300 são cortados pelo Claude Code). Precisa de `node` 22+ no `PATH` da sessão.

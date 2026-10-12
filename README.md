@@ -398,40 +398,59 @@ cada pergunta e o campo **Outro**, e **Responder** manda as respostas ao agente.
 ### Token local
 
 Tudo o que muda alguma coisa no Expediente (aprovar ou recusar uma permissão, renomear uma sala, editar o personagem,
-mudar o ritmo, pedir o foco de uma sessão) precisa de um **token local**: um segredo de 32 bytes aleatórios, em
-hexadecimal, guardado em `~/.expediente/host/token` com modo 600. No Docker, quem cria o arquivo é o `npm run docker:up`
-(só se ele não existir; nunca troca o que já está lá); no modo nativo, o servidor cria ao subir. O servidor confere o
-cabeçalho `X-Expediente-Token` de todo pedido a `/api/` que não seja `GET` nem `HEAD` e responde `401` sem ele, e `503` se
-ele mesmo estiver sem token. Ler (o escritório, o terminal somente leitura, o `/api/health`) não pede nada.
+mudar o ritmo, registrar a presença da aba, pedir o foco de uma sessão) exige que quem pede **prove conhecer um token
+local**: um segredo de 32 bytes aleatórios, em hexadecimal, guardado em `~/.expediente/host/token` com modo 600. No Docker,
+quem cria o arquivo é o `npm run docker:up` (só se ele não existir; nunca troca o que já está lá); no modo nativo, o
+servidor cria ao subir. Ler (o escritório, o terminal somente leitura, o `/api/health`) não pede nada: a leitura depende só de
+o servidor estar acessível apenas pelo próprio computador, como antes.
+
+**O segredo nunca viaja.** Quem escreve (a página, o hook de permissões, o mod, o pré-voo) pede ao servidor um desafio, confere
+que o servidor prova ter o mesmo token (um HMAC-SHA256 do nonce que ele mandou) e só então manda, no cabeçalho
+`X-Expediente-Prova`, o HMAC do desafio, do método e do caminho. O desafio vale 60 s e uma vez; sem prova, ou com prova
+errada, o servidor responde `401`, e `503` se ele mesmo estiver sem token. Poucos `GET` também mudam estado no servidor
+(entregar a decisão ao hook, marcar que há um mod de pé, emitir o código de uso único do atalho para a sessão) e por isso
+também exigem a prova. Se o Expediente estiver parado e outro programa ocupar a porta, ele não recebe o segredo (e o hook, o
+mod, o `npm run abrir` e o pré-voo recusam falar com quem não prova ter o token).
 
 **O que o token protege e o que não protege.** Ele protege contra quem alcança a porta mas não lê os arquivos do seu
 usuário: um container, um processo isolado, outro usuário da máquina. Um programa rodando como você consegue ler o
-arquivo do token; contra ele o token não é barreira (nem o resto do Expediente: esse programa já lê as suas sessões).
-Trocar o token é apagar o arquivo e rodar `npm run docker:up` (ou reiniciar o servidor); as páginas abertas pedem a
-autorização de novo.
+arquivo do token; contra ele o token não é barreira (nem o resto do Expediente: esse programa já lê as suas sessões). O token
+também não autentica a página para você: com o Expediente parado, um programa que ocupe a porta pode servir uma página falsa;
+ele só não consegue o segredo. Trocar o token é apagar o arquivo e rodar `npm run docker:up` (ou reiniciar o servidor); as
+páginas abertas pedem a autorização de novo.
 
-**Abrir o escritório já autorizado.** A página recebe o token pelo fragmento da URL (`http://localhost:4848/#t=…`, que o
-navegador não manda ao servidor), guarda no `localStorage` daquele endereço e tira o fragmento da barra de endereço.
-Você não digita nada:
+**Abrir o escritório já autorizado.** A página não guarda o token: guarda uma chave que não pode ser exportada, no
+IndexedDB do navegador, e assina cada escrita com ela. Para recebê-la, abra o escritório por um destes caminhos, sem digitar nada:
 
-- `npm run abrir`, na pasta do Expediente, abre o navegador padrão já com o token (sem imprimir o valor);
-- ou, no Claude Code, `/escritorio` e o botão **Abrir o escritório** do painel (no terminal, o link e o botão **Abrir**;
-  no app, o link).
+- `npm run abrir`, na pasta do Expediente: confere que quem responde na porta tem o seu token, pede um **bilhete de uso
+  único** (60 s) e abre o navegador padrão num arquivo temporário (pasta de modo 700, apagada em seguida) que redireciona a
+  `http://127.0.0.1:<porta>/#b=<bilhete>`. A página troca o bilhete pela chave e tira o fragmento da barra de endereço. O
+  token e o bilhete não aparecem em argumento de programa, em saída de comando nem em histórico do terminal;
+- no Claude Code, no terminal, `/escritorio` e o botão **Abrir o escritório** do painel (mesmo caminho). No app desktop o
+  painel só diz para rodar `npm run abrir`: o motor do mod só desenha links para `https:` ou `http://localhost`, e
+  `localhost` pode ser outro programa em `::1`.
 
-O endereço é sempre `http://localhost:<porta>`: o `localStorage` é por endereço, e `https://expediente.localhost` (que o
-servidor também aceita como `Host`) é outro endereço, sem o token guardado.
+O endereço é sempre `http://127.0.0.1:<porta>`, o mesmo em que o servidor provou ter o token (`localhost` pode resolver para
+`::1`, onde outro programa ouça a mesma porta). As ações ficam liberadas **nessa origem**: abrindo por `http://localhost:4848`
+ou `https://expediente.localhost` você vê tudo, mas a página pede a autorização de novo naquele endereço, e o
+`npm run abrir` não a dá (ele não cobre `https://expediente.localhost`: o armazenamento do navegador é por origem, e nada no
+repositório sobe esse proxy).
 
-**Se as ações aparecerem bloqueadas.** A página mostra um aviso quando não tem o token (ou quando o servidor está sem
-ele) e as ações que mudam algo não saem da página; ler continua normal. Faça isto, nesta ordem:
+**Se as ações aparecerem bloqueadas.** A página mostra uma faixa quando não tem a chave (ou quando o servidor está sem
+token) e as ações que mudam algo não saem da página; ler continua normal. Faça isto, nesta ordem:
 
 1. Na pasta do Expediente, `npm run docker:up` (cria o token se faltar; no modo nativo, reinicie o servidor).
-2. `npm run abrir` (ou o botão **Abrir o escritório** do `/escritorio`). A página abre autorizada.
-3. Se o aviso continuar, confira que `~/.expediente/host/token` existe e tem 64 caracteres hexadecimais
+2. `npm run abrir` (ou o botão **Abrir o escritório** do `/escritorio`, no terminal). A página abre autorizada.
+3. Se a faixa continuar, confira que `~/.expediente/host/token` existe e tem 64 caracteres hexadecimais
    (`/api/health` mostra `token.ok`); se não tiver, apague o arquivo e volte ao passo 1.
 
-O hook de permissões e o mod leem o mesmo arquivo. Se o plugin instalado for de antes do token (`npm run instalar` o
-atualiza), o pedido leva `401` e cai no terminal, como em qualquer erro. O `?mock=1` não usa token. Um `curl` seu precisa do
-cabeçalho: `curl -X POST -H "X-Expediente-Token: $(cat ~/.expediente/host/token)" -H 'Content-Type: application/json' …`.
+O hook de permissões e o mod leem o mesmo arquivo. Se o plugin instalado for de antes desta mudança (`npm run instalar` o
+atualiza), o pedido leva `401` ou nem sai, e cai no terminal, como em qualquer erro. O `?mock=1` não usa token. Um `curl` sem a
+prova leva `401`, de propósito. Para uma escrita manual, o hook exporta a função que prova:
+
+```bash
+node -e "import('./mod/expediente-permissoes/hooks/permission-hook.mjs').then(async (h) => console.log(await h.fetchComProva({ base: 'http://127.0.0.1:4848', chave: h.readSecret(), metodo: 'POST', caminho: '/api/demo', corpo: { enabled: false }, timeoutMs: 5000 })))"
+```
 
 ### Editar o personagem
 
@@ -658,9 +677,11 @@ das contas (letra, e-mail, organização) são lidos no host pelo `docker:up` e 
   e-mail, a organização e o cache do `/usage`; o uso ao vivo vem do mod (ou do tap de statusline).
 - **Segredos mascarados:** tokens e senhas com formato conhecido (`Bearer`, `-u usuário:senha`, `TOKEN=`, chaves
   `sk-…`, `ghp_…`, `AKIA…`, JWTs, senhas em URLs) viram `***` antes de chegar ao navegador.
-- **Token local nas escritas:** toda chamada que muda estado (decidir permissão, renomear sala, personagem, ritmo, foco)
-  leva o token de `~/.expediente/host/token`, modo 600; sem ele o servidor responde `401`. Protege contra quem
-  alcança a porta sem ler os seus arquivos, não contra um programa que rode como você (veja [Token local](#token-local)).
+- **Token local nas escritas:** toda chamada que muda estado (decidir permissão, renomear sala, personagem, ritmo, presença,
+  foco) e os poucos `GET` que também mudam estado exigem a prova de que quem pede conhece o token de
+  `~/.expediente/host/token` (modo 600): um HMAC de um desafio do servidor, sem o segredo em claro; sem a prova o servidor
+  responde `401`. Protege contra quem alcança a porta sem ler os seus arquivos, não contra um programa que rode como você
+  (veja [Token local](#token-local)).
 - **Protegido contra sites maliciosos:** o servidor recusa endereços que não sejam `localhost`/IP (DNS rebinding) e
   `POST` vindos de outras origens (CSRF), e não deixa a página ser embutida em outros sites.
 - **Terminal somente leitura só local:** a conversa completa das sessões (e o histórico das sessões encerradas, com os
@@ -694,7 +715,7 @@ das contas (letra, e-mail, organização) são lidos no host pelo `docker:up` e 
 
 | Comando | O que faz |
 | --- | --- |
-| `npm run abrir` | Abre o escritório no navegador padrão já com o token local (veja [Token local](#token-local)). |
+| `npm run abrir` | Abre o escritório no navegador padrão já autorizado a mudar coisas, sem o token à vista (veja [Token local](#token-local)). |
 | `npm run dev` | Servidor + Vite em http://localhost:4848, com recarga automática. |
 | `npm run dev:client` | Só o Vite, em http://localhost:5848 (abra com `?mock=1`; `/api` é repassado para a porta 4848). |
 | `npm run demo` | `npm run dev` com o modo demonstração ligado. |
@@ -757,9 +778,10 @@ Só aparecem sessões **abertas** do Claude Code. Confira se há alguma rodando 
 <details>
 <summary><b>Aparece "ações bloqueadas" ou responder, renomear e editar não fazem nada</b></summary>
 
-A página está sem o token local (ou o servidor está sem ele). Rode `npm run docker:up` (cria o token se faltar), depois
-`npm run abrir` — ou, no Claude Code, `/escritorio` e **Abrir o escritório**. Detalhes e o que o token protege em
-[Token local](#token-local).
+A página está sem a chave do token local (ou o servidor está sem token). Rode `npm run docker:up` (cria o token se faltar),
+depois `npm run abrir` — ou, no Claude Code, no terminal, `/escritorio` e **Abrir o escritório**. A autorização vale na origem
+`http://127.0.0.1:<porta>`: aberto por `localhost`, o escritório mostra tudo mas pede a autorização de novo. Detalhes e o que o
+token protege em [Token local](#token-local).
 
 </details>
 

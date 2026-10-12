@@ -10,30 +10,42 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
-Mudar coisas no Expediente agora exige um token local, e o escritório passa a abrir já autorizado. Para atualizar:
-`git pull`, `npm run docker:up` (cria o token, se faltar), `npm run instalar` (o hook de permissões e o mod passam a
-mandar o token) e abra o escritório uma vez com `npm run abrir` (ou pelo botão **Abrir o escritório** do painel do
-`/escritorio`). Enquanto o hook instalado for o antigo, o pedido de permissão leva `401` e cai no terminal, como em
-qualquer erro: nada se perde, mas não dá para responder pelo escritório até rodar o `npm run instalar`. Pelo mesmo
-motivo, o pedido de foco feito no navegador só volta a funcionar com o mod novo.
+Mudar coisas no Expediente agora exige provar que se conhece um token local, e o escritório passa a abrir já autorizado.
+Para atualizar: `git pull`, `npm run docker:up` (cria o token, se faltar), `npm run instalar` (o hook de permissões e o mod
+passam a provar o token) e abra o escritório uma vez com `npm run abrir` (no terminal, também pelo botão **Abrir o
+escritório** do painel do `/escritorio`). Enquanto o hook instalado for o antigo, o pedido de permissão leva `401` e cai no
+terminal, como em qualquer erro: nada se perde, mas não dá para responder pelo escritório até rodar o `npm run instalar`. Pelo
+mesmo motivo, o pedido de foco feito no navegador só volta a funcionar com o mod novo. Uma página que você já tinha aberta
+mostra a faixa de ações bloqueadas até ser aberta de novo pelo `npm run abrir`.
 
 ### Segurança
 
-- **Token local em toda ação que muda algo.** Antes, qualquer programa que alcançasse a porta do Expediente neste
-  computador podia, por exemplo, aprovar ou recusar uma permissão pendente. Agora decidir permissão, renomear sala,
-  editar o personagem, mudar o ritmo e pedir foco exigem um token de 32 bytes aleatórios guardado em
-  `~/.expediente/host/token` (modo 600): sem ele, o servidor responde `401`. O token protege contra quem alcança a
-  porta sem ler os seus arquivos (um container, um processo isolado, outro usuário da máquina); um programa rodando
-  como você consegue ler o arquivo, e contra ele o token não é barreira. Ler o escritório não pede nada.
+- **Toda ação que muda algo exige a prova do token local.** Antes, qualquer programa que alcançasse a porta do Expediente
+  neste computador podia, por exemplo, aprovar ou recusar uma permissão pendente. Agora decidir permissão, renomear sala,
+  editar o personagem, mudar o ritmo, registrar a presença da aba e pedir foco exigem que quem pede prove conhecer um token de
+  32 bytes aleatórios guardado em `~/.expediente/host/token` (modo 600): sem a prova, o servidor responde `401`. O token
+  protege contra quem alcança a porta sem ler os seus arquivos (um container, um processo isolado, outro usuário da máquina);
+  um programa rodando como você consegue ler o arquivo, e contra ele o token não é barreira. Ler o escritório não pede nada.
+- **O segredo nunca viaja.** A prova é um HMAC de um desafio que o servidor emite (60 s, uso único), do método e do caminho, e
+  o servidor prova de volta que tem o token antes de qualquer cliente confiar nele. Se o Expediente estiver parado e outro
+  programa ocupar a porta, ele não recebe o segredo, e o hook, o mod, o `npm run abrir` e o pré-voo recusam falar com ele. O
+  que ele ainda pode é servir uma página falsa: o token não autentica a página para você.
+- **Alguns `GET` também mudam estado e agora exigem a prova:** entregar ao hook a decisão que você deu (quem lesse o id no
+  snapshot a roubaria), marcar que há um mod de pé e emitir o código de uso único do atalho para a sessão.
 
 ### Adicionado
 
-- **`npm run abrir`.** Abre o escritório no navegador padrão já autorizado: o token vai no fragmento do endereço
-  (`http://localhost:4848/#t=…`), que o navegador não manda ao servidor; a página o guarda e o tira da barra de
-  endereço. O mesmo botão, **Abrir o escritório**, está no painel do `/escritorio` do Claude Code.
-- **Aviso de ações bloqueadas.** Numa página sem o token (por exemplo, aberta por `http://localhost:4848` sem passar pelo
-  `npm run abrir`), o escritório continua mostrando tudo, mas responder, renomear e editar ficam bloqueados, com um aviso
-  que diz o que fazer, em passos. O `?mock=1` não precisa de token.
+- **`npm run abrir`.** Abre o escritório no navegador padrão já autorizado a mudar coisas. Ele confere que quem responde na
+  porta tem o seu token, pede ao servidor um bilhete de uso único (60 s) e abre um arquivo temporário (pasta de modo 700,
+  apagada em seguida) que leva a `http://127.0.0.1:4848/#b=…`. A página troca o bilhete por uma chave que não pode ser
+  exportada, guardada no IndexedDB do navegador, e tira o fragmento da barra de endereço; o token e o bilhete não aparecem
+  em argumento de programa nem em saída de comando. O botão **Abrir o escritório** do painel do `/escritorio` faz o mesmo no
+  terminal; no app desktop o painel manda rodar `npm run abrir`.
+- **As ações ficam liberadas em `http://127.0.0.1:<porta>`.** Aberto por `http://localhost:4848` (ou
+  `https://expediente.localhost`), o escritório mostra tudo, mas a faixa de aviso diz que a autorização vale só naquele
+  endereço e como obtê-la.
+- **Faixa de ações bloqueadas.** Numa página sem a chave, o escritório continua mostrando tudo, mas responder, renomear e
+  editar ficam bloqueados, com uma faixa que diz o que fazer, em passos. O `?mock=1` não precisa de token.
 
 ## [1.2.0] - 2026-10-11
 

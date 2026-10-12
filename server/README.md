@@ -79,6 +79,9 @@ festa) ou 10 min. Push só avisa. O mesmo CI visto de novo em 2 min não repete 
 | `GET /api/timeline/:dia` | o arquivo do dia (`AAAA-MM-DD`) em JSONL (`application/x-ndjson`, gzip se aceito); 400 para dia inválido, 404 sem gravação |
 | `GET /api/versao` | `{emUso, verificadoEm?, ultima?:{versao, publicadaEm, url}, nova, origem?:{nome, ultima, publicadaEm, url, analise?}}`, lido de `versao.json` na pasta da ponte (`~/.expediente/host`; no Docker `/host`, só leitura). Quem grava é o `npm run versao`, no host; o servidor só lê, valida e compara por semver, sem rede. Arquivo ausente ou torto dá só `{emUso, nova:false}` |
 | `GET /api/health` | `{ok, version, demo, docker, terminal, permissions, token:{ok, motivo?}, sources, accounts:[{id, usageStatus}]}`; `token.ok` diz se o servidor tem um token legível (sem ele, toda escrita leva 503) |
+| `GET /api/token/desafio?n=` | desafio de uso único e a prova do servidor (ver Borda); sem prova de cliente |
+| `POST /api/token/bilhete` | bilhete de uso único (60 s) para levar o segredo ao navegador; com prova |
+| `POST /api/token/troca` | `{bilhete}` → `{token}` uma vez; sem prova de cliente (o bilhete é a credencial) |
 | `POST /api/demo` | `{enabled: boolean}` liga/desliga agentes simulados (misturados aos reais) |
 | `POST /api/social/ritmo` | `{ritmo: 'calm' \| 'normal' \| 'lively'}` muda o ritmo das rodas e dos passeios para todas as abas; trava do terminal e Host local |
 | `GET /api/resumo?account=&session=` | `ResumoView` "desde que você saiu": `{desde, agora, terminaram, travaram, esperam, trabalhando, sessoes:[{id, nome, sala, estado, motivo?, tarefa?:{rotulo, texto}, desde}]}`, sem o demo e sem a sessão de quem pergunta; `desde` é a última saída gravada (ou a hora em que o servidor subiu); só Host local |
@@ -100,12 +103,32 @@ de até 200 (inclusive o começo de transcripts longos, lido em segundo plano) v
 
 Borda (`http/guard.ts`, vale para API, estáticos e Vite): `Host` precisa ser `localhost`/`expediente.localhost` ou um IP
 (contra DNS rebinding) → senão 403; `X-Forwarded-For` com endereço fora do loopback → 403; `POST` em `/api/*` exige
-`Content-Type: application/json` (415) e `Origin` da mesma origem do `Host` (403), contra CSRF. Todo pedido a `/api/` que não seja
-`GET` nem `HEAD` (inclusive `OPTIONS`) exige o cabeçalho `X-Expediente-Token` com o conteúdo de `<pasta da ponte>/token`
-(`~/.expediente/host/token`, `/host/token` no container; 64 hexadecimais, modo 600): sem ele ou com valor errado, 401 em JSON; com o
-servidor sem token legível, 503. O arquivo é relido a cada escrita (`token.ts`); o servidor nativo o cria se faltar, o `docker:up` o
-cria antes de subir o container. A comparação é em tempo constante e o caminho é lido como as rotas o leem (`/x/../api/...` é cobrado).
-Quem escreve (página, hook, mod, pré-voo) lê o mesmo arquivo; ver "Token local" no README principal. Respostas JSON
+`Content-Type: application/json` (415) e `Origin` da mesma origem do `Host` (403), contra CSRF. Todo pedido a `/api/` que não seja `GET` nem `HEAD` (inclusive `OPTIONS`) exige a prova de que quem pede conhece o token de
+`<pasta da ponte>/token` (`~/.expediente/host/token`, `/host/token` no container; 64 hexadecimais, modo 600), no cabeçalho
+`X-Expediente-Prova: <desafio>.<hex>`. O segredo nunca viaja. O protocolo (`http/autenticacao.ts`, `token.ts`):
+
+1. `GET /api/token/desafio?n=<nonce do cliente, 32 hex>` (sem prova) → `{desafio, prova}`: `desafio` são 32 hex aleatórios (60 s, uso
+   único, só em memória, no máximo 1000 vivos) e `prova = hex(HMAC-SHA256(K, "servidor\n" + n))`. O cliente confere a prova (só quem
+   tem o token a sabe fazer) antes de confiar no servidor; `K` são os 32 bytes do token.
+2. A escrita leva `<desafio>.<hex(HMAC-SHA256(K, "cliente\n" + desafio + "\n" + MÉTODO + "\n" + caminho com a consulta, como foi enviado))>`.
+   O guard consome o desafio antes de comparar e compara em tempo constante: desafio desconhecido, vencido ou reusado, de outro
+   método ou caminho, ou prova errada, dá 401 em JSON. Os prefixos "servidor" e "cliente" impedem usar a resposta de um lado como a
+   prova do outro, e não há relógio no protocolo (container e host podem divergir depois de o Mac dormir). O corpo não entra na
+   prova: um intermediário que repasse o pedido a um Expediente de verdade poderia trocá-lo.
+3. Sem token legível o servidor responde 503 a toda escrita, ao desafio, ao bilhete e à troca.
+4. `POST /api/token/bilhete` (com prova) → `{bilhete}`: 32 hex, 60 s, uso único, no máximo 64 vivos. `POST /api/token/troca {bilhete}`
+   (a única escrita sem prova de cliente: o bilhete é a credencial; JSON, mesma origem, `Sec-Fetch-Site` de dentro) → `{token}` uma
+   vez, `no-store`; bilhete desconhecido, vencido ou reusado → 401. É assim que o segredo chega à página, que o guarda como chave
+   HMAC não exportável.
+
+Três `GET` mudam estado do servidor e por isso também exigem a prova (`http/prova-get.ts`): `/api/permissions/:id/wait` (entrega e
+apaga a decisão guardada para o hook), `/api/mod/focos` (marca que há um mod de pé) e `/api/agentes/:id/ir` (emite um nonce e expulsa
+os mais antigos). O `/api/agentes/:id/ir?abrir=1` é a navegação do navegador, que não manda cabeçalho: o nonce de uso único é a
+credencial dele. Os demais `GET` só leem (a catraca, `test/travas-rotas.test.ts`, tem a tabela do que o `GET` de cada rota faz).
+
+O arquivo é relido a cada escrita; o servidor nativo o cria se faltar, o `docker:up` o cria antes de subir o container. O caminho é lido
+como as rotas o leem (`/x/../api/...` é cobrado). Quem escreve (página, hook, mod, `npm run abrir`, pré-voo) lê o mesmo arquivo;
+ver "Token local" no README principal. Respostas JSON
 saem com `nosniff` e `Cross-Origin-Resource-Policy: same-origin`, sem CORS.
 
 Cada versão tem a sua seção no `CHANGELOG.md`; um teste falha se a versão do `package.json` não tiver seção, e o
