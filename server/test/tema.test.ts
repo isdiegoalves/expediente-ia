@@ -1,4 +1,4 @@
-import { mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join, resolve } from 'node:path';
@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { Tema } from '../../shared/tema/validar';
 import { loadConfig } from '../config';
 import { createTemaHandler } from '../http/tema';
-import { arquivoDoTema, carregarTema, chaveDoTema } from '../tema/carregar';
+import { arquivoDoTema, carregarTema, chaveDoTema, previaDoTema } from '../tema/carregar';
 import { tempDir } from './fixtures';
 
 const PADRAO_DIR = resolve(__dirname, '../../client/public/temas/padrao');
@@ -103,6 +103,44 @@ describe('carga do tema ativo', () => {
     expect(carregarTema(h.pastas).aviso).toMatch(/não é válido/);
     const grande = host(() => {}, 'a'.repeat(1024));
     expect(carregarTema(grande.pastas).aviso).toMatch(/não é válido/);
+  });
+
+  it('tema-ativo que é link simbólico não vale, nem para um arquivo que tem um id bom: o padrão, com aviso', () => {
+    const h = host(() => {}, null);
+    const fora = tempDir();
+    limpezas.push(fora.cleanup);
+    writeFileSync(join(fora.dir, 'ativo'), 'teste\n');
+    symlinkSync(join(fora.dir, 'ativo'), join(h.hostDir, 'tema-ativo'));
+    const r = carregarTema(h.pastas);
+    expect(r.id).toBe('padrao');
+    expect(r.aviso).toMatch(/link simbólico/);
+  });
+
+  it('tema-ativo com id bom mas maior que 256 bytes não vale', () => {
+    const r = carregarTema(host(() => {}, `teste${'\n'.repeat(300)}`).pastas);
+    expect(r.id).toBe('padrao');
+    expect(r.aviso).toMatch(/arquivo comum/);
+  });
+
+  it('tema.json maior que 256 KB não vale, mesmo sendo JSON do tema', () => {
+    const h = host();
+    writeFileSync(join(h.pasta, 'tema.json'), `${readFileSync(join(h.pasta, 'tema.json'), 'utf8')}${' '.repeat(300 * 1024)}`);
+    const r = carregarTema(h.pastas);
+    expect(r.id).toBe('padrao');
+    expect(r.aviso).toMatch(/ilegível/);
+  });
+
+  it('temas/ que é link simbólico não vale: o ativo cai no padrão, a prévia é recusada e nenhum arquivo sai', () => {
+    const h = host();
+    renameSync(join(h.hostDir, 'temas'), join(h.hostDir, 'temas-real'));
+    symlinkSync(join(h.hostDir, 'temas-real'), join(h.hostDir, 'temas'));
+    const ativo = carregarTema(h.pastas);
+    expect(ativo.id).toBe('padrao');
+    expect(ativo.aviso).toMatch(/link simbólico/);
+    const previa = previaDoTema(h.pastas, ativo, 'teste');
+    expect(previa.previa).toBeUndefined();
+    expect(previa.aviso).toMatch(/Prévia recusada/);
+    expect(arquivoDoTema(h.pastas, ativo, 'teste', 'brand/logo-mark.png')).toBeUndefined();
   });
 
   it('JSON quebrado cai no padrão e avisa', () => {

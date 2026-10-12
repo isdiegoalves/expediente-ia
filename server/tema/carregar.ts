@@ -26,7 +26,7 @@ export interface PastasDoTema {
 const ID = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const MAX_JSON = 256 * 1024;
 const MAX_NOME = 256;
-const NOME_INVALIDO = 'Tema ativo ignorado: o nome em tema-ativo não é válido. Usando o tema padrão.';
+const NOME_INVALIDO = 'Tema ativo ignorado: tema-ativo não é arquivo comum pequeno (link simbólico não vale) ou o nome nele não é válido. Usando o tema padrão.';
 
 function lerJson(arquivo: string): unknown {
   const st = lstatSync(arquivo);
@@ -36,13 +36,17 @@ function lerJson(arquivo: string): unknown {
 
 const lerPadrao = (p: PastasDoTema): Tema => lerJson(join(p.padraoDir, 'tema.json')) as Tema;
 
-/** A pasta do tema, ou undefined se não existe, não é pasta comum de temas/ (link simbólico incluso) ou o id não serve. */
+/**
+ * A pasta do tema, ou undefined se não existe ou o id não serve. Link simbólico não vale em nenhum nível (`temas/` e
+ * `temas/<id>`), como nos scripts do tema.
+ */
 function pastaDoTema(p: PastasDoTema, id: string): string | undefined {
   if (id === 'padrao') return p.padraoDir;
   if (!ID.test(id)) return undefined;
-  const pasta = join(p.hostDir, 'temas', id);
+  const temas = join(p.hostDir, 'temas');
+  const pasta = join(temas, id);
   try {
-    return realpathSync(pasta) === join(realpathSync(join(p.hostDir, 'temas')), id) ? pasta : undefined;
+    return lstatSync(temas).isDirectory() && lstatSync(pasta).isDirectory() ? pasta : undefined;
   } catch {
     return undefined;
   }
@@ -72,11 +76,11 @@ function abrirTema(pastas: PastasDoTema, id: string, padrao: Tema): { tema: Tema
   return { tema: { id, tema: dado as Tema, base: `/temas/${id}/` } };
 }
 
-/** O nome em tema-ativo: undefined se o arquivo não existe, null se não é um arquivo comum pequeno. */
+/** O nome em tema-ativo: undefined se o arquivo não existe, null se não é um arquivo comum pequeno (link simbólico não vale). */
 function lerNomeAtivo(hostDir: string): string | null | undefined {
   const arquivo = join(hostDir, 'tema-ativo');
   try {
-    const st = statSync(arquivo);
+    const st = lstatSync(arquivo);
     return st.isFile() && st.size <= MAX_NOME ? readFileSync(arquivo, 'utf8').trim() : null;
   } catch {
     return undefined;

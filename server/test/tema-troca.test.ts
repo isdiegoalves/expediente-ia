@@ -103,6 +103,15 @@ describe('troca do tema ativo sem reiniciar', () => {
     expect(a.temas.get().id).toBe('padrao');
   });
 
+  it('o relógio que anda para trás não congela a conferência', () => {
+    const a = ambiente('um');
+    a.avancar(5_000);
+    expect(a.temas.get().id).toBe('um');
+    a.avancar(-4_000);
+    a.escrever('dois');
+    expect(a.temas.get().id, 'o relógio voltou: a conferência deve rodar de novo').toBe('dois');
+  });
+
   it('sem mudança no disco ninguém é avisado', () => {
     const a = ambiente('um');
     let chamadas = 0;
