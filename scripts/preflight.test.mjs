@@ -8,7 +8,7 @@ import {
   escutasForaDoLoopback,
   falhasDoToken,
   etapaNavegador,
-  lerTokenDoHost,
+  lerChaveDoHost,
   mensagemFinal,
   mensagensComIdDeSessao,
   mensagensComTrailer,
@@ -145,16 +145,16 @@ test('token: permissão pendente que muda ou some depois das escritas recusadas 
   assert.equal(falhasDoToken({ ...PROVA_DO_TOKEN, pendenteAntes: 'p1', pendenteDepois: 'p2' }).length, 1);
 });
 
-test('token: lê o arquivo do host só com 64 hexadecimais minúsculos', () => {
+test('token: a chave do host sai do arquivo só com 64 hexadecimais minúsculos, e como bytes', () => {
   const casa = mkdtempSync(join(tmpdir(), 'expediente-pre-'));
   try {
-    assert.equal(lerTokenDoHost(casa), undefined);
+    assert.equal(lerChaveDoHost(casa), undefined);
     mkdirSync(join(casa, '.expediente', 'host'), { recursive: true });
     const arquivo = join(casa, '.expediente', 'host', 'token');
     const token = 'ab'.repeat(32);
-    for (const [conteudo, esperado] of [[`${token}\n`, token], ['curto', undefined], [token.toUpperCase(), undefined], ['', undefined]]) {
+    for (const [conteudo, esperado] of [[`${token}\n`, Buffer.from(token, 'hex')], ['curto', undefined], [token.toUpperCase(), undefined], ['', undefined]]) {
       writeFileSync(arquivo, conteudo);
-      assert.equal(lerTokenDoHost(casa), esperado, JSON.stringify(conteudo));
+      assert.deepEqual(lerChaveDoHost(casa), esperado, JSON.stringify(conteudo));
     }
   } finally {
     rmSync(casa, { recursive: true, force: true });
