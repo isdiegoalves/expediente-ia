@@ -169,7 +169,7 @@ export class KeyedList<T, E extends HTMLElement = HTMLElement> {
         if (animate) markEntering(el);
       }
       this.opts.update(el, item);
-      skipStale();
+      if (cursor !== el) skipStale();
       if (cursor === el) cursor = el.nextSibling;
       else this.container.insertBefore(el, cursor);
     }
