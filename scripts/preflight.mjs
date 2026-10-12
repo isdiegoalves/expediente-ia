@@ -53,8 +53,24 @@ export function caminhosDeRegistro(arquivos) {
   return arquivos.filter((a) => /(^|\/)(\.docs-arquivo|\.playwright-mcp)(\/|$)/.test(a));
 }
 
-export function testesAcimaDaMetade(registros) {
-  return registros.filter((r) => r.duracao > r.limite / 2);
+const TETO_DO_MOD_MS = 1000;
+
+const tetoDe = (r) => r.teto ?? r.limite / 2;
+
+export function testesAcimaDoTeto(registros) {
+  return registros.filter((r) => r.duracao > tetoDe(r));
+}
+
+export function temposDoPluginTest(saida) {
+  const registros = [];
+  let arquivo = '';
+  for (const linha of saida.split('\n')) {
+    const cabecalho = /^(tests\/\S+\.test\.tsx?):$/.exec(linha);
+    if (cabecalho) arquivo = cabecalho[1];
+    const teste = /^\(pass\) (.+) \[([\d.]+)ms\]$/.exec(linha);
+    if (teste) registros.push({ arquivo, nome: teste[1], duracao: Number(teste[2]), limite: 5000, teto: TETO_DO_MOD_MS });
+  }
+  return registros;
 }
 
 export function veredictoDeTempo(lentos, isolados) {
@@ -62,8 +78,8 @@ export function veredictoDeTempo(lentos, isolados) {
   const avisos = [];
   for (const t of lentos) {
     const sozinho = isolados.get(t.nome);
-    const linha = `${t.nome} (${t.arquivo}): ${Math.round(t.duracao)} ms na suíte, ${sozinho === undefined ? 'sem medida isolada' : `${Math.round(sozinho)} ms isolado`}, limite ${t.limite} ms`;
-    if (sozinho === undefined || sozinho > t.limite / 2) falhas.push(linha);
+    const linha = `${t.nome} (${t.arquivo}): ${Math.round(t.duracao)} ms na suíte, ${sozinho === undefined ? 'sem medida isolada' : `${Math.round(sozinho)} ms isolado`}, teto ${tetoDe(t)} ms`;
+    if (sozinho === undefined || sozinho > tetoDe(t)) falhas.push(linha);
     else avisos.push(linha);
   }
   return { falhas, avisos };
@@ -184,7 +200,7 @@ const etapas = [
   {
     nome: 'tempo dos testes',
     async rodar() {
-      const lentos = testesAcimaDaMetade(registrosDeTempo);
+      const lentos = testesAcimaDoTeto(registrosDeTempo);
       if (lentos.length === 0) return ok(`${registrosDeTempo.length} testes, nenhum acima da metade do limite`);
       const saida = resolve(mkdtempSync(resolve(tmpdir(), 'preflight-isolados-')), 'tempos.json');
       const { falhas, avisos } = veredictoDeTempo(lentos, medirIsolados(lentos, saida));
@@ -202,10 +218,19 @@ const etapas = [
       if (!existsSync(resolve(RAIZ, 'mod/expediente/tests'))) {
         return ok('validate --strict verde; mod/expediente/tests não existe, plugin test pulado (aviso)');
       }
-      const t = comandoSimples('claude', ['plugin', 'test', 'mod/expediente']);
-      if (!t.ok) return t;
+      const t = rodar('claude', ['plugin', 'test', 'mod/expediente']);
+      if (t.status !== 0) return falha(`claude plugin test mod/expediente saiu com ${t.status}\n${t.saida.slice(-2000)}`);
+      const lentos = testesAcimaDoTeto(temposDoPluginTest(t.saida));
+      let aviso = '';
+      if (lentos.length) {
+        const repeticao = rodar('claude', ['plugin', 'test', 'mod/expediente']);
+        const isolados = new Map(temposDoPluginTest(repeticao.saida).map((g) => [g.nome, g.duracao]));
+        const { falhas, avisos } = veredictoDeTempo(lentos, isolados);
+        if (falhas.length) return falha(`teste do mod acima do teto também na repetição:\n${falhas.join('\n')}`);
+        aviso = `; AVISO, teste do mod acima do teto só sob a carga do momento:\n${avisos.join('\n')}`;
+      }
       const tipos = checarTiposDoMod();
-      return tipos.ok ? ok(`validate --strict, plugin test e ${tipos.detalhe} verdes`) : tipos;
+      return tipos.ok ? ok(`validate --strict, plugin test e ${tipos.detalhe} verdes${aviso}`) : tipos;
     },
   },
   {

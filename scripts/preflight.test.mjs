@@ -6,7 +6,8 @@ import {
   mensagensComIdDeSessao,
   mensagensComTrailer,
   portasForaDoLoopback,
-  testesAcimaDaMetade,
+  temposDoPluginTest,
+  testesAcimaDoTeto,
   veredictoDeTempo,
   versaoDoClaude,
   versaoDosTipos,
@@ -60,7 +61,7 @@ test('tipos: lê a versão do cabeçalho e a do claude --version', () => {
 const reg = (nome, duracao, limite = 5000) => ({ arquivo: '/r/a.test.ts', nome, duracao, limite });
 
 test('tempo: só passa da metade do limite quem levou mais que ela', () => {
-  const lentos = testesAcimaDaMetade([reg('rapido', 100), reg('na metade', 2500), reg('lento', 2501), reg('espera real', 9000, 20000), reg('espera longa', 10001, 20000)]);
+  const lentos = testesAcimaDoTeto([reg('rapido', 100), reg('na metade', 2500), reg('lento', 2501), reg('espera real', 9000, 20000), reg('espera longa', 10001, 20000)]);
   assert.deepEqual(lentos.map((t) => t.nome), ['lento', 'espera longa']);
 });
 
@@ -75,4 +76,28 @@ test('tempo: lento também isolado reprova; lento só sob carga é aviso', () =>
 
 test('tempo: sem medida isolada reprova', () => {
   assert.equal(veredictoDeTempo([reg('cpu', 4000)], new Map()).falhas.length, 1);
+});
+
+test('tempo do mod: lê arquivo e duração de cada teste e cobra acima de 1 s', () => {
+  const saida = [
+    'tests/a.test.ts:',
+    '(pass) grupo > rapido [12.5ms]',
+    '(pass) grupo > lento [1000.01ms]',
+    '',
+    'tests/b.test.ts:',
+    '(pass) outro > no teto [1000ms]',
+    '(fail) outro > quebrado [3ms]',
+    ' 3 pass',
+  ].join('\n');
+  const registros = temposDoPluginTest(saida);
+  assert.deepEqual(registros.map((r) => [r.arquivo, r.nome, r.duracao]), [
+    ['tests/a.test.ts', 'grupo > rapido', 12.5],
+    ['tests/a.test.ts', 'grupo > lento', 1000.01],
+    ['tests/b.test.ts', 'outro > no teto', 1000],
+  ]);
+  assert.deepEqual(testesAcimaDoTeto(registros).map((r) => r.nome), ['grupo > lento']);
+  const { falhas, avisos } = veredictoDeTempo(testesAcimaDoTeto(registros), new Map([['grupo > lento', 1200]]));
+  assert.equal(falhas.length, 1);
+  assert.equal(veredictoDeTempo(testesAcimaDoTeto(registros), new Map([['grupo > lento', 300]])).avisos.length, 1);
+  assert.equal(avisos.length, 0);
 });
