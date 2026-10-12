@@ -16,6 +16,7 @@
 //    gasta uso), e um painel com o caminho de cada sessão (link do app, foco do painel do terminal ou o comando seguro).
 //    `/escritorio resumo`: contagens (terminaram, travaram, esperam) e a última tarefa de cada sessão desde que você saiu
 //    do navegador (GET /api/resumo), também sem o modelo.
+//    `/escritorio tema padrao`: grava "padrao" em ~/.expediente/host/tema-ativo (nada de link simbólico no caminho), sem o modelo.
 // 4. Ponte do app desktop (ponte.ts): a cada 5 s copia 3 campos por sessão do app para
 //    ~/.expediente/host/sessoes-app.json, que o servidor no container lê.
 // 5. Amostra horária (amostra.ts): contagem por entrypoint × kind e nomes de programa da cadeia de pais das sessões vivas.
@@ -43,6 +44,7 @@ import { abrirUrl, argvAbrirArquivo, argvChmod, argvLimpeza, argvMktemp, criadoD
 import { chaveDoArquivo, iguaisHex, nonceAleatorio, provaDoCliente, provaDoServidor } from './prova'
 import { FOCO_OFFLINE_MS, FOCO_POLL_MS, lerPedidos, lerPidAssumido, type ResultadoFoco } from './foco'
 import { acoesDaSessao, detalheTexto, lerIr, listaTexto, nomeDaLinha, pidDoId, porEstado, type IrView } from './escritorio'
+import { ehTemaPadrao, temaAtivoOf, temaFalhouText, temaPadraoOkText, temaRecusadoText, temaSemHomeText } from './tema'
 import { offlineText, outdatedText, parseResumo, parseSummary, resumoTexto, statusText, summaryText, type Summary } from './resumo'
 import { argvAppRodando, argvFocoTerminalApp, argvFocoZellij, argvLeitorPainel, argvProgramaDe, argvTrazerWezTerm, argvTtyDe, ehClaude, lerPainel, lerTty, type PainelZellij } from './painel'
 import { AMOSTRA_MS, argvPaiDe, arquivoAmostraOf, contarMix, contarProgramas, ehAmostraDaConta, horaDe, lerEntradaRegistro, marcadorAmostraOf, MAX_AMOSTRAS, MAX_NIVEIS, MAX_PIDS, paiDe, pastaAmostrasOf, type EntradaRegistro } from './amostra'
@@ -79,6 +81,8 @@ export interface UsageRecord {
 type Asked = { kind: 'ok'; summary: Summary } | { kind: 'offline' } | { kind: 'outdated' }
 
 interface ModEnv {
+  /** A pasta pessoal da sessão (HOME); ausente sem HOME. */
+  home?: string
   /** Config dir da conta e o id dela (basename), como o tap calcula; sem HOME nem CLAUDE_CONFIG_DIR, ausentes. */
   configDir?: string
   accountId?: string
@@ -190,6 +194,7 @@ async function readEnv($: EngineInterface): Promise<ModEnv> {
   const home = (await $.env.get('HOME'))?.trim() || undefined
   const configDir = configDirOf(await $.env.get('CLAUDE_CONFIG_DIR'), home)
   const next: ModEnv = {
+    ...(home ? { home } : {}),
     port: portOf(await $.env.get('EXPEDIENTE_PORT')),
     usageDir: usageDirOf(await $.env.get('EXPEDIENTE_USAGE_DIR'), home),
   }
@@ -779,10 +784,27 @@ async function resumoText($: EngineInterface): Promise<string> {
   return resumo ? resumoTexto(resumo, url) : offlineText(url)
 }
 
+/** O texto do /escritorio tema padrao: grava "padrao" em tema-ativo, desde que nada do caminho seja link simbólico. */
+async function temaPadraoText($: EngineInterface): Promise<string> {
+  const e = await readEnv($)
+  if (!e.home) return temaSemHomeText()
+  const ativo = temaAtivoOf(e.home)
+  for (const caminho of [`${e.home}/.expediente`, `${e.home}/.expediente/host`, ativo]) {
+    const st = await $.fs.stat(caminho).catch(() => undefined)
+    if (st && (st.isLink || (caminho === ativo && st.kind !== 'file'))) return temaRecusadoText(caminho)
+  }
+  try {
+    await $.fs.write(ativo, 'padrao\n')
+  } catch {
+    return temaFalhouText(ativo)
+  }
+  return temaPadraoOkText()
+}
+
 export const register: Register = (on) => {
   on('session.start', async ($, e, next) => {
     try {
-      await $.command.register({ name: 'escritorio', description: 'Resumo do Expediente: quantos agentes, quem trabalha e quem precisa de você; "resumo" mostra o que mudou desde que você saiu; "abrir" abre o escritório no navegador, já autorizado' })
+      await $.command.register({ name: 'escritorio', description: 'Resumo do Expediente: quantos agentes, quem trabalha e quem precisa de você; "resumo" mostra o que mudou desde que você saiu; "abrir" abre o escritório no navegador, já autorizado; "tema padrao" volta ao tema padrão' })
     } catch {
       // sem o comando, o resto segue
     }
@@ -842,6 +864,7 @@ export const register: Register = (on) => {
       const arg = e.args.trim().toLowerCase()
       if (arg === 'resumo') return { text: await resumoText($) }
       if (arg === 'abrir') return { text: await abrirText($) }
+      if (ehTemaPadrao(e.args)) return { text: await temaPadraoText($) }
       return { text: await expedienteText($) }
     } catch {
       return { text: offlineText(`http://localhost:${env?.port ?? DEFAULT_PORT}`) }

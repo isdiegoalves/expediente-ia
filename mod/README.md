@@ -49,6 +49,11 @@ partir da 2.1.287; a API ainda é "early access" e pode mudar entre versões. A 
   termina antes dos 60 s: o gancho `session.end` apaga na saída o que já tem 15 s (o navegador já leu o HTML); o mais novo fica, com um
   bilhete vencido numa pasta de modo 700.
 
+  `/escritorio tema padrao`: volta o escritório ao tema padrão (com ou sem acento). Grava `padrao` em
+  `~/.expediente/host/tema-ativo`, que o servidor confere a cada segundo ou dois: as páginas abertas trocam sozinhas,
+  sem reiniciar. Também sem o modelo e sem falar com o Expediente. Se `.expediente`, `.expediente/host` ou o próprio
+  `tema-ativo` for link simbólico, ou se `tema-ativo` não for arquivo comum, o mod recusa e não grava nada.
+
   Fora do ar: `O Expediente não respondeu em http://localhost:4848. Para subir: npm run docker:up na pasta do Expediente.`
 
   Onde a sessão desenha, o comando também abre o painel "Escritório" com o caminho de cada sessão, renovado a cada 15 s
@@ -97,14 +102,14 @@ carregar o módulo; nada fora desta lista é chamado):
 ```
 ❯ ./register.tsx hooks: session.start, session.measure, session.end, command.run{command=escritorio}, ui.render{component=Pane, requestId=escritorio}
 ❯ ./register.tsx answers its own command: command.run{command=escritorio}
-❯ ./register.tsx calls: $.clock.after (via abrirEscritorio, buscar), $.clock.every (via expedienteText, ligarAmostrador, ligarFocos, ligarPonte, schedule), $.clock.now, $.command.register, $.env.get (via amostrarRegistro, readEnv, rodarPonte), $.fs.list (via amostrarRegistro, arquivosDoApp), $.fs.read (via amostrarRegistro, lerChave, rodarPonte), $.fs.stat (via amostrarRegistro, rodarPonte), $.fs.write (via abrirEscritorio, amostrarRegistro, rodarPonte, writeUsage), $.http.fetch (via buscar), $.process.run (via abrirEscritorio, abrirNoApp, amostrarRegistro, executarFoco, lerFoco, limparEscritorio, rodarPonte), $.session.id (via consulta, rodarPonte), $.session.surfaces (via abrirText, atenderFocos, atualizarPainel, expedienteText, ligarAmostrador, ligarFocos, ligarPonte, poll), $.session.usage, $.ui.copy (via copiarComando), $.ui.invalidate (via atualizarPainel), $.ui.open (via expedienteText), $.ui.resolve, $.ui.status (via setStatus), $.ui.toast (via abrirNoApp, botaoAbrirEscritorio, c… [+20 chars]
+❯ ./register.tsx calls: $.clock.after (via abrirEscritorio, buscar), $.clock.every (via expedienteText, ligarAmostrador, ligarFocos, ligarPonte, schedule), $.clock.now, $.command.register, $.env.get (via amostrarRegistro, readEnv, rodarPonte), $.fs.list (via amostrarRegistro, arquivosDoApp), $.fs.read (via amostrarRegistro, lerChave, rodarPonte), $.fs.stat (via amostrarRegistro, rodarPonte, temaPadraoText), $.fs.write (via abrirEscritorio, amostrarRegistro, rodarPonte, writeUsage), $.http.fetch (via buscar), $.process.run (via abrirEscritorio, abrirNoApp, amostrarRegistro, executarFoco, lerFoco, limparEscritorio, rodarPonte), $.session.id (via consulta, rodarPonte), $.session.surfaces (via abrirText, atenderFocos, atualizarPainel, expedienteText, ligarAmostrador, ligarFocos, ligarPonte, poll), $.session.usage, $.ui.copy (via copiarComando), $.ui.invalidate (via atualizarPainel), $.ui.open (via expedienteText), $.ui.resolve, $.ui.status (via setStatus), $.ui.toast (via abrirNoApp, botaoAbrirEscritorio, c… [+20 chars]
 ❯ ./register.tsx env writes: nothing
 ❯ ./register.tsx env reads: CLAUDE_CONFIG_DIR, EXPEDIENTE_PORT, EXPEDIENTE_USAGE_DIR, HOME
 ```
 
 Em palavras: só observa (nenhum hook decide nada: não aprova ferramentas, não muda prompts, não lê mensagens),
-grava três tipos de arquivo em `~/.expediente/host` (o de uso, o `sessoes-app.json`, este por `mv`, e uma amostra por hora em
-`amostras/`) e, a pedido do botão do painel, um HTML de redirecionamento numa pasta temporária, roda `$.process` só para o `mv`, para `ps -o ppid=,comm=` e, a pedido no painel do `/escritorio`, para `ps -o comm=` (o pid ainda é o `claude`?), `ps -o tty=`, o leitor do painel, `open` (lista permitida: URLs do Claude e o `abrir.html` da pasta temporária do escritório), `mktemp -d`, `chmod 600`, `rm -f` e `rmdir` dessa pasta e desse arquivo, `zellij`, `pgrep` e `osascript`, fala só com `127.0.0.1` e lê quatro variáveis de ambiente (e o arquivo do token, para provar quem fala e pedir o bilhete do botão do painel). `$.clock.after` é o
+grava quatro tipos de arquivo em `~/.expediente/host` (o de uso, o `sessoes-app.json`, este por `mv`, uma amostra por hora em
+`amostras/`, só a pedido em `/escritorio tema padrao` o `tema-ativo`) e, a pedido do botão do painel, um HTML de redirecionamento numa pasta temporária, roda `$.process` só para o `mv`, para `ps -o ppid=,comm=` e, a pedido no painel do `/escritorio`, para `ps -o comm=` (o pid ainda é o `claude`?), `ps -o tty=`, o leitor do painel, `open` (lista permitida: URLs do Claude e o `abrir.html` da pasta temporária do escritório), `mktemp -d`, `chmod 600`, `rm -f` e `rmdir` dessa pasta e desse arquivo, `zellij`, `pgrep` e `osascript`, fala só com `127.0.0.1` e lê quatro variáveis de ambiente (e o arquivo do token, para provar quem fala e pedir o bilhete do botão do painel). `$.clock.after` é o
 prazo de 2 s de cada pergunta ao Expediente (`$.http.fetch` não aceita AbortSignal).
 
 ## `expediente-permissoes` — responder permissões pelo escritório
