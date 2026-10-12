@@ -14,6 +14,7 @@ import {
   mensagensComTrailer,
   opcoesDe,
   portasForaDoLoopback,
+  decidirTempoDoMod,
   temposDoPluginTest,
   testesAcimaDoTeto,
   veredictoDeTempo,
@@ -159,4 +160,56 @@ test('token: a chave do host sai do arquivo só com 64 hexadecimais minúsculos,
   } finally {
     rmSync(casa, { recursive: true, force: true });
   }
+});
+
+const saidaDoMod = (...tempos) =>
+  ['tests/a.test.ts:', ...tempos.map((ms, i) => `(pass) grupo > teste ${i} [${ms}ms]`), '', ` ${tempos.length} pass`, ' 0 fail'].join('\n');
+
+const decidir = (primeira, repeticao, carga = 0.4) => {
+  const chamadas = [];
+  const d = decidirTempoDoMod({ primeira, repetir: () => (chamadas.push(1), repeticao), cargaPorNucleo: () => carga });
+  return { ...d, repetiu: chamadas.length };
+};
+
+test('tempo do mod: tudo abaixo do teto passa sem repetir', () => {
+  const d = decidir(saidaDoMod(10, 999), saidaDoMod(10, 10));
+  assert.equal(d.ok, true);
+  assert.equal(d.repetiu, 0);
+});
+
+test('tempo do mod: saída sem duração legível reprova em vez de passar sem medir', () => {
+  const d = decidir('tests/a.test.ts:\n(pass) grupo > teste 0 (1.5 s)\n\n 1 pass\n 0 fail', saidaDoMod(10));
+  assert.equal(d.ok, false);
+  assert.match(d.detalhe, /li 0 durações para 1 testes que passaram/);
+});
+
+test('tempo do mod: menos durações que testes que passaram reprova', () => {
+  const d = decidir(saidaDoMod(10, 20).replace(" 2 pass", " 3 pass"), saidaDoMod(10));
+  assert.equal(d.ok, false);
+  assert.match(d.detalhe, /li 2 durações/);
+});
+
+test('tempo do mod: acima do teto só na primeira rodada vira aviso', () => {
+  const d = decidir(saidaDoMod(10, 2400), saidaDoMod(10, 300), 5);
+  assert.equal(d.ok, true);
+  assert.equal(d.repetiu, 1);
+  assert.match(d.detalhe, /AVISO.*\n.*grupo > teste 1 .*2400 ms na suíte, 300 ms isolado/);
+});
+
+test('tempo do mod: acima do teto também na repetição, com a máquina livre, reprova', () => {
+  const d = decidir(saidaDoMod(10, 2400), saidaDoMod(10, 1500), 0.9);
+  assert.equal(d.ok, false);
+  assert.match(d.detalhe, /também na repetição:\n.*grupo > teste 1 .*1500 ms isolado, teto 1000 ms/);
+});
+
+test('tempo do mod: acima do teto nas duas rodadas, com carga de 1 por núcleo ou mais, vira aviso que mostra a carga', () => {
+  const d = decidir(saidaDoMod(10, 2400), saidaDoMod(10, 2100), 1);
+  assert.equal(d.ok, true);
+  assert.match(d.detalhe, /AVISO.*\n.*2100 ms isolado.*carga 1\.00 por núcleo/);
+});
+
+test('tempo do mod: repetição ilegível reprova, qualquer que seja a carga', () => {
+  const d = decidir(saidaDoMod(10, 2400), 'sem nada', 9);
+  assert.equal(d.ok, false);
+  assert.match(d.detalhe, /repetição do plugin test: li 0/);
 });

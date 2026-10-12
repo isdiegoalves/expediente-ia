@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
+import { cpus, homedir, loadavg, tmpdir } from 'node:os';
 import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { fetchComProva, pedirDesafio, readSecret } from '../mod/expediente-permissoes/hooks/permission-hook.mjs';
@@ -149,6 +149,34 @@ export function temposDoPluginTest(saida) {
     if (teste) registros.push({ arquivo, nome: teste[1], duracao: Number(teste[2]), limite: 5000, teto: TETO_DO_MOD_MS });
   }
   return registros;
+}
+
+function leituraDoPluginTest(saida, rotulo) {
+  const registros = temposDoPluginTest(saida);
+  const passaram = Number(/^\s*(\d+) pass\s*$/m.exec(saida)?.[1] ?? NaN);
+  if (registros.length === 0 || registros.length !== passaram) {
+    return { erro: `${rotulo}: li ${registros.length} durações para ${Number.isNaN(passaram) ? 'um total de testes que não achei' : `${passaram} testes que passaram`}; o formato da saída do claude plugin test mudou?` };
+  }
+  return { registros };
+}
+
+/**
+ * Decide a cobrança de tempo do mod a partir das saídas do `claude plugin test`. A repetição só roda se algum teste
+ * passou do teto; sob carga (por núcleo, ao fim da repetição) o que continua acima do teto é aviso, porque a repetição
+ * é a suíte inteira disputando a mesma máquina.
+ */
+export function decidirTempoDoMod({ primeira, repetir, cargaPorNucleo }) {
+  const lida = leituraDoPluginTest(primeira, 'plugin test');
+  if (lida.erro) return { ok: false, detalhe: lida.erro };
+  const lentos = testesAcimaDoTeto(lida.registros);
+  if (lentos.length === 0) return { ok: true, detalhe: '' };
+  const outra = leituraDoPluginTest(repetir(), 'repetição do plugin test');
+  if (outra.erro) return { ok: false, detalhe: outra.erro };
+  const { falhas, avisos } = veredictoDeTempo(lentos, new Map(outra.registros.map((g) => [g.nome, g.duracao])));
+  const carga = cargaPorNucleo();
+  if (falhas.length && carga < 1) return { ok: false, detalhe: `teste do mod acima do teto também na repetição:\n${falhas.join('\n')}` };
+  const linhas = [...avisos, ...falhas.map((f) => `${f} (carga ${carga.toFixed(2)} por núcleo: a repetição não separa a lentidão do teste da disputa pela máquina)`)];
+  return { ok: true, detalhe: `; AVISO, teste do mod acima do teto sob a carga do momento:\n${linhas.join('\n')}` };
 }
 
 export function veredictoDeTempo(lentos, isolados) {
@@ -317,15 +345,13 @@ const etapas = [
       }
       const t = rodar('claude', ['plugin', 'test', 'mod/expediente']);
       if (t.status !== 0) return falha(`claude plugin test mod/expediente saiu com ${t.status}\n${t.saida.slice(-2000)}`);
-      const lentos = testesAcimaDoTeto(temposDoPluginTest(t.saida));
-      let aviso = '';
-      if (lentos.length) {
-        const repeticao = rodar('claude', ['plugin', 'test', 'mod/expediente']);
-        const isolados = new Map(temposDoPluginTest(repeticao.saida).map((g) => [g.nome, g.duracao]));
-        const { falhas, avisos } = veredictoDeTempo(lentos, isolados);
-        if (falhas.length) return falha(`teste do mod acima do teto também na repetição:\n${falhas.join('\n')}`);
-        aviso = `; AVISO, teste do mod acima do teto só sob a carga do momento:\n${avisos.join('\n')}`;
-      }
+      const tempo = decidirTempoDoMod({
+        primeira: t.saida,
+        repetir: () => rodar('claude', ['plugin', 'test', 'mod/expediente']).saida,
+        cargaPorNucleo: () => loadavg()[0] / cpus().length,
+      });
+      if (!tempo.ok) return falha(tempo.detalhe);
+      const aviso = tempo.detalhe;
       const tipos = checarTiposDoMod();
       return tipos.ok ? ok(`validate --strict, plugin test e ${tipos.detalhe} verdes${aviso}`) : tipos;
     },
