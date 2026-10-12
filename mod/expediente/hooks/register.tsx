@@ -22,7 +22,9 @@
 //
 // 6. Foco pedido pelo navegador (foco.ts): a cada 1 s, só onde há terminal e com o Expediente no ar, busca os pedidos
 //    de foco (GET /api/mod/focos), assume um (POST .../assumir) e roda o mesmo plano do botão Focar, com o pid inteiro
-//    que o servidor devolve e a conferência de que ele ainda é o claude. Reporta o resultado (POST .../resultado).
+//    que o servidor devolve e a conferência de que ele ainda é o claude. Reporta o resultado (POST .../resultado). Os POST levam o
+//    token local (~/.expediente/host/token) no cabeçalho X-Expediente-Token; sem o arquivo, nada é postado. O painel do /escritorio
+//    ganha o link "Abrir o escritório" (a página recebe o token pelo fragmento da URL); o valor nunca vira texto de saída, status ou aviso.
 //
 // Regras: nenhum hook lança (um hook que lança é pulado, mas o que ele deixou pela metade fica): cada
 // passo tem seu try/catch e falha = silêncio. $.process roda só argv fixo, sem shell montado de texto alheio: mv e rm -f do .tmp (ponte),
@@ -43,6 +45,8 @@ import { AMOSTRA_MS, argvPaiDe, arquivoAmostraOf, contarMix, contarProgramas, eh
 import { appDirOf, filtrarSessaoApp, FRESCO_MS, PONTE_MS, sessoesAppFileOf, type SessaoApp } from './ponte'
 
 export { offlineText, outdatedText, parseSummary, statusText, summaryText, type Summary, type WaitingAgent } from './resumo'
+
+const TOKEN_FORMATO = /^[0-9a-f]{64}$/
 
 /** Porta padrão do Expediente (a mesma do servidor, do hook de permissão e do docker-compose). */
 export const DEFAULT_PORT = 4848
@@ -78,6 +82,8 @@ interface ModEnv {
   accountId?: string
   /** Pasta do uso; ausente sem HOME nem EXPEDIENTE_USAGE_DIR. */
   usageDir?: string
+  /** Arquivo do token local (~/.expediente/host/token); ausente sem HOME. */
+  tokenFile?: string
   port: number
 }
 
@@ -185,6 +191,7 @@ async function readEnv($: EngineInterface): Promise<ModEnv> {
     port: portOf(await $.env.get('EXPEDIENTE_PORT')),
     usageDir: usageDirOf(await $.env.get('EXPEDIENTE_USAGE_DIR'), home),
   }
+  if (home) next.tokenFile = normalizePath(`${home}/.expediente/host/token`)
   if (configDir) {
     next.configDir = configDir
     const accountId = accountIdOf(configDir)
@@ -211,14 +218,34 @@ async function writeUsage($: EngineInterface, rateLimits: readonly SessionRateLi
   lastWrite = { key, at: now }
 }
 
-/** GET (ou POST com corpo JSON) no Expediente local com prazo de 2 s; undefined = fora do ar ou lento demais. Nunca lança. */
+/**
+ * O token local, ou undefined se o arquivo faltar ou não tiver 64 hexadecimais. O valor só pode ir para o cabeçalho de uma
+ * escrita ou para o destino de um link do painel: texto de saída de comando, linha de status e aviso chegam ao modelo.
+ */
+async function lerTokenLocal($: EngineInterface): Promise<string | undefined> {
+  try {
+    const e = await readEnv($)
+    if (!e.tokenFile) return undefined
+    const token = (await $.fs.read(e.tokenFile)).trim()
+    return TOKEN_FORMATO.test(token) ? token : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** GET (ou POST com corpo JSON e o token local) no Expediente local com prazo de 2 s; undefined = fora do ar, lento demais ou sem token. Nunca lança. */
 async function getExpediente($: EngineInterface, port: number, path: string, post?: string): Promise<HttpResponse | undefined> {
+  const token = post === undefined ? undefined : await lerTokenLocal($)
+  if (post !== undefined && !token) return undefined
   let wait: { cancel: () => void } | undefined
   const timeout = new Promise<undefined>((resolve) => {
     wait = $.clock.after(FETCH_TIMEOUT_MS, () => resolve(undefined))
   })
   try {
-    const init: HttpInit = post === undefined ? { headers: { accept: 'application/json' } } : { method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json' }, body: post }
+    const init: HttpInit =
+      post === undefined || !token
+        ? { headers: { accept: 'application/json' } }
+        : { method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json', 'x-expediente-token': token }, body: post }
     return await Promise.race([$.http.fetch(`http://127.0.0.1:${port}${path}`, init), timeout])
   } catch {
     return undefined
@@ -427,6 +454,8 @@ interface EstadoPainel {
   resumo: Summary
   ir: Map<string, IrView>
   porta: number
+  /** O escritório com o token no fragmento; ausente sem o arquivo do token. É destino de link, nunca texto. */
+  escritorio?: string
 }
 
 let painel: EstadoPainel | undefined
@@ -494,7 +523,8 @@ async function atualizarPainel($: EngineInterface): Promise<Asked> {
       }),
     )
   }
-  painel = { resumo: asked.summary, ir, porta: e.port }
+  const token = await lerTokenLocal($)
+  painel = { resumo: asked.summary, ir, porta: e.port, ...(token ? { escritorio: `http://localhost:${e.port}/#t=${token}` } : {}) }
   $.ui.invalidate('ui.render')
   return asked
 }
@@ -689,10 +719,18 @@ export const register: Register = (on) => {
     const { Box, Text, Button, Link, Code } = $.ui.resolve(e)
     desenhadoEm = await $.clock.now()
     if (!painel) return <Text dimColor>Rode /escritorio para carregar a lista.</Text>
-    const { resumo, ir, porta } = painel
+    const { resumo, ir, porta, escritorio } = painel
     const linhas = listaTexto([], resumo.self)
     return (
       <Box flexDirection="column">
+        {escritorio ? (
+          <Box>
+            <Link href={escritorio} label="Abrir o escritório" />
+            {e.surface === 'terminal' ? <Button key="abrir-escritorio" label="Abrir" onPress={() => void abrirNoApp($, escritorio)} /> : undefined}
+          </Box>
+        ) : (
+          <Text dimColor>Para abrir o escritório já autorizado, rode npm run abrir na pasta do Expediente.</Text>
+        )}
         {linhas.map((l) => (
           <Text dimColor>{l}</Text>
         ))}

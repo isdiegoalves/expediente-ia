@@ -47,6 +47,42 @@ describe('argvAbrir', () => {
   })
 })
 
+describe('argvAbrir: o escritório com o token no fragmento', () => {
+  const HEX = '5e17e11a'.repeat(8)
+
+  test('aceita só http://localhost:<porta>/#t=<64 hexadecimais minúsculos>', async () => {
+    for (const porta of ['4848', '80', '65535']) expect(argvAbrir(`http://localhost:${porta}/#t=${HEX}`)).toEqual(['open', `http://localhost:${porta}/#t=${HEX}`])
+  })
+
+  test('recusa outro esquema, host, porta, caminho, consulta ou fragmento', async () => {
+    for (const url of [
+      `https://localhost:4848/#t=${HEX}`,
+      `http://127.0.0.1:4848/#t=${HEX}`,
+      `http://expediente.localhost:4848/#t=${HEX}`,
+      `https://expediente.localhost/#t=${HEX}`,
+      `http://localhost/#t=${HEX}`,
+      `http://localhost:0/#t=${HEX}`,
+      `http://localhost:4848@evil.example/#t=${HEX}`,
+      `http://evil.example:4848/#t=${HEX}`,
+      `http://localhost.evil.example:4848/#t=${HEX}`,
+      `http://localhost:4848#t=${HEX}`,
+      `http://localhost:4848/x#t=${HEX}`,
+      `http://localhost:4848/?a=1#t=${HEX}`,
+      `http://localhost:4848/#t=${HEX.slice(1)}`,
+      `http://localhost:4848/#t=${HEX}0`,
+      `http://localhost:4848/#t=${HEX.toUpperCase()}`,
+      `http://localhost:4848/#t=${HEX}&x=1`,
+      `http://localhost:4848/#t=${HEX}\n`,
+      `http://localhost:4848/#x=1&t=${HEX}`,
+      ` http://localhost:4848/#t=${HEX}`,
+      'http://localhost:4848/',
+      'http://localhost:4848/#t=',
+    ]) {
+      expect(argvAbrir(url), url).toBeUndefined()
+    }
+  })
+})
+
 describe('argv de foco só com ids no formato', () => {
   test('zellij recusa painel e sessão fora do formato', async () => {
     expect(() => argvFocoZellij({ ZELLIJ_PANE_ID: '5; rm', ZELLIJ_SESSION_NAME: 'main' })).toThrow()

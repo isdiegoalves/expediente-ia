@@ -8,6 +8,9 @@ const NOW = Date.parse('2026-10-10T12:00:00Z')
 const PORTA = '4852'
 const BASE = `http://127.0.0.1:${PORTA}`
 const TOKEN = 'a'.repeat(32)
+/** O token local: 64 hexadecimais. Aqui é uma sentinela, para provar que ele só aparece no cabeçalho das escritas. */
+const TOKEN_LOCAL = '5e17e11a'.repeat(8)
+const ARQUIVO_DO_TOKEN = '/home/fulano/.expediente/host/token'
 const CLAUDE = '/Users/fulano/.local/bin/claude\n'
 const PAINEL_ZELLIJ = 'ZELLIJ_PANE_ID=17\nZELLIJ_SESSION_NAME=main\n'
 const START = { cwd: '/work', surface: 'terminal', isInteractive: true } as const
@@ -37,6 +40,8 @@ interface Mundo {
   /** Status e corpo de `POST .../assumir`. */
   assumir?: { status: number; text: string }
   processo?: (argv: readonly string[]) => Partial<typeof RODOU>
+  /** Conteúdo do arquivo do token; 'ausente' = não existe. Padrão: um token válido. */
+  token?: string | 'ausente'
 }
 
 function resposta(status: number, texto: string): HttpResponse {
@@ -47,6 +52,8 @@ function mundo(on: On, m: Mundo = {}) {
   const clock = mock.clock(on, { now: NOW })
   mock.env(on, { HOME: '/home/fulano', CLAUDE_CONFIG_DIR: '~/.claude', EXPEDIENTE_PORT: PORTA })
   const chamadas: Chamada[] = []
+  const cabecalhos: Array<{ url: string; token: string | undefined }> = []
+  const saidas: string[] = []
   const rodados: string[][] = []
   const copiados: string[] = []
   let superficiesLidas = 0
@@ -59,10 +66,21 @@ function mundo(on: On, m: Mundo = {}) {
     return { value: m.superficies ?? ['terminal'] }
   })
   on('ui.open', () => ({ value: { isPlaced: true } }))
-  on('ui.toast', () => ({ value: undefined }))
-  on('ui.status', () => ({ value: undefined }))
+  on('ui.toast', (_$, e) => {
+    saidas.push(e.text)
+    return { value: undefined }
+  })
+  on('ui.status', (_$, e) => {
+    if (e.text) saidas.push(e.text)
+    return { value: undefined }
+  })
+  on('fs.read', (_$, e) => {
+    if (e.path !== ARQUIVO_DO_TOKEN || m.token === 'ausente') return { deny: 'ENOENT' }
+    return { value: `${m.token ?? TOKEN_LOCAL}\n` }
+  })
   on('ui.copy', (_$, e) => {
     copiados.push(e.text)
+    saidas.push(e.text)
     return { value: { isCopied: true } }
   })
   on('process.run', (_$, e) => {
@@ -71,6 +89,7 @@ function mundo(on: On, m: Mundo = {}) {
   })
   on('http.fetch', (_$, e) => {
     const url = e.url.replace(BASE, '')
+    cabecalhos.push({ url, token: e.init?.headers?.['x-expediente-token'] })
     if (url === '/api/mod/focos') {
       chamadas.push({ metodo: 'GET', url })
       const p = m.pedidos ? m.pedidos() : { focos: [] }
@@ -87,7 +106,7 @@ function mundo(on: On, m: Mundo = {}) {
     const usage = [{ id: '.claude:507', name: 'Ana', kind: 'main', status: 'idle', room: 'loja', compactions: 0 }]
     return { value: resposta(200, JSON.stringify({ version: '1', agents: 1, working: 0, waiting: [], usage })) }
   })
-  return { clock, chamadas, rodados, copiados, superficiesLidas: () => superficiesLidas }
+  return { clock, chamadas, cabecalhos, saidas, rodados, copiados, superficiesLidas: () => superficiesLidas }
 }
 
 const noClaude = (argv: readonly string[]) => /^ps -o comm= -p \d+$/.test(argv.join(' '))
@@ -216,5 +235,35 @@ describe('foco pedido pelo navegador', () => {
     const doPedido = w.rodados.filter((a) => a[0] === 'zellij' || a[0] === 'open')
     expect(doBotao).toEqual(FOCO_ZELLIJ)
     expect(doPedido).toEqual([...FOCO_ZELLIJ, ...FOCO_ZELLIJ])
+  })
+})
+
+describe('foco pedido pelo navegador e o token local', () => {
+  test('as escritas levam o token no cabeçalho X-Expediente-Token e as leituras não', async ($, on) => {
+    const w = mundo(on, { pedidos: pedido, processo: comPainel })
+    await ligar($, w)
+    expect(w.cabecalhos).toEqual([
+      { url: '/api/mod/focos', token: undefined },
+      { url: `/api/mod/focos/${TOKEN}/assumir`, token: TOKEN_LOCAL },
+      { url: `/api/mod/focos/${TOKEN}/resultado`, token: TOKEN_LOCAL },
+    ])
+  })
+
+  for (const token of ['ausente', 'curto', '', 'g'.repeat(64), `${TOKEN_LOCAL}0`]) {
+    test(`arquivo do token ${token === 'ausente' ? 'ausente' : `inválido (${token.length} caracteres)`}: nada é postado, nada roda e nada quebra`, async ($, on) => {
+      const w = mundo(on, { pedidos: pedido, processo: comPainel, token })
+      await ligar($, w)
+      expect(w.chamadas.map((c) => c.url)).toEqual(['/api/mod/focos'])
+      expect(w.rodados.some((a) => a[0] === 'ps' && a[1] === '-o')).toBe(false)
+    })
+  }
+
+  test('o valor do token não aparece em texto de comando, linha de status, aviso nem cópia', async ($, on) => {
+    const w = mundo(on, { pedidos: pedido, processo: comPainel })
+    const texto = (await $.command.run(RUN)) as { text?: string }
+    await ligar($, w)
+    expect(texto.text ?? '').not.toContain(TOKEN_LOCAL)
+    expect(w.saidas.join('\n')).not.toContain(TOKEN_LOCAL)
+    expect(JSON.stringify(w.rodados)).not.toContain(TOKEN_LOCAL)
   })
 })
