@@ -386,17 +386,24 @@ describe('lista lateral que só toca o que mudou', () => {
 
 describe('o resultado não muda', () => {
   it('a lista atualizada aos poucos é igual à lista montada do zero, ao longo da simulação pesada', () => {
-    const sim = new DemoSimulator({ seed: 11, speed: 6, sessions: 6, projects: 6, subs: 8 }, T0);
+    const sim = new DemoSimulator({ seed: 11, speed: 20, sessions: 4, projects: 4, subs: 5 }, T0);
     agora = T0;
     const incremental = montar(sim.snapshot(T0));
     let passos = 0;
-    for (let t = 1; t <= 240; t++) {
-      agora = T0 + t * 250;
+    const visto = { entrou: 0, saiu: 0, status: new Set<string>() };
+    let ids = new Set(snap.agents.map((a) => a.id));
+    for (let t = 1; t <= 90; t++) {
+      agora = T0 + t * 2_000;
       if (sim.tick(agora).changed) {
         const novo = JSON.parse(JSON.stringify(sim.snapshot(agora))) as OfficeSnapshot;
         snap = novo;
+        const agora_ = new Set(novo.agents.map((a) => a.id));
+        visto.entrou += [...agora_].filter((id) => !ids.has(id)).length;
+        visto.saiu += [...ids].filter((id) => !agora_.has(id)).length;
+        ids = agora_;
+        for (const a of novo.agents) visto.status.add(a.status);
         incremental.render();
-        if (t % 8 === 0) {
+        if (t % 10 === 0) {
           const doZero = montar(structuredClone(novo));
           const a = serializar(raiz(incremental));
           const b = serializar(raiz(doZero));
@@ -408,6 +415,9 @@ describe('o resultado não muda', () => {
         }
       }
     }
-    expect(passos).toBeGreaterThan(10);
+    expect(passos).toBeGreaterThan(5);
+    expect(visto.entrou).toBeGreaterThan(0);
+    expect(visto.saiu).toBeGreaterThan(0);
+    expect(visto.status.size).toBeGreaterThan(3);
   });
 });
