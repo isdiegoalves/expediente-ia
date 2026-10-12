@@ -121,6 +121,22 @@ describe('OfficeStore: reconexão', () => {
     expect(states).toEqual(['closed', 'connecting', 'closed', 'connecting', 'open', 'closed', 'connecting']);
   });
 
+  it('o evento "tema" do stream sai como { chave }; dado sem chave é ignorado e o de um stream trocado não vale', () => {
+    const chaves: string[] = [];
+    store.on('tema', (t) => chaves.push(t.chave));
+    store.connect();
+    const primeiro = last();
+    primeiro.open();
+    primeiro.fire('tema', { chave: 'um|' });
+    primeiro.fire('tema', {});
+    primeiro.fire('tema', { chave: 7 });
+    expect(chaves).toEqual(['um|']);
+    store.reconnectNow();
+    primeiro.fire('tema', { chave: 'velho|' });
+    last().fire('tema', { chave: 'dois|' });
+    expect(chaves).toEqual(['um|', 'dois|']);
+  });
+
   it('erro transitório (o navegador ainda tenta) não agenda reconexão própria', () => {
     store.connect();
     last().open();

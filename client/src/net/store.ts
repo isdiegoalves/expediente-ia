@@ -18,6 +18,8 @@ export interface StoreEvents {
   connection: ConnectionState;
   /** O servidor está servindo outro build do cliente: esta página está desatualizada. Emitido uma vez. */
   update: { build: string; current: string };
+  /** Estado do tema ativo no servidor (na conexão e a cada troca); diferente do que a página carregou = desatualizada. */
+  tema: { chave: string };
 }
 
 /**
@@ -421,6 +423,11 @@ export class OfficeStore {
       if (!current()) return;
       const n = this.parse<Notice>(ev, 'aviso');
       if (n) this.emit('notice', n);
+    });
+    es.addEventListener('tema', (ev) => {
+      if (!current()) return;
+      const t = this.parse<{ chave?: unknown }>(ev, 'tema');
+      if (typeof t?.chave === 'string') this.emit('tema', { chave: t.chave });
     });
   }
 

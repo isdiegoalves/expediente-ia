@@ -38,18 +38,31 @@ export function problemasDoTema(t: unknown): string[] {
   return falhas.length ? falhas : medirContraste(t as Tema).erros;
 }
 
-/** Busca o tema no servidor e o define. Sem servidor ou com tema que não passa, segue no padrão. */
-export async function carregarTema(): Promise<{ aviso?: string }> {
+export interface TemaDoServidor {
+  aviso?: string;
+  /** Candidato em prévia nesta aba (`?tema=<id>`): o tema ativo do escritório não mudou. */
+  previa?: true;
+  /** Estado do tema ativo quando a página carregou; o servidor avisa se ele mudar (evento `tema`). */
+  chave?: string;
+}
+
+/**
+ * Busca o tema no servidor e o define. Com `?tema=<id>` na URL pede o candidato em prévia, só para esta aba (o servidor é
+ * quem o valida). Sem servidor ou com tema que não passa, segue no padrão.
+ */
+export async function carregarTema(search: string = typeof location === 'undefined' ? '' : location.search): Promise<TemaDoServidor> {
+  const pedido = new URLSearchParams(search).get('tema');
   try {
-    const res = await fetch('/api/tema', { cache: 'no-store' });
+    const res = await fetch(pedido === null ? '/api/tema' : `/api/tema?previa=${encodeURIComponent(pedido)}`, { cache: 'no-store' });
     if (!res.ok) return {};
-    const corpo = (await res.json()) as { base?: unknown; tema?: unknown; aviso?: unknown };
+    const corpo = (await res.json()) as { base?: unknown; tema?: unknown; aviso?: unknown; previa?: unknown; chave?: unknown };
     const aviso = typeof corpo.aviso === 'string' ? corpo.aviso : undefined;
-    if (typeof corpo.base !== 'string' || !BASE.test(corpo.base)) return { aviso };
+    const chave = typeof corpo.chave === 'string' ? corpo.chave : undefined;
+    if (typeof corpo.base !== 'string' || !BASE.test(corpo.base)) return { aviso, chave };
     const problemas = problemasDoTema(corpo.tema);
-    if (problemas.length) return { aviso: `Tema do servidor recusado pelo navegador (${problemas[0]}). Usando o padrão.` };
+    if (problemas.length) return { aviso: `Tema do servidor recusado pelo navegador (${problemas[0]}). Usando o padrão.`, chave };
     definirTema(corpo.tema as Tema, corpo.base);
-    return { aviso };
+    return { aviso, chave, ...(corpo.previa === true ? { previa: true as const } : {}) };
   } catch {
     return {};
   }
