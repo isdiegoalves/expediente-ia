@@ -12,7 +12,7 @@ import { ICONS } from './icons';
 import { groupRooms, type AgentNode, type RoomGroup } from './model';
 import { officeIsEmpty } from './overlays';
 import { salasRecolhidas, alternarSala } from './recolhidas';
-import { createAgentRow, updateAgentRow } from './rows';
+import { assinaturaDaLinha, createAgentRow, updateAgentRow } from './rows';
 import { contarPorStatus, esperamNoNo, STATUS_FILTROS, subirQuemEspera, type StatusFiltro } from './urgencia';
 import { createAccountChip, createProgress, updateAccountChip, updateProgress } from './widgets';
 
@@ -28,6 +28,8 @@ interface RoomRefs {
   tasksBar: HTMLElement;
   tasksText: HTMLElement;
   nodes: KeyedList<AgentNode>;
+  /** Assinatura da última atualização: igual na próxima, a sala já está certa. */
+  sig?: string;
 }
 
 interface NodeRefs {
@@ -37,6 +39,7 @@ interface NodeRefs {
   subsWrap: HTMLElement;
   subsCaption: HTMLElement;
   subs: KeyedList<ItemSubs>;
+  sig?: string;
 }
 
 export class Sidebar implements UiComponent {
@@ -62,6 +65,12 @@ export class Sidebar implements UiComponent {
   private emptyText: HTMLElement;
   private clearBtn: HTMLButtonElement;
   private lastSelKey = '';
+  /** Relógio, agentes e salas recolhidas desta passada de `render`, lidos uma vez só. */
+  private agora = 0;
+  private agentes: readonly AgentInfo[] = [];
+  private recolhidas = new Set<string>();
+  /** Os nós são refeitos a cada `render`, então a assinatura de um nó vale só dentro da passada. */
+  private assinaturasDosNos = new WeakMap<AgentNode, string>();
 
   constructor(private ctx: UiContext) {
     this.input = h('input', {
@@ -166,6 +175,9 @@ export class Sidebar implements UiComponent {
 
   render(): void {
     const snap = this.ctx.store.snapshot;
+    this.agora = this.ctx.now();
+    this.agentes = snap?.agents ?? [];
+    this.recolhidas = salasRecolhidas();
     const accounts = snap?.accounts ?? [];
     const hidden = new Set(this.ctx.prefs.hiddenAccounts);
     this.filterList.sync(accounts.length > 1 ? accounts : []);
@@ -286,15 +298,24 @@ export class Sidebar implements UiComponent {
   private updateRoom(section: HTMLElement, g: RoomGroup): void {
     const r = this.roomRefs.get(section)!;
     const sel = this.ctx.selection();
-    setText(r.name, g.room.name);
+    // Ordem escolhida pelo usuário (arrastando as linhas), guardada no navegador.
+    const manual = orderAgents(g.room.id, g.nodes, (n) => n.agent.sessionId);
+    this.shown.set(g.room.id, manual);
+    const nodes = subirQuemEspera(manual, (n) => esperamNoNo(n) > 0);
+    const selected = sel?.type === 'room' && sel.id === g.room.id;
+    // Com filtro ativo a sala abre: quem filtra quer ver os agentes.
+    const recolhida = this.recolhidas.has(g.room.id) && this.query.trim() === '' && this.status === 'todos';
     const present = g.agents.filter((a) => a.status !== 'offline').length;
+    const sig = this.assinaturaDaSala(g, nodes, present, selected, recolhida);
+    if (r.sig === sig) return;
+    r.sig = sig;
+    setText(r.name, g.room.name);
     setText(r.count, String(present));
     setTitle(r.count, plural(present, 'agente', 'agentes'));
     setText(r.path, shortPath(g.room.path));
     setTitle(r.head, `${g.room.path}\nClique para ver a sala`);
     setAttr(r.head, 'aria-label', `Sala ${g.room.name}, ${plural(present, 'agente', 'agentes')}`);
     r.accs.sync(g.accounts.map((id) => this.ctx.account(id) ?? id));
-    const selected = sel?.type === 'room' && sel.id === g.room.id;
     r.head.classList.toggle('is-selected', selected);
     setAttr(r.head, 'aria-current', selected ? 'true' : null);
     section.classList.toggle('is-empty', present === 0);
@@ -303,8 +324,6 @@ export class Sidebar implements UiComponent {
     setHidden(r.espera, esperando === 0);
     setText(r.espera, `✋ ${esperando}`);
     setTitle(r.espera, textoPrecisamDeVoce(esperando));
-    // Com filtro ativo a sala abre: quem filtra quer ver os agentes.
-    const recolhida = salasRecolhidas().has(g.room.id) && this.query.trim() === '' && this.status === 'todos';
     section.classList.toggle('is-folded', recolhida);
     setAttr(r.fold, 'aria-expanded', String(!recolhida));
     setAttr(r.fold, 'aria-label', `${recolhida ? 'Expandir' : 'Recolher'} a sala ${g.room.name}`);
@@ -316,10 +335,42 @@ export class Sidebar implements UiComponent {
       updateProgress(r.tasksBar, t.completed, t.total, t.inProgress);
       setText(r.tasksText, `${t.completed}/${t.total} tarefas`);
     }
-    // Ordem escolhida pelo usuário (arrastando as linhas), guardada no navegador.
-    const manual = orderAgents(g.room.id, g.nodes, (n) => n.agent.sessionId);
-    this.shown.set(g.room.id, manual);
-    r.nodes.sync(subirQuemEspera(manual, (n) => esperamNoNo(n) > 0));
+    r.nodes.sync(nodes);
+  }
+
+  private selecionado(a: AgentInfo): boolean {
+    const sel = this.ctx.selection();
+    return sel?.type === 'agent' && sel.id === a.id;
+  }
+
+  private assinaturaDaLinha(a: AgentInfo, selecionado = this.selecionado(a)): string {
+    return assinaturaDaLinha(a, this.ctx.account(a.account), selecionado, this.agora, this.agentes);
+  }
+
+  /** O que `updateNode` lê: as linhas, quantos subagentes há e, com grupos, o que o cabeçalho deles usa. */
+  private assinaturaDoNo(n: AgentNode): string {
+    const feita = this.assinaturasDosNos.get(n);
+    if (feita !== undefined) return feita;
+    const grupos = n.subs.some((s) => s.teamName || s.rodada !== undefined);
+    const partes = [n.subTotal, this.assinaturaDaLinha(n.agent)];
+    for (const s of n.subs) {
+      partes.push(this.assinaturaDaLinha(s));
+      if (grupos) partes.push((s.parentId && this.ctx.agent(s.parentId)?.name) || '');
+    }
+    if (grupos) partes.push(JSON.stringify(this.ctx.store.snapshot?.equipes ?? []));
+    const sig = partes.join('\u0002');
+    this.assinaturasDosNos.set(n, sig);
+    return sig;
+  }
+
+  private assinaturaDaSala(g: RoomGroup, nodes: readonly AgentNode[], present: number, selected: boolean, recolhida: boolean): string {
+    const { room, tasks } = g;
+    const contas = g.accounts.map((id) => {
+      const c = this.ctx.account(id);
+      return `${id}:${c?.short}:${c?.color}:${c?.name}:${c?.email}`;
+    });
+    const cab = [room.id, room.name, room.path, present, selected, recolhida, tasks.completed, tasks.inProgress, tasks.total, ...contas];
+    return `${cab.join('\u0001')}\u0003${nodes.map((n) => this.assinaturaDoNo(n)).join('\u0003')}`;
   }
 
   /** Arrastar o cabeçalho de uma sala reordena as salas da lista. */
@@ -431,6 +482,9 @@ export class Sidebar implements UiComponent {
 
   private updateNode(li: HTMLElement, n: AgentNode): void {
     const r = this.nodeRefs.get(li)!;
+    const sig = this.assinaturaDoNo(n);
+    if (r.sig === sig) return;
+    r.sig = sig;
     this.updateRow(r.row, n.agent);
     r.head.dataset.id = n.agent.id;
     r.head.dataset.room = n.agent.roomId;
@@ -444,8 +498,7 @@ export class Sidebar implements UiComponent {
   }
 
   private updateRow(row: HTMLElement, a: AgentInfo): void {
-    const sel = this.ctx.selection();
-    updateAgentRow(row, a, this.ctx.account(a.account), sel?.type === 'agent' && sel.id === a.id, this.ctx.now(), this.ctx.store.snapshot?.agents);
+    updateAgentRow(row, a, this.ctx.account(a.account), this.selecionado(a), this.agora, this.agentes);
   }
 
   private pick(id: string): void {
