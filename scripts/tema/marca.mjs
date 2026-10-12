@@ -6,7 +6,7 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validar } from '../../shared/tema/validar.ts';
 import { misturar } from './cor.mjs';
-import { cadeiaSegura, pastaDosTemas } from './confinar.mjs';
+import { cadeiaSegura, pastaDosTemas, recusarSeEmUso } from './confinar.mjs';
 import { caber, ehPng, gravarPng, lerPng, MAX_BYTES_ENTRADA } from './png.mjs';
 
 export const RAIZ = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -139,6 +139,7 @@ export function temaDaMarca(m, padrao, hoje, nomeLogo) {
 export function montar(m, { home, baseDir, hoje = new Date().toISOString().slice(0, 10), refazer = false }) {
   const erros = conferirMarca(m);
   if (erros.length) throw new Error(`marca recusada:\n- ${erros.join('\n- ')}`);
+  recusarSeEmUso(home, m.id);
   const padrao = JSON.parse(readFileSync(join(PADRAO, 'tema.json'), 'utf8'));
   const esquema = JSON.parse(readFileSync(join(RAIZ, 'shared/tema/tema.schema.json'), 'utf8'));
 

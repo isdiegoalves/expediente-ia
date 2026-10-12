@@ -96,3 +96,10 @@ export function lerTemaAtivo(home) {
     return undefined;
   }
 }
+
+/** Recusa mexer num tema que está em tema-ativo: o servidor lê o disco a cada pedido e a troca seria imediata, sem prévia. */
+export function recusarSeEmUso(home, id) {
+  if (lerTemaAtivo(home) === id) {
+    throw new Error(`o tema "${id}" é o que está em uso no escritório; volte ao padrão com "tema.mjs padrao" ou use outro id para o candidato`);
+  }
+}

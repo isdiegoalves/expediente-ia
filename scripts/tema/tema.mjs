@@ -6,7 +6,7 @@ import { readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { aplicarPropostas, relatorio } from './contraste.mjs';
-import { arquivoComumParaLer, cadeiaSegura, criarPasta, destinoGravavel, gravarArquivoComum, gravarTemaAtivo, idValido, lerTemaAtivo, nomePng, pastaDosTemas } from './confinar.mjs';
+import { arquivoComumParaLer, cadeiaSegura, criarPasta, destinoGravavel, gravarArquivoComum, gravarTemaAtivo, idValido, lerTemaAtivo, nomePng, pastaDosTemas, recusarSeEmUso } from './confinar.mjs';
 import { capturar, urlDaPrevia } from './captura.mjs';
 import { caminhoSeguro, montar, RAIZ } from './marca.mjs';
 import { ehPng, lerPng, MAX_BYTES_ENTRADA, quantizar } from './png.mjs';
@@ -87,6 +87,7 @@ const comandos = {
   },
 
   contraste([id, ...opcoes]) {
+    if (opcoes.includes('--ajustar')) recusarSeEmUso(homedir(), id);
     const tema = lerTema(id);
     const { texto, reprovados, propostas } = relatorio(tema);
     console.log(texto);
