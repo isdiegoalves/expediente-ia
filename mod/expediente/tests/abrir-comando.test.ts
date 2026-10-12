@@ -126,12 +126,16 @@ describe('/escritorio abrir', () => {
     semNada(r.text.replace(COMANDO, ''))
   })
 
-  test('se a sessão acaba antes dos 60 s: o que já tem 15 s é apagado no session.end; o mais novo fica (o navegador pode não ter lido o HTML)', async ($, on) => {
+  test('se a sessão acaba antes dos 60 s: o que já tem 15 s é apagado no session.end (aos 14 s ainda não); o mais novo fica (o navegador pode não ter lido o HTML)', async ($, on) => {
     const w = mundo(on)
     await $.command.run(RUN('abrir'))
     await $.session.end(FIM)
     expect(w.rodados.some((a) => a[0] === 'rm' || a[0] === 'rmdir')).toBe(false)
-    await w.clock.advance(16_000)
+    // O limiar é de 15 s: aos 14 s o navegador ainda pode não ter lido o HTML (o claude -p acaba logo depois do open); aos 15 s já leu.
+    await w.clock.advance(14_000)
+    await $.session.end(FIM)
+    expect(w.rodados.some((a) => a[0] === 'rm' || a[0] === 'rmdir')).toBe(false)
+    await w.clock.advance(1_000)
     await $.session.end(FIM)
     expect(w.rodados.filter((a) => a[0] === 'rm' || a[0] === 'rmdir')).toEqual([['rm', '-f', ARQUIVO], ['rmdir', PASTA]])
     await w.clock.advance(60_000)
