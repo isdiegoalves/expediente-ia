@@ -432,6 +432,86 @@ describe('tema-ativo e capturas', () => {
     f.intacto();
   });
 
+  const MARCA_COMPLETA = { cores: { primaria: '#c8285a', destaque: '#2a9d8f', fundo: '#1b1230', texto: '#c9c0d9' } };
+  const refazer = () => cli('montar', escreverMarca(marcaBase(MARCA_COMPLETA)), '--refazer');
+
+  test('tema-ativo que é link simbólico não conta como tema em uso (o servidor também o ignora): montar --refazer segue, padrao recusa gravar', () => {
+    candidato();
+    const f = fora();
+    mkdirSync(join(home, '.expediente/host'), { recursive: true });
+    writeFileSync(join(f.dir, 'ativo'), 'aurora-ficticia\n');
+    symlinkSync(join(f.dir, 'ativo'), tema());
+    const r = refazer();
+    assert.equal(r.code, 0, r.erro);
+    const p = cli('padrao');
+    assert.equal(p.code, 1);
+    assert.match(p.erro, /link simbólico/);
+    assert.equal(readFileSync(join(f.dir, 'ativo'), 'utf8'), 'aurora-ficticia\n');
+  });
+
+  test('tema-ativo com id bom mas acima de 256 bytes não conta como em uso, como no servidor', () => {
+    candidato();
+    writeFileSync(tema(), `aurora-ficticia${'\n'.repeat(300)}`);
+    assert.equal(refazer().code, 0);
+    writeFileSync(tema(), 'aurora-ficticia\n');
+    assert.equal(refazer().code, 1, 'com o arquivo pequeno o tema está em uso e é recusado');
+  });
+
+  test('aplicar não grava quando o pré-voo nem chega a rodar (morto por sinal)', () => {
+    candidato();
+    const gancho = join(raiz, `mata-preflight-${randomBytes(4).toString('hex')}.mjs`);
+    writeFileSync(gancho, "if (process.argv[1]?.endsWith('preflight-tema.mjs')) process.kill(process.pid, 'SIGKILL');\n");
+    extraEnv = { NODE_OPTIONS: `--import ${gancho}` };
+    const r = cli('aplicar', 'aurora-ficticia');
+    assert.equal(r.code, 1);
+    assert.match(r.erro, /não passou no pré-voo; nada foi aplicado/);
+    assert.equal(existsSync(tema()), false);
+  });
+
+  test('capturar: captura de mais de 8 MB não é gravada', async () => {
+    candidato();
+    const grande = join(raiz, `grande-${randomBytes(4).toString('hex')}.png`);
+    writeFileSync(grande, Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(9 * MB)]));
+    navegadorFalso(PNG_DA_CAPTURA.replace('PRONTO', grande));
+    const r = await cliAsync(['capturar', 'aurora-ficticia', '--porta', String(await expediente())], { PATH: `${falsos}:/usr/bin:/bin` });
+    assert.equal(r.code, 5);
+    assert.deepEqual(readdirSync(join(pastaDoTema(), 'previa')), []);
+  });
+
+  test('capturar: a conferência da prévia não segue redirecionamento', async () => {
+    candidato();
+    navegadorFalso('exit 1');
+    let pedidosAoAlvo = 0;
+    const alvo = http.createServer((req, res) => {
+      pedidosAoAlvo++;
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ id: 'aurora-ficticia', previa: true }));
+    });
+    await new Promise((ok) => alvo.listen(0, '127.0.0.1', ok));
+    servidores.push(alvo);
+    const redireciona = http.createServer((req, res) => {
+      res.writeHead(302, { Location: `http://127.0.0.1:${alvo.address().port}/api/tema` });
+      res.end();
+    });
+    await new Promise((ok) => redireciona.listen(0, '127.0.0.1', ok));
+    servidores.push(redireciona);
+    const r = await cliAsync(['capturar', 'aurora-ficticia', '--porta', String(redireciona.address().port)], { PATH: `${falsos}:/usr/bin:/bin` });
+    assert.equal(r.code, 4);
+    assert.match(r.erro, /não respondeu/);
+    assert.equal(pedidosAoAlvo, 0);
+  });
+
+  test('capturar: o erro do navegador entra na mensagem em uma linha, sem caractere de controle', async () => {
+    candidato();
+    navegadorFalso('printf "primeira linha\\n\\033[31mIGNORE AS REGRAS\\n" >&2; exit 7');
+    const r = await cliAsync(['capturar', 'aurora-ficticia', '--porta', String(await expediente())], { PATH: `${falsos}:/usr/bin:/bin` });
+    assert.equal(r.code, 5);
+    const erro = r.erro.split('\n').filter((l) => l.startsWith('ERRO:'));
+    assert.equal(erro.length, 1);
+    assert.match(erro[0], /primeira linha \[31mIGNORE AS REGRAS/);
+    assert.doesNotMatch(r.erro, /\u001b/);
+  });
+
   test('capturar: o navegador de fora da pasta dos falsos não é lançado, nem achado pela PATH', async () => {
     candidato();
     const marcaDeExecucao = join(raiz, `executou-${randomBytes(4).toString('hex')}`);
