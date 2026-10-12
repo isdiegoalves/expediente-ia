@@ -419,6 +419,19 @@ describe('tema-ativo e capturas', () => {
     f.intacto();
   });
 
+  test('capturar: previa/ trocada por link simbólico enquanto o navegador roda: a captura seguinte é recusada e nada cai fora', async () => {
+    candidato();
+    writeFileSync(join(raiz, 'captura-pronta.png'), logoPng());
+    const f = fora('previa-fora');
+    const contador = join(raiz, `conta-${randomBytes(4).toString('hex')}`);
+    const previa = join(pastaDoTema(), 'previa');
+    navegadorFalso(`n=$(cat "${contador}" 2>/dev/null || echo 0); n=$((n+1)); echo $n > "${contador}"\nif [ "$n" = 2 ]; then rm -rf "${previa}"; ln -s "${f.dir}" "${previa}"; fi\n${PNG_DA_CAPTURA.replace('PRONTO', join(raiz, 'captura-pronta.png'))}`);
+    const r = await cliAsync(['capturar', 'aurora-ficticia', '--porta', String(await expediente())], { PATH: `${falsos}:/usr/bin:/bin` });
+    assert.equal(r.code, 1, r.erro);
+    assert.match(r.erro, /link simbólico/);
+    f.intacto();
+  });
+
   test('capturar: o navegador de fora da pasta dos falsos não é lançado, nem achado pela PATH', async () => {
     candidato();
     const marcaDeExecucao = join(raiz, `executou-${randomBytes(4).toString('hex')}`);

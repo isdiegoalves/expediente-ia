@@ -115,7 +115,7 @@ export async function capturar({ id, porta, home = homedir(), env = process.env,
   const navegador = acharNavegador(env);
   if (!navegador) throw falha(SEM_NAVEGADOR, 'Nenhum navegador Chromium (Chrome, Edge, Brave ou Chromium) foi encontrado: nada foi capturado.');
   await conferirPrevia(porta, id);
-  const pasta = criarPasta(home, id, 'previa');
+  criarPasta(home, id, 'previa');
   const temporaria = mkdtempSync(join(tmpdir(), 'expediente-captura-'));
   const gravadas = [];
   try {
@@ -135,7 +135,8 @@ export async function capturar({ id, porta, home = homedir(), env = process.env,
         if (!png && r.error?.code !== 'ETIMEDOUT') break;
       }
       if (!png) throw falha(SEM_CAPTURA, `O navegador não gerou a captura da sala ${n} (${r.error?.code === 'ETIMEDOUT' ? `passou de ${String(limiteMs / 1000).replace(".", ",")} s, ${TENTATIVAS} vezes` : `saída ${r.status ?? r.signal}`}): ${umaLinha(r.stderr ?? '')}`);
-      const destino = join(pasta, `sala-${n}.png`);
+      // A pasta é conferida de novo a cada gravação: o navegador leva minutos e previa/ pode ter virado link nesse tempo.
+      const destino = join(criarPasta(home, id, 'previa'), `sala-${n}.png`);
       gravarArquivoComum(destino, png);
       gravadas.push(destino);
       aviso(destino);
