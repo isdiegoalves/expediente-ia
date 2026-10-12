@@ -428,6 +428,62 @@ describe('reescrita de SVG: lista de permitidos', () => {
   });
 });
 
+describe('reescrita de SVG: custo limitado em entrada adversária', () => {
+  const N = 60_000;
+  const dig = '1'.repeat(N);
+  const S = (attrs, corpo = '') => `<svg xmlns="http://www.w3.org/2000/svg" ${attrs}>${corpo}</svg>`;
+  const medir = (texto) => {
+    const t0 = performance.now();
+    let erro = null;
+    let saida = null;
+    try {
+      saida = reescreverSvg(Buffer.from(texto));
+    } catch (e) {
+      erro = e;
+    }
+    return { ms: performance.now() - t0, erro, saida };
+  };
+  const LIMITE_MS = 200;
+
+  const recusadas = {
+    'número de 60 mil dígitos e uma letra em x': S('', `<rect x="${dig}a"/>`),
+    'número de 60 mil dígitos e uma letra em viewBox': S(`viewBox="${dig}a"`),
+    'número de 60 mil dígitos e uma letra em opacity': S('', `<rect opacity="${dig}a"/>`),
+    'número de 60 mil dígitos e uma letra dentro de transform': S('', `<g transform="translate(${dig}a)"/>`),
+    'transform com 5 mil funções e erro no fim': S('', `<g transform="${'translate(1) '.repeat(5000)}x"/>`),
+    'transform com 5 mil funções válidas': S('', `<g transform="${'translate(1) '.repeat(5000)}"/>`),
+    'transform com espaços em volta e erro no fim': S('', `<g transform="translate(${' '.repeat(N)}1 x)"/>`),
+    'cor de 60 mil letras': S('', `<rect fill="${'a'.repeat(N)}1"/>`),
+    'id de 60 mil letras': S('', `<g id="${'a'.repeat(N)}"/>`),
+    'd de 60 mil caracteres': S('', `<path d="${'M1 '.repeat(20000)}!"/>`),
+    'tag com 10 mil atributos': S('', `<rect ${'a="1" '.repeat(10000)}x/>`),
+    'tag com 60 mil espaços e erro no fim': S('', `<rect fill="#fff"${' '.repeat(N)}x/>`),
+    'arquivo de 1 MB de tags curtas': S('', '<g/>'.repeat(250_000)),
+    'arquivo de 1 MB de <g></g>': S('', '<g></g>'.repeat(125_000)),
+    'arquivo de 1 MB de aberturas sem fechar': S('', '<g>'.repeat(300_000)),
+  };
+
+  for (const [nome, entrada] of Object.entries(recusadas)) {
+    test(`recusa em menos de ${LIMITE_MS} ms: ${nome}`, () => {
+      const r = medir(entrada);
+      assert.match(String(r.erro?.message), /SVG recusado/, 'deveria recusar');
+      assert.ok(r.ms < LIMITE_MS, `levou ${r.ms.toFixed(0)} ms`);
+    });
+  }
+
+  test('1 MB só de comentários é processado em tempo limitado', () => {
+    const r = medir(S('', '<!---->'.repeat(140_000)));
+    assert.equal(r.erro, null);
+    assert.equal(r.saida, '<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+    assert.ok(r.ms < 500, `levou ${r.ms.toFixed(0)} ms`);
+  });
+
+  test('número legítimo longo ainda passa (sem recusar o que é válido)', () => {
+    const r = medir(S('', `<rect x="${'1'.repeat(30)}.${'5'.repeat(30)}e-3" width="1e2px" height=".5"/>`));
+    assert.equal(r.erro, null, String(r.erro?.message));
+  });
+});
+
 describe('gravação confinada a ~/.expediente/host/temas/<id>', () => {
   const SVG_BOM = '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#c8285a"/><circle cx="32" cy="32" r="16" fill="#ffffff"/></svg>';
   let fora;

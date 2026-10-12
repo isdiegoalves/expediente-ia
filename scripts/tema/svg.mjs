@@ -8,11 +8,19 @@ import { arquivoComumParaLer } from './confinar.mjs';
 import { gravarPng, lerPng } from './png.mjs';
 
 const MAX_SVG = 1024 * 1024;
-const NUM = String.raw`-?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?`;
+const NUM = String.raw`-?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?`;
 const COR = String.raw`none|currentColor|#[0-9a-fA-F]{3,8}|[a-zA-Z]{3,20}|url\(#[A-Za-z][\w-]{0,40}\)`;
 const REF = String.raw`url\(#[A-Za-z][\w-]{0,40}\)`;
 const em = (re) => new RegExp(`^(?:${re})$`);
-const TRANSFORM = String.raw`(?:\s*(?:translate|scale|rotate|skewX|skewY|matrix)\(\s*${NUM}(?:[\s,]+${NUM}){0,5}\s*\))+\s*`;
+const FUNCAO = em(String.raw`(?:translate|scale|rotate|skewX|skewY|matrix)\(\s*${NUM}(?:[\s,]+${NUM}){0,5}`);
+const MAX_FUNCOES = 16;
+
+/** Cada função separada por ")" e conferida sozinha, sem repetição aninhada numa regex só. */
+function transformOk(valor) {
+  const partes = valor.split(')');
+  if (partes.length < 2 || partes.length > MAX_FUNCOES + 1 || partes.pop().trim()) return false;
+  return partes.every((p) => FUNCAO.test(p.trim()));
+}
 const UNID = String.raw`${NUM}(?:px|%)?`;
 
 const VALORES = {
@@ -22,7 +30,7 @@ const VALORES = {
   viewBox: em(String.raw`${NUM}(?:[\s,]+${NUM}){3}`),
   points: em(String.raw`[-\d.eE\s,+]{1,20000}`),
   d: em(String.raw`[MmLlHhVvCcSsQqTtAaZz\d.eE\s,+-]{1,40000}`),
-  transform: em(TRANSFORM), gradientTransform: em(TRANSFORM),
+  transform: { test: transformOk }, gradientTransform: { test: transformOk },
   fill: em(COR), stroke: em(COR), 'stop-color': em(COR),
   opacity: em(NUM), 'fill-opacity': em(NUM), 'stroke-opacity': em(NUM), 'stop-opacity': em(NUM), 'stroke-width': em(UNID), 'stroke-miterlimit': em(NUM),
   'fill-rule': em('nonzero|evenodd'), 'clip-rule': em('nonzero|evenodd'),
@@ -31,6 +39,8 @@ const VALORES = {
   xmlns: em('http://www\\.w3\\.org/2000/svg'),
   version: em('1\\.[01]'),
 };
+const TETO = { d: 40_000, points: 20_000, transform: 1_000, gradientTransform: 1_000 };
+const TETO_PADRAO = 64;
 const FORMA = ['id', 'transform', 'fill', 'stroke', 'opacity', 'fill-opacity', 'stroke-opacity', 'stroke-width', 'stroke-miterlimit', 'stroke-linecap', 'stroke-linejoin', 'fill-rule', 'clip-rule'];
 const ELEMENTOS = {
   svg: ['xmlns', 'version', 'viewBox', 'width', 'height', ...FORMA],
@@ -50,7 +60,7 @@ const ELEMENTOS = {
 const MAX_ELEMENTOS = 5000;
 const MAX_PROFUNDIDADE = 32;
 const recusa = (motivo) => new Error(`SVG recusado (${motivo}); peça ao dono um PNG do logo`);
-const TAG = /^<(\/?)([A-Za-z][A-Za-z0-9]*)((?:\s+[A-Za-z][A-Za-z0-9-]*\s*=\s*(?:"[^"<>&]*"|'[^'<>&]*'))*)\s*(\/?)>/;
+const TAG = /<(\/?)([A-Za-z][A-Za-z0-9]*)((?:\s+[A-Za-z][A-Za-z0-9-]*\s*=\s*(?:"[^"<>&]*"|'[^'<>&]*'))*)\s*(\/?)>/y;
 const ATRIBUTO = /\s+([A-Za-z][A-Za-z0-9-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
 
 /**
@@ -96,7 +106,8 @@ export function reescreverSvg(buf) {
     }
     if (texto.startsWith('<!', pos)) throw recusa('DOCTYPE, entidade ou CDATA');
     if (texto.startsWith('<?', pos)) throw recusa('instrução de processamento');
-    const m = TAG.exec(texto.slice(pos, pos + 70_000));
+    TAG.lastIndex = pos;
+    const m = TAG.exec(texto);
     if (!m) throw recusa('marcação fora do vocabulário (prefixo de namespace, atributo, aspas ou "&")');
     pos += m[0].length;
     const [, fecha, nome, atributos, autoFecha] = m;
@@ -117,7 +128,7 @@ export function reescreverSvg(buf) {
       if (!ELEMENTOS[nome].includes(an) || !Object.hasOwn(VALORES, an)) throw recusa(`atributo ${an} fora da lista em <${nome}>`);
       if (vistos.has(an)) throw recusa(`atributo ${an} repetido`);
       vistos.add(an);
-      if (!VALORES[an].test(valor.trim())) throw recusa(`valor de ${an} fora do formato`);
+      if (valor.length > (TETO[an] ?? TETO_PADRAO) || !VALORES[an].test(valor.trim())) throw recusa(`valor de ${an} fora do formato`);
       ok.push(`${an}="${valor.trim()}"`);
     }
     saida.push(`<${[nome, ...ok].join(' ')}${autoFecha ? '/' : ''}>`);
