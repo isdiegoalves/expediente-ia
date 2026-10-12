@@ -8,7 +8,7 @@ import { dirname, join, resolve } from 'node:path';
 import { aplicarPropostas, relatorio } from './contraste.mjs';
 import { arquivoComumParaLer, cadeiaSegura, criarPasta, destinoGravavel, gravarArquivoComum, idValido, nomePng, pastaDosTemas } from './confinar.mjs';
 import { caminhoSeguro, montar, RAIZ } from './marca.mjs';
-import { ehPng, lerPng, quantizar } from './png.mjs';
+import { ehPng, lerPng, MAX_BYTES_ENTRADA, quantizar } from './png.mjs';
 import { rasterizar } from './svg.mjs';
 
 const MAX_TEXTO = 1024 * 1024;
@@ -37,7 +37,9 @@ const comandos = {
     const quantas = 6;
     if (!args.length) throw new Error('uso: paleta <imagem.png>...');
     for (const a of args) {
-      const buf = readFileSync(arquivoComumParaLer(arquivoLocal(a), a));
+      const arq = arquivoComumParaLer(arquivoLocal(a), a);
+      if (statSync(arq).size > MAX_BYTES_ENTRADA) throw new Error(`${a}: acima de ${MAX_BYTES_ENTRADA} bytes`);
+      const buf = readFileSync(arq);
       if (!ehPng(buf)) throw new Error(`${a}: não é PNG (SVG se rasteriza antes; outro formato, peça um PNG)`);
       console.log(`${a}`);
       for (const { cor, parte } of quantizar(lerPng(buf), quantas)) console.log(`  ${cor}  ${pf(parte)}`);
