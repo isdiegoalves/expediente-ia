@@ -134,7 +134,7 @@ describe('"Abrir o escritório" no terminal', () => {
     expect(w.bilhetes()).toBe(0)
     expect(w.rodados.some((a) => ['mktemp', 'chmod', 'open', 'rm', 'rmdir'].includes(a[0]!))).toBe(false)
     expect(w.escritos).toEqual([])
-    expect(w.saidas.join('\n')).toContain(`quem responde na porta ${PORTA} não é o seu Expediente`)
+    expect(w.saidas.join('\n')).toContain(`Quem responde na porta ${PORTA} não é o seu Expediente`)
     expect(w.brutos.join('\n')).not.toContain(TOKEN)
   })
 
@@ -147,7 +147,7 @@ describe('"Abrir o escritório" no terminal', () => {
       await ui.unmount()
       expect(w.escritos).toEqual([])
       expect(w.rodados.some((a) => a[0] === 'open' || a[0] === 'chmod' || a[0] === 'rm' || a[0] === 'rmdir')).toBe(false)
-      expect(w.saidas.join('\n')).toContain('npm run abrir')
+      expect(w.saidas.join('\n')).toContain('abrir.mjs')
     })
   }
 
@@ -159,7 +159,7 @@ describe('"Abrir o escritório" no terminal', () => {
     await ui.unmount()
     expect(w.rodados.some((a) => a[0] === 'open')).toBe(false)
     expect(w.rodados.filter((a) => a[0] === 'rm' || a[0] === 'rmdir')).toEqual([['rm', '-f', ARQUIVO], ['rmdir', PASTA]])
-    expect(w.saidas.join('\n')).toContain('npm run abrir')
+    expect(w.saidas.join('\n')).toContain('abrir.mjs')
     semSegredo(JSON.stringify(w.rodados))
   })
 })

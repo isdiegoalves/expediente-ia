@@ -600,42 +600,71 @@ async function urlDoEscritorio($: EngineInterface, porta: number): Promise<strin
   }
 }
 
+/** Onde ficou o que o mod criou para abrir o escritório e quando: o `session.end` limpa o que já passou de 15 s (o navegador já leu o HTML). */
+const abertos = new Map<Criado, number>()
+const LEU_O_HTML_MS = 15_000
+
+type Abertura = 'aberto' | 'nao-confere' | 'sem-bilhete' | 'falhou'
+
+/** O que o botão e o `/escritorio abrir` dizem. Nunca o bilhete, a URL nem o caminho do arquivo: saída de comando entra no transcript. */
+function textoDaAbertura(r: Abertura, porta: number): string {
+  if (r === 'aberto') return 'Abri o escritório no navegador, já autorizado.'
+  if (r === 'nao-confere') return `Quem responde na porta ${porta} não é o seu Expediente (a prova do token não confere). Não abri nada.`
+  if (r === 'sem-bilhete') return `Não deu para autorizar: o Expediente não respondeu ou recusou o token. Rode npm run docker:up e tente de novo.`
+  return `Não deu para abrir o navegador. Rode num terminal, de qualquer pasta: ${COMANDO_ABRIR}`
+}
+
 /** Apaga o arquivo e a pasta que o mod criou (`rm -f` e `rmdir`, os dois com o caminho exato); nunca lança. */
 async function limparEscritorio($: EngineInterface, criado: Criado): Promise<void> {
+  abertos.delete(criado)
   for (const argv of argvLimpeza(criado) ?? []) await $.process.run(argv, { timeoutMs: 5_000 }).catch(() => undefined)
 }
 
 /**
- * Botão "Abrir o escritório" do terminal. O bilhete vai num HTML que redireciona ao escritório, numa pasta temporária de modo 700
- * (`mktemp -d`), e o `open` recebe só o caminho do arquivo que o mod acabou de criar: nada sensível no argv, que outro usuário lê
- * com `ps`. Arquivo e pasta somem quando o bilhete vence (se o mod terminar antes, sobra um HTML com bilhete vencido na pasta 700).
- * Nunca lança.
+ * O fluxo do botão "Abrir o escritório" e do `/escritorio abrir`. O bilhete vai num HTML que redireciona ao escritório, numa pasta
+ * temporária de modo 700 (`mktemp -d`), e o `open` recebe só o caminho do arquivo que o mod acabou de criar: nada sensível no argv,
+ * que outro usuário lê com `ps`. Arquivo e pasta somem quando o bilhete vence ou, se a sessão acabar antes, no `session.end` (só o
+ * que tem mais de 15 s: antes disso o navegador pode ainda não ter lido o HTML, e sobra um bilhete vencido numa pasta 700).
+ * Nunca lança, e não escreve nada na tela: quem chama diz o resultado.
  */
-async function abrirEscritorio($: EngineInterface, porta: number): Promise<void> {
+async function abrirEscritorio($: EngineInterface, porta: number): Promise<Abertura> {
   let criado: Criado | undefined
+  servidorNaoConfere = false
   try {
     const url = await urlDoEscritorio($, porta)
-    if (!url) {
-      $.ui.toast(servidorNaoConfere ? `Expediente: quem responde na porta ${porta} não é o seu Expediente` : 'Expediente: não deu para autorizar; rode npm run abrir na pasta do Expediente')
-      return
-    }
+    if (!url) return servidorNaoConfere ? 'nao-confere' : 'sem-bilhete'
     criado = criadoDoMktemp((await $.process.run(argvMktemp, { timeoutMs: 5_000 })).stdout)
     const html = htmlDoEscritorio(url)
     if (!criado || !html) throw new Error('pasta temporária recusada')
     const feito = criado
+    abertos.set(feito, await $.clock.now())
     await $.fs.write(feito.arquivo, html)
     const chmod = argvChmod(feito.arquivo, feito)
     if (!chmod || (await $.process.run(chmod, { timeoutMs: 5_000 })).exitCode !== 0) throw new Error('chmod recusado')
     $.clock.after(BILHETE_MS, () => {
-      void limparEscritorio($, feito)
+      if (abertos.has(feito)) void limparEscritorio($, feito)
     })
     const abrir = argvAbrirArquivo(feito.arquivo, feito)
     if (!abrir) throw new Error('open recusado')
     await $.process.run(abrir, { timeoutMs: 10_000 })
+    return 'aberto'
   } catch {
     if (criado) await limparEscritorio($, criado)
-    $.ui.toast('Expediente: não deu para abrir o escritório; rode o comando do painel ou npm run abrir na pasta do Expediente')
+    return 'falhou'
   }
+}
+
+async function botaoAbrirEscritorio($: EngineInterface, porta: number): Promise<void> {
+  const r = await abrirEscritorio($, porta)
+  if (r !== 'aberto') $.ui.toast(`Expediente: ${textoDaAbertura(r, porta)}`)
+}
+
+/** O texto do `/escritorio abrir`: onde `$.process` não roda (app desktop) só diz o comando que roda de qualquer pasta. */
+async function abrirText($: EngineInterface): Promise<string> {
+  const e = await readEnv($)
+  const superficies = await $.session.surfaces()
+  if (superficies.includes('desktop') && !superficies.includes('terminal')) return `Neste app não dá para abrir daqui. Rode num terminal, de qualquer pasta: ${COMANDO_ABRIR}`
+  return textoDaAbertura(await abrirEscritorio($, e.port), e.port)
 }
 
 async function copiarComando($: EngineInterface, comando: string, surface: RenderSurface): Promise<void> {
@@ -753,7 +782,7 @@ async function resumoText($: EngineInterface): Promise<string> {
 export const register: Register = (on) => {
   on('session.start', async ($, e, next) => {
     try {
-      await $.command.register({ name: 'escritorio', description: 'Resumo do Expediente: quantos agentes, quem trabalha e quem precisa de você; "resumo" mostra o que mudou desde que você saiu' })
+      await $.command.register({ name: 'escritorio', description: 'Resumo do Expediente: quantos agentes, quem trabalha e quem precisa de você; "resumo" mostra o que mudou desde que você saiu; "abrir" abre o escritório no navegador, já autorizado' })
     } catch {
       // sem o comando, o resto segue
     }
@@ -797,9 +826,22 @@ export const register: Register = (on) => {
     return next(e)
   })
 
+  // Limpa o que o `/escritorio abrir` ou o botão deixou na pasta temporária, se a sessão acabar antes dos 60 s e o navegador já tiver lido o HTML.
+  on('session.end', async ($, e, next) => {
+    try {
+      const agora = await $.clock.now()
+      for (const [criado, em] of [...abertos]) if (agora - em >= LEU_O_HTML_MS) await limparEscritorio($, criado)
+    } catch {
+      // sobra um bilhete vencido numa pasta de modo 700
+    }
+    return next(e)
+  })
+
   on('command.run', { command: 'escritorio' }, async ($, e) => {
     try {
-      if (e.args.trim().toLowerCase() === 'resumo') return { text: await resumoText($) }
+      const arg = e.args.trim().toLowerCase()
+      if (arg === 'resumo') return { text: await resumoText($) }
+      if (arg === 'abrir') return { text: await abrirText($) }
       return { text: await expedienteText($) }
     } catch {
       return { text: offlineText(`http://localhost:${env?.port ?? DEFAULT_PORT}`) }
@@ -817,7 +859,7 @@ export const register: Register = (on) => {
     return (
       <Box flexDirection="column">
         {autorizavel && e.surface === 'terminal' ? (
-          <Button key="abrir-escritorio" label="Abrir o escritório" onPress={() => void abrirEscritorio($, porta)} />
+          <Button key="abrir-escritorio" label="Abrir o escritório" onPress={() => void botaoAbrirEscritorio($, porta)} />
         ) : (
           <Box flexDirection="column">
             <Text dimColor>Para abrir o escritório já autorizado, rode num terminal, de qualquer pasta:</Text>

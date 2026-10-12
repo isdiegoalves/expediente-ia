@@ -41,6 +41,14 @@ partir da 2.1.287; a API ainda é "early access" e pode mudar entre versões. A 
   andamento desde que você saiu do navegador (`GET /api/resumo`, só com Host local), também sem o modelo e sem esta sessão.
   Sem saída registrada, conta desde que o Expediente subiu.
 
+  `/escritorio abrir`: faz o mesmo que o botão "Abrir o escritório" do painel no terminal (confere o servidor, pede o bilhete de uso
+  único, grava o HTML numa pasta de `mktemp -d`, `chmod 600`, `open` só do caminho criado, limpeza com `rm -f` e `rmdir`), também sem o
+  modelo. O texto da resposta diz só o que aconteceu ("Abri o escritório no navegador, já autorizado.", ou o motivo e o que fazer):
+  nunca o bilhete, a URL nem o caminho do arquivo, porque a saída de comando entra no transcript. No app desktop, onde `$.process` não
+  roda, responde com o comando `node ~/.expediente/mod-instalado/scripts/abrir.mjs`. Com `claude -p "/escritorio abrir"` o processo
+  termina antes dos 60 s: o gancho `session.end` apaga na saída o que já tem 15 s (o navegador já leu o HTML); o mais novo fica, com um
+  bilhete vencido numa pasta de modo 700.
+
   Fora do ar: `O Expediente não respondeu em http://localhost:4848. Para subir: npm run docker:up na pasta do Expediente.`
 
   Onde a sessão desenha, o comando também abre o painel "Escritório" com o caminho de cada sessão, renovado a cada 15 s
@@ -87,9 +95,9 @@ Saída de `claude plugin validate --strict mod/expediente` (a análise estática
 carregar o módulo; nada fora desta lista é chamado):
 
 ```
-❯ ./register.tsx hooks: session.start, session.measure, command.run{command=escritorio}, ui.render{component=Pane, requestId=escritorio}
+❯ ./register.tsx hooks: session.start, session.measure, session.end, command.run{command=escritorio}, ui.render{component=Pane, requestId=escritorio}
 ❯ ./register.tsx answers its own command: command.run{command=escritorio}
-❯ ./register.tsx calls: $.clock.after (via abrirEscritorio, buscar), $.clock.every (via expedienteText, ligarAmostrador, ligarFocos, ligarPonte, schedule), $.clock.now, $.command.register, $.env.get (via amostrarRegistro, readEnv, rodarPonte), $.fs.list (via amostrarRegistro, arquivosDoApp), $.fs.read (via amostrarRegistro, lerChave, rodarPonte), $.fs.stat (via amostrarRegistro, rodarPonte), $.fs.write (via abrirEscritorio, amostrarRegistro, rodarPonte, writeUsage), $.http.fetch (via buscar), $.process.run (via abrirEscritorio, abrirNoApp, amostrarRegistro, executarFoco, lerFoco, rodarPonte), $.session.id (via consulta, rodarPonte), $.session.surfaces (via atenderFocos, atualizarPainel, expedienteText, ligarAmostrador, ligarFocos, ligarPonte, poll), $.session.usage, $.ui.copy (via copiarComando), $.ui.invalidate (via atualizarPainel), $.ui.open (via expedienteText), $.ui.resolve, $.ui.status (via setStatus), $.ui.toast (via abrirEscritorio, abrirNoApp, copiarComando, focar)
+❯ ./register.tsx calls: $.clock.after (via abrirEscritorio, buscar), $.clock.every (via expedienteText, ligarAmostrador, ligarFocos, ligarPonte, schedule), $.clock.now, $.command.register, $.env.get (via amostrarRegistro, readEnv, rodarPonte), $.fs.list (via amostrarRegistro, arquivosDoApp), $.fs.read (via amostrarRegistro, lerChave, rodarPonte), $.fs.stat (via amostrarRegistro, rodarPonte), $.fs.write (via abrirEscritorio, amostrarRegistro, rodarPonte, writeUsage), $.http.fetch (via buscar), $.process.run (via abrirEscritorio, abrirNoApp, amostrarRegistro, executarFoco, lerFoco, limparEscritorio, rodarPonte), $.session.id (via consulta, rodarPonte), $.session.surfaces (via abrirText, atenderFocos, atualizarPainel, expedienteText, ligarAmostrador, ligarFocos, ligarPonte, poll), $.session.usage, $.ui.copy (via copiarComando), $.ui.invalidate (via atualizarPainel), $.ui.open (via expedienteText), $.ui.resolve, $.ui.status (via setStatus), $.ui.toast (via abrirNoApp, botaoAbrirEscritorio, c… [+20 chars]
 ❯ ./register.tsx env writes: nothing
 ❯ ./register.tsx env reads: CLAUDE_CONFIG_DIR, EXPEDIENTE_PORT, EXPEDIENTE_USAGE_DIR, HOME
 ```

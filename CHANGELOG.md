@@ -44,6 +44,9 @@ mostra a faixa de ações bloqueadas até ser aberta de novo pelo `npm run abrir
 - **As ações ficam liberadas em `http://127.0.0.1:<porta>`.** Aberto por `http://localhost:4848` (ou
   `https://expediente.localhost`), o escritório mostra tudo, mas a faixa de aviso diz que a autorização vale só naquele
   endereço e como obtê-la.
+- **`/escritorio abrir`.** No Claude Code, abre o escritório no navegador já autorizado, pelo mesmo caminho do botão do painel, sem
+  gastar o modelo. A resposta diz só que abriu (ou por que não abriu e o que fazer), nunca o endereço nem o bilhete. No app desktop
+  responde com o comando que roda de qualquer pasta.
 - **Faixa de ações bloqueadas.** Numa página sem a chave, o escritório continua mostrando tudo, mas responder, renomear e
   editar ficam bloqueados, com uma faixa que diz o que fazer, em passos. O `?mock=1` não precisa de token.
 
