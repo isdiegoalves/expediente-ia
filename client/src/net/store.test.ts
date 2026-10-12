@@ -57,6 +57,13 @@ describe('mockOptionsFrom', () => {
     expect(mockOptionsFrom('?projects=999&subs=999')).toMatchObject({ projects: 20, subs: 50 });
   });
 
+  it('seed só entra quando é número de 0 para cima, e vira inteiro', () => {
+    expect(mockOptionsFrom('?sessions=10&seed=7')).toEqual({ speed: 1, sessions: 10, seed: 7 });
+    expect(mockOptionsFrom('?seed=0')).toEqual({ speed: 1, sessions: 4, seed: 0 });
+    expect(mockOptionsFrom('?seed=3.9')).toMatchObject({ seed: 3 });
+    for (const q of ['?seed=-1', '?seed=abc', '?seed=']) expect(mockOptionsFrom(q), q).toEqual({ speed: 1, sessions: 4 });
+  });
+
   it('quieto só entra quando vale 1', () => {
     expect(mockOptionsFrom('?sessions=10&quieto=1')).toEqual({ speed: 1, sessions: 10, quieto: true });
     expect(mockOptionsFrom('?quieto=0')).toEqual({ speed: 1, sessions: 4 });

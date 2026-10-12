@@ -94,7 +94,7 @@ export async function capturar({ id, porta, home = homedir(), env = process.env,
   try {
     for (const n of SALAS) {
       const saida = join(temporaria, `sala-${n}.png`);
-      const r = spawnSync(navegador, argsDoNavegador({ perfil: join(temporaria, `perfil-${n}`), saida, url: urlDaPrevia('127.0.0.1', porta, id, `mock=1&sessions=10&sala=${n}&`) }), {
+      const r = spawnSync(navegador, argsDoNavegador({ perfil: join(temporaria, `perfil-${n}`), saida, url: urlDaPrevia('127.0.0.1', porta, id, `mock=1&sessions=10&seed=12&sala=${n}&`) }), {
         env: { PATH: env.PATH ?? '', HOME: env.HOME ?? home },
         stdio: ['ignore', 'ignore', 'pipe'],
         timeout: 90_000,

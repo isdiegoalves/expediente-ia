@@ -62,8 +62,8 @@ export function reconnectDelay(attempt: number): number {
   return Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * 2 ** Math.max(0, attempt));
 }
 
-/** Opções do simulador a partir da query string (?speed=2&sessions=6; `projects` e `subs` montam a carga fixa de medição). `sessions=0` vale: escritório vazio. */
-export function mockOptionsFrom(search: string): { speed: number; sessions: number; projects?: number; subs?: number; quieto?: boolean } {
+/** Opções do simulador a partir da query string (?speed=2&sessions=6; `projects` e `subs` montam a carga fixa de medição; `seed` repete o mesmo escritório). `sessions=0` vale: escritório vazio. */
+export function mockOptionsFrom(search: string): { speed: number; sessions: number; projects?: number; subs?: number; quieto?: boolean; seed?: number } {
   const params = new URLSearchParams(search);
   const num = (name: string): number | null => {
     const raw = params.get(name);
@@ -75,12 +75,14 @@ export function mockOptionsFrom(search: string): { speed: number; sessions: numb
   const sessions = num('sessions');
   const projects = num('projects');
   const subs = num('subs');
+  const seed = num('seed');
   return {
     speed: speed !== null && speed > 0 ? Math.min(speed, 50) : 1,
     sessions: sessions !== null && sessions >= 0 ? Math.min(Math.floor(sessions), 40) : 4,
     ...(projects !== null && projects >= 1 ? { projects: Math.min(Math.floor(projects), 20) } : {}),
     ...(subs !== null && subs >= 1 ? { subs: Math.min(Math.floor(subs), 50) } : {}),
     ...(params.get('quieto') === '1' ? { quieto: true } : {}),
+    ...(seed !== null && seed >= 0 ? { seed: Math.floor(seed) } : {}),
   };
 }
 
