@@ -2,7 +2,7 @@
 // `process.run` e `ui.copy` são simulados e o teste confere o argv que chegaria a eles.
 import type { CommandRunInput, HttpResponse, On } from 'claude-code'
 import { describe, expect, mock, test } from 'claude-code/testing'
-import { chaveDoArquivo, provaDoServidor } from '../hooks/prova'
+import { chaveDoArquivo, provaDoCliente, provaDoServidor } from '../hooks/prova'
 
 const NOW = Date.parse('2026-10-09T12:00:00Z')
 const PORTA = '4851'
@@ -49,6 +49,7 @@ function mundo(on: On, m: Mundo) {
   const clock = mock.clock(on, { now: NOW })
   mock.env(on, { HOME: '/home/fulano', CLAUDE_CONFIG_DIR: '~/.claude', EXPEDIENTE_PORT: PORTA })
   const buscas: string[] = []
+  const provasDoIr: Array<{ url: string; valida: boolean }> = []
   const rodados: string[][] = []
   const copiados: string[] = []
   const avisos: string[] = []
@@ -75,6 +76,8 @@ function mundo(on: On, m: Mundo) {
     buscas.push(e.url)
     const ir = /\/api\/agentes\/([^/]+)\/ir$/.exec(e.url)
     if (ir) {
+      const url = new URL(e.url)
+      provasDoIr.push({ url: url.pathname, valida: e.init?.headers?.['x-expediente-prova'] === `${DESAFIO}.${provaDoCliente(chaveDoArquivo(TOKEN_LOCAL)!, DESAFIO, 'GET', `${url.pathname}${url.search}`)}` })
       const id = decodeURIComponent(ir[1] ?? '')
       const s = m.sessoes.find((x) => x.id === id)
       return { value: resposta(JSON.stringify({ ...s?.ir, nonce: nonce(++emitidos) })) }
@@ -82,7 +85,7 @@ function mundo(on: On, m: Mundo) {
     const usage = m.sessoes.map((s) => ({ id: s.id, name: s.id.replace(/\W/g, ''), kind: 'main', status: s.status ?? 'idle', room: 'loja', compactions: 0 }))
     return { value: resposta(JSON.stringify({ version: '1', agents: usage.length, working: 0, waiting: [], usage })) }
   })
-  return { clock, buscas, rodados, copiados, avisos, emitidos: () => emitidos }
+  return { clock, buscas, provasDoIr, rodados, copiados, avisos, emitidos: () => emitidos }
 }
 
 describe('painel do /escritorio', () => {
@@ -95,6 +98,8 @@ describe('painel do /escritorio', () => {
     expect(await ui.find({ type: 'Button', text: /Abrir/ })).toBeUndefined()
     await ui.unmount()
     expect(w.rodados).toEqual([])
+    // O /ir emite um nonce no servidor: o mod o pede com a prova do token, não de graça.
+    expect(w.provasDoIr).toEqual([{ url: '/api/agentes/.claude%3A11/ir', valida: true }])
   })
 
   test('sessão do app, no terminal: Link claude:// e botão que roda open só com a URL da lista', async ($, on) => {

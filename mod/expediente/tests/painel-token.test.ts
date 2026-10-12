@@ -3,6 +3,7 @@
 // `process.run`, `fs.write` e `http.fetch` são simulados.
 import type { CommandRunInput, HttpResponse, On } from 'claude-code'
 import { describe, expect, mock, test } from 'claude-code/testing'
+import { htmlDoEscritorio } from '../hooks/abrir'
 import { chaveDoArquivo, provaDoCliente, provaDoServidor } from '../hooks/prova'
 
 const NOW = Date.parse('2026-10-12T12:00:00Z')
@@ -101,7 +102,7 @@ describe('"Abrir o escritório" no terminal', () => {
     expect(w.rodados.filter((a) => ['mktemp', 'chmod', 'open', 'rm'].includes(a[0]!))).toEqual([['mktemp', '-d', '-t', 'expediente-abrir.XXXXXXXX'], ['chmod', '600', ARQUIVO], ['open', ARQUIVO]])
     expect(w.escritos).toHaveLength(1)
     expect(w.escritos[0]!.path).toBe(ARQUIVO)
-    expect(w.escritos[0]!.text).toContain(URL_DO_ESCRITORIO)
+    expect(w.escritos[0]!.text).toBe(htmlDoEscritorio(URL_DO_ESCRITORIO))
     expect(w.escritos[0]!.text).not.toContain(TOKEN)
     semSegredo(JSON.stringify(w.rodados))
     semSegredo(texto.text ?? '')
