@@ -78,14 +78,16 @@ const PASSOS = [
   'return true;',
 ];
 
-// Em cada arquivo que recebe rota delegada: onde o handler começa, o que pode vir antes da recusa de escrita e a recusa.
-const DELEGADAS: Record<string, { inicio: string; antes: string[]; recusa: string }> = {
+// Em cada arquivo que recebe rota delegada: a fábrica que devolve o handler (nada entre ela e o `return` dele), onde o handler começa, o que pode vir antes da recusa de escrita e a recusa.
+const DELEGADAS: Record<string, { fabrica?: string; inicio: string; antes: string[]; recusa: string }> = {
   'tema.ts': {
+    fabrica: 'export function createTemaHandler(',
     inicio: '  return (req, res, url) => {',
     antes: ['const path = url.pathname;', "const isApi = path === '/api/tema';", "if (!isApi && !path.startsWith('/temas/')) return false;"],
     recusa: "if (req.method !== 'GET' && req.method !== 'HEAD') {",
   },
   'timeline.ts': {
+    fabrica: 'export function createTimelineHandler(',
     inicio: '  return (req, res, url) => {',
     antes: ['const path = url.pathname;', "if (path !== '/api/timeline' && !path.startsWith('/api/timeline/')) return false;", "const method = req.method ?? 'GET';"],
     recusa: "if (method !== 'GET' && method !== 'HEAD') {",
@@ -217,28 +219,91 @@ function delegadaRecusaAntes(fonte: string, arquivo: string): boolean {
   const linhas = fonte.split('\n');
   const inicio = linhas.findIndex((l) => l.startsWith(d.inicio));
   if (inicio < 0) return false;
+  if (d.fabrica) {
+    const fabrica = linhas.findIndex((l) => l.startsWith(d.fabrica!));
+    if (fabrica < 0 || semComentario(linhas.slice(fabrica + 1, inicio)).length) return false;
+  }
   const depois = semComentario(linhas.slice(inicio + 1));
   const recusa = depois.indexOf(d.recusa);
   return recusa >= 0 && JSON.stringify(depois.slice(0, recusa)) === JSON.stringify(d.antes);
 }
 
-const RECUSA_DA_LEITURA = String.raw`^if \((?:!isRead|method !== 'GET')\)`;
-const RECUSA_EM_BLOCO = new RegExp(`${RECUSA_DA_LEITURA} \\{$`);
-const RECUSA_EM_LINHA = new RegExp(`${RECUSA_DA_LEITURA} methodNotAllowed\\(res, 'GET'\\);$`);
-
-/** A recusa de uma rota de leitura é a primeira instrução e encerra a rota: em bloco com `return true;`, ou em uma linha seguida de `else`. */
-function recusaEncerraARota(linhas: string[]): boolean {
-  const [, primeira = '', segunda = '', terceira = ''] = linhas;
-  const emBloco = RECUSA_EM_BLOCO.test(primeira) && segunda === "methodNotAllowed(res, 'GET');" && terceira === 'return true;';
-  return emBloco || (RECUSA_EM_LINHA.test(primeira) && segunda.startsWith('else'));
-}
-
-// O que as rotas de leitura citam de `deps` e `office` hoje. Citação nova (com `.`, `?.`, colchete ou desestruturando) pede olhar a rota.
-const LEITURA_CITA = new Set(['deps.version', 'office.isDemo', 'deps.inDocker', 'deps.terminals', 'deps.permissions', 'deps.sources', 'deps.versao', 'deps.token', 'office.has', 'office.detail']);
-
-function citacoesNovasDaLeitura(linhas: string[]): string[] {
-  return linhas.flatMap((l) => [...l.matchAll(/\b(deps|office)\s*(?:\?\.|\.|\[)\s*['"]?(\w+)/g)].map((m) => `${m[1]}.${m[2]}`)).filter((c) => !LEITURA_CITA.has(c));
-}
+// O corpo inteiro, linha a linha, de cada rota de leitura: a recusa de escrita é a primeira instrução e encerra a rota, e nada além do que
+// está aqui é feito. Qualquer linha a mais, a menos ou diferente (uma citação nova de deps ou office, um ajudante, outra grafia) pede olhar a rota.
+const CORPO_DA_LEITURA: Record<string, string[]> = {
+  "if (path === '/api/stream')": [
+    "if (path === '/api/stream') {",
+    "if (method !== 'GET') methodNotAllowed(res, 'GET');",
+    'else hub.attach(req, res);',
+    'return true;',
+    '}',
+  ],
+  "if (path === '/api/snapshot')": [
+    "if (path === '/api/snapshot') {",
+    "if (!isRead) methodNotAllowed(res, 'GET');",
+    'else sendJson(res, 200, hub.current());',
+    'return true;',
+    '}',
+  ],
+  "if (path === '/api/health')": [
+    "if (path === '/api/health') {",
+    "if (!isRead) methodNotAllowed(res, 'GET');",
+    'else {',
+    'sendJson(res, 200, {',
+    'ok: true,',
+    'version: deps.version,',
+    'demo: office.isDemo(),',
+    'docker: deps.inDocker,',
+    'terminal: terminalOn() && !!deps.terminals,',
+    'permissions: terminalOn() && !!deps.permissions,',
+    "token: deps.token ? tokenNoHealth(deps.token()) : { ok: false, motivo: 'sem leitor do token' },",
+    'sources: deps.sources(),',
+    'accounts: accounts.entries().map((a) => ({ id: a.id, usageStatus: accounts.usageView(a.id).status })),',
+    '});',
+    '}',
+    'return true;',
+    '}',
+  ],
+  "if (path === '/api/versao')": [
+    "if (path === '/api/versao') {",
+    "if (!isRead) methodNotAllowed(res, 'GET');",
+    "else if (!deps.versao) sendJson(res, 404, { error: 'rota desconhecida' });",
+    "else if (!isLoopbackHost(req.headers.host)) sendJson(res, 403, { error: 'versão só pelo próprio computador (http://localhost)' });",
+    'else sendJson(res, 200, deps.versao());',
+    'return true;',
+    '}',
+  ],
+  "if (path === '/api/mod/summary')": [
+    "if (path === '/api/mod/summary') {",
+    "if (!isRead) methodNotAllowed(res, 'GET');",
+    'else {',
+    "const own = { account: url.searchParams.get('account') || undefined, session: url.searchParams.get('session') || undefined };",
+    'sendJson(res, 200, modSummary(hub.current(), (id) => office.has(id), deps.version, own));',
+    '}',
+    'return true;',
+    '}',
+    'const terminals = terminalOn() ? deps.terminals : undefined;',
+  ],
+  "if (path.startsWith('/api/agents/'))": [
+    "if (path.startsWith('/api/agents/')) {",
+    'if (!isRead) {',
+    "methodNotAllowed(res, 'GET');",
+    'return true;',
+    '}',
+    'let id: string;',
+    'try {',
+    "id = decodeURIComponent(path.slice('/api/agents/'.length));",
+    '} catch {',
+    "sendJson(res, 400, { error: 'id inválido' });",
+    'return true;',
+    '}',
+    'const detail = office.detail(id);',
+    'if (detail) sendJson(res, 200, detail);',
+    "else sendJson(res, 404, { error: 'agente não encontrado' });",
+    'return true;',
+    '}',
+  ],
+};
 
 // O corpo inteiro, linha a linha, de cada rota que atende sem a trava. Qualquer linha a mais ou a menos pede olhar a rota.
 const CORPO_SEM_TRAVA: Record<string, string[]> = {
@@ -266,6 +331,43 @@ const CORPO_DA_RECUSA: Record<string, string[]> = {
   'stats.ts': ["res.setHeader('Allow', 'GET');", "send(res, 405, { error: 'método não permitido' });", 'return;'],
 };
 
+// O objeto passado a createApiHandler, linha a linha: o que o handler recebe (a trava, o tema, a linha do tempo) não muda de dono sem passar por aqui.
+const OBJETO_DA_API = [
+  'const api = createApiHandler({',
+  'renameRoom: (id, name) => {',
+  'const path = office.roomPath(id);',
+  'if (!path) return undefined;',
+  'roomAliases.set(path, name);',
+  'office.refreshRoomNames();',
+  'return office.roomName(id);',
+  '},',
+  'mudarRitmo: (ritmo) => social.mudarRitmo(ritmo),',
+  'office,',
+  'hub,',
+  'accounts,',
+  'sources: () => watcher.sources(),',
+  'version: config.version,',
+  'inDocker: config.inDocker,',
+  'token: lerTokenDoDono,',
+  'terminal: gate.on,',
+  'terminals,',
+  'sessions: history,',
+  'timeline: createTimelineHandler({ dir: timelineDir, recording: !!timeline }),',
+  'permissions: permissions ? createPermissionRoutes(permissions) : undefined,',
+  'stats,',
+  'resumo: { presenca, inicio: startedAt },',
+  "versao: createVersaoReader(join(config.hostDir, 'versao.json'), config.version),",
+  'tema: createTemaHandler(pastasDoTema, () => temas.get(), sendJson),',
+  '});',
+];
+
+// Os imports de index.ts que trazem o servidor HTTP, a fábrica da API e o guard.
+const IMPORTS_DO_PEDIDO = [
+  "import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';",
+  "import { createApiHandler, sendJson } from './http/app';",
+  "import { createRequestGuard } from './http/guard';",
+];
+
 // Toda linha de index.ts que mexe no servidor HTTP.
 const LINHAS_DO_SERVIDOR = [
   'const server = createServer();',
@@ -277,20 +379,27 @@ const LINHAS_DO_SERVIDOR = [
   'server.close(() => process.exit(0));',
 ];
 
-// As únicas definições de `api`, `guard` e `fallback` em index.ts.
-const DEFINICOES_DO_PEDIDO: Record<string, string[]> = {
-  api: ['const api = createApiHandler({'],
-  guard: ['const guard = createRequestGuard(autenticacao);'],
+// Toda linha de index.ts que cita `api`, `guard` ou `fallback`: as definições e o uso no pedido.
+const MENCOES_DO_PEDIDO: Record<string, string[]> = {
+  api: ['const api = createApiHandler({', 'if (!api(req, res, url)) fallback(req, res, url);'],
+  guard: ['const guard = createRequestGuard(autenticacao);', 'if (guard(req, res)) return;'],
   fallback: [
     'let fallback: (req: IncomingMessage, res: ServerResponse, url: URL) => void;',
     'fallback = (req, res) => vite.middlewares(req, res);',
     'fallback = (req, res, url) => serveStatic(req, res, url.pathname);',
+    'if (!api(req, res, url)) fallback(req, res, url);',
   ],
 };
 
 const TERMINAL_ON = "const terminalOn = () => (typeof deps.terminal === 'function' ? deps.terminal() : deps.terminal === true);";
 
-const semTexto = (l: string) => l.replace(/'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"|`(?:[^`\\]|\\.)*`/g, "''").replace(/\/\/.*$/, '');
+// A linha como código: sem o texto entre aspas (o que está dentro de `${…}` de um texto com crase é código e fica) e sem comentário.
+const semTexto = (l: string) =>
+  l
+    .replace(/`(?:[^`\\]|\\.)*`/g, (t) => [...t.matchAll(/\$\{([^}]*)\}/g)].map((m) => ` ${m[1]} `).join(''))
+    .replace(/'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"/g, "''")
+    .replace(/\/\/.*$/, '');
+const semComentarioDeBloco = (texto: string) => texto.replace(/\/\*[\s\S]*?\*\//g, '');
 
 function recusaDaDelegadaConfere(fonte: string, arquivo: string): boolean {
   const d = DELEGADAS[arquivo]!;
@@ -323,12 +432,8 @@ function violacoes(f: Fontes): string[] {
   for (const [cabeca, c] of Object.entries(ROTAS)) {
     const bloco = blocos.get(c.tipo === 'trava' ? (c.noBlocoDe ?? cabeca) : cabeca) ?? '';
     const linhas = semComentario(bloco.split('\n'));
-    if (c.tipo === 'trava' && !(c.prova ?? /terminalOn\(\)/).test(linhas.map(semTexto).join('\n'))) v.push(`rota sem a trava (fora de comentário e de texto): ${cabeca}`);
-    if (c.tipo === 'leitura' && (!/!isRead\b|method !== 'GET'/.test(bloco) || /['"](?:POST|PUT|PATCH|DELETE)['"]/.test(bloco))) {
-      v.push(`rota de leitura que não recusa escrita: ${cabeca}`);
-    }
-    if (c.tipo === 'leitura' && !recusaEncerraARota(linhas)) v.push(`rota de leitura cuja recusa de escrita não é a primeira instrução ou não encerra a rota: ${cabeca}`);
-    if (c.tipo === 'leitura') for (const novo of citacoesNovasDaLeitura(linhas)) v.push(`rota de leitura que cita ${novo}, fora do que citava: ${cabeca}`);
+    if (c.tipo === 'trava' && !(c.prova ?? /terminalOn\(\)/).test(semComentarioDeBloco(linhas.join('\n')).split('\n').map(semTexto).join('\n'))) v.push(`rota sem a trava (fora de comentário e de texto): ${cabeca}`);
+    if (c.tipo === 'leitura' && JSON.stringify(linhas) !== JSON.stringify(CORPO_DA_LEITURA[cabeca])) v.push(`rota de leitura com corpo diferente do conferido: ${cabeca}`);
     if (c.tipo === 'sem-trava' && JSON.stringify(linhas) !== JSON.stringify(CORPO_SEM_TRAVA[cabeca])) v.push(`rota sem trava com corpo diferente do conferido: ${cabeca}`);
     if (c.tipo === 'delegada' && !delegadaRecusaAntes(f.delegadas[c.arquivo] ?? '', c.arquivo)) {
       v.push(`rota delegada que atende algo antes de recusar escrita: ${c.arquivo}`);
@@ -363,14 +468,21 @@ function violacoes(f: Fontes): string[] {
   if (JSON.stringify(pedido) !== JSON.stringify(PEDIDO) || f.index.split("server.on('request'").length !== 2) {
     v.push('o tratamento do pedido em index.ts não é só guard, API e o resto');
   }
-  const linhasDoIndex = semComentario(f.index.split('\n'));
-  const servidor = linhasDoIndex.filter((l) => /\bserver\b|createServer\(/.test(semTexto(l)) && !l.startsWith('log.'));
+  const linhasDoIndex = semComentario(semComentarioDeBloco(f.index).split('\n'));
+  const codigoDoIndex = linhasDoIndex.map((l) => ({ l, codigo: semTexto(l) }));
+  const servidor = codigoDoIndex.filter(({ codigo }) => /\bserver\b|createServer\(/.test(codigo)).map(({ l }) => l);
   if (JSON.stringify(servidor) !== JSON.stringify(LINHAS_DO_SERVIDOR)) {
     v.push(`index.ts mexe no servidor HTTP fora das linhas conferidas (ouvinte a mais, createServer com tratador, servidor entregue a outro módulo): ${servidor.filter((l) => !LINHAS_DO_SERVIDOR.includes(l)).join(' | ')}`);
   }
-  for (const [nome, esperadas] of Object.entries(DEFINICOES_DO_PEDIDO)) {
-    const definicoes = linhasDoIndex.filter((l) => new RegExp(`^(?:const|let|var)\\s+${nome}\\b|^${nome}\\s*=`).test(l));
-    if (JSON.stringify(definicoes) !== JSON.stringify(esperadas)) v.push(`index.ts define ${nome} de outro jeito: ${definicoes.filter((l) => !esperadas.includes(l)).join(' | ')}`);
+  if (codigoDoIndex.filter(({ codigo }) => codigo.includes('.listen(')).length !== 1) v.push('index.ts põe mais de um servidor para escutar (.listen)');
+  const imports = linhasDoIndex.filter((l) => /^import .* from '(?:node:http|\.\/http\/app|\.\/http\/guard)';$/.test(l));
+  if (JSON.stringify(imports) !== JSON.stringify(IMPORTS_DO_PEDIDO)) v.push(`index.ts importa o servidor HTTP, a fábrica da API ou o guard de outro jeito: ${imports.join(' | ')}`);
+  const doObjeto = linhasDoIndex.indexOf('const api = createApiHandler({');
+  const objetoDaApi = doObjeto < 0 ? [] : linhasDoIndex.slice(doObjeto, linhasDoIndex.indexOf('});', doObjeto) + 1);
+  if (JSON.stringify(objetoDaApi) !== JSON.stringify(OBJETO_DA_API)) v.push(`o objeto passado a createApiHandler em index.ts mudou: ${objetoDaApi.filter((l) => !OBJETO_DA_API.includes(l)).join(' | ')}`);
+  for (const [nome, esperadas] of Object.entries(MENCOES_DO_PEDIDO)) {
+    const mencoes = codigoDoIndex.filter(({ codigo }) => new RegExp(`\\b${nome}\\b`).test(codigo)).map(({ l }) => l);
+    if (JSON.stringify(mencoes) !== JSON.stringify(esperadas)) v.push(`index.ts cita ${nome} fora das linhas conferidas: ${mencoes.filter((l) => !esperadas.includes(l)).join(' | ')}`);
   }
   if (f.app.split(TERMINAL_ON).length !== 2 || (f.app.match(/\bterminalOn\s*=/g) ?? []).length !== 1) v.push('terminalOn não é mais a trava de publicação conferida');
   return v;
@@ -388,6 +500,8 @@ const noProvaGet = (alvo: string, novo: string): Fontes => ({ ...FONTES, provaGe
 const noAutenticacao = (alvo: string, novo: string): Fontes => ({ ...FONTES, autenticacao: trocar(FONTES.autenticacao, alvo, novo) });
 const noIndex = (alvo: string, novo: string): Fontes => ({ ...FONTES, index: trocar(FONTES.index, alvo, novo) });
 const SNAP = "    if (path === '/api/snapshot') {\n      if (!isRead) methodNotAllowed(res, 'GET');\n";
+const SNAP_COMPLETO = `${SNAP}      else sendJson(res, 200, hub.current());\n`;
+const GUARD = 'const guard = createRequestGuard(autenticacao);';
 const DEMO_ATE_RECUSA = `${DEMO}\n      if (method !== 'POST') methodNotAllowed(res, 'POST');\n`;
 const naApp = (alvo: string, novo: string): Fontes => ({ ...FONTES, app: trocar(FONTES.app, alvo, novo) });
 const noBlocoDeRenomear = (muda: (bloco: string) => string): Fontes => {
@@ -504,6 +618,26 @@ const QUEBRAS: Record<string, () => Fontes> = {
     naApp("    if (path !== '/api' && !path.startsWith('/api/')) return false;", "    if (path !== '/api' && !path.startsWith('/api/')) return false; else if (path === '/api/novo') return (office.setDemo(true), true);"),
   'app: condição de rota em duas linhas, com a continuação recuada': () =>
     naApp(`${DEMO}\n`, "    if (path === '/api/demo' ||\n      (path === '/api/novo' && (office.setDemo(true), true))) {\n"),
+  'leitura: `else void 0;` satisfaz a regra e a escrita vem na linha seguinte, por ajudante do fecho': () => naApp(SNAP_COMPLETO, "    if (path === '/api/snapshot') {\n      if (!isRead) methodNotAllowed(res, 'GET');\n      else void 0;\n      handleCharacter(req, res, url.searchParams.get('p') ?? '', method).catch((err) => fail(res, err));\n"),
+  'leitura: GET que grava por ajudante do fecho (handleDemo), sem citar deps nem office': () => naApp(SNAP_COMPLETO, "    if (path === '/api/snapshot') {\n      if (!isRead) methodNotAllowed(res, 'GET');\n      else if (url.searchParams.has('demo')) handleDemo(req, res).catch((err) => fail(res, err));\n      else sendJson(res, 200, hub.current());\n"),
+  'leitura: deps desestruturado dentro do bloco': () => naApp(SNAP_COMPLETO, "    if (path === '/api/snapshot') {\n      if (!isRead) methodNotAllowed(res, 'GET');\n      else if (url.searchParams.has('n')) {\n        const { renameRoom } = deps;\n        renameRoom?.('a', 'b');\n      }\n      else sendJson(res, 200, hub.current());\n"),
+  'leitura: deps com colchete e crase': () => naApp(SNAP_COMPLETO, "    if (path === '/api/snapshot') {\n      if (!isRead) methodNotAllowed(res, 'GET');\n      else if (url.searchParams.has('n')) deps[`renameRoom`]?.('a', 'b');\n      else sendJson(res, 200, hub.current());\n"),
+  'leitura: Reflect.get(deps, ...)': () => naApp(SNAP_COMPLETO, "    if (path === '/api/snapshot') {\n      if (!isRead) methodNotAllowed(res, 'GET');\n      else if (url.searchParams.has('n')) Reflect.get(deps, 'renameRoom')?.('a', 'b');\n      else sendJson(res, 200, hub.current());\n"),
+  'leitura: deps! (não nulo do TypeScript) antes do ponto': () => naApp(SNAP_COMPLETO, "    if (path === '/api/snapshot') {\n      if (!isRead) methodNotAllowed(res, 'GET');\n      else if (url.searchParams.has('n')) deps!.renameRoom?.('a', 'b');\n      else sendJson(res, 200, hub.current());\n"),
+  'leitura: office por apelido (const o = office)': () => naApp(SNAP_COMPLETO, "    if (path === '/api/snapshot') {\n      if (!isRead) methodNotAllowed(res, 'GET');\n      else if (url.searchParams.has('n')) {\n        const o = office;\n        o.setDemo(true);\n      }\n      else sendJson(res, 200, hub.current());\n"),
+  'trava: terminalOn() só em comentário de bloco': () => noBlocoDeRenomear((b) => b.replace('else if (!terminalOn()) sendJson', 'else if (false /* !terminalOn() */) sendJson')),
+  'trava: terminalOn() só em linha de comentário com asterisco': () => noBlocoDeRenomear((b) => b.replace('else if (!terminalOn()) sendJson', 'else if (false) sendJson').replace("      if (method !== 'POST')", "      /*\n       * terminalOn() não vale aqui\n       */\n      if (method !== 'POST')")),
+  'index: deps.tema embrulhado na montagem da API': () => noIndex('  tema: createTemaHandler(pastasDoTema, () => temas.get(), sendJson),', '  tema: (req, res, url) => rotaNova(req, res, url) || createTemaHandler(pastasDoTema, () => temas.get(), sendJson)(req, res, url),'),
+  'tema.ts: outro tratador devolvido antes do conferido': () => noTema('  return (req, res, url) => {', "  if (pastas.hostDir) return (req, res, url) => (url.pathname === '/api/tema/aplicar' ? (gravar(url), true) : false);\n  return (req, res, url) => {"),
+  'index: segundo servidor por import com outro nome': () => ({ ...FONTES, index: trocar(trocar(FONTES.index, "import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';", "import { createServer, createServer as criar, type IncomingMessage, type ServerResponse } from 'node:http';"), "server.on('error'", "criar((req, res) => extra(req, res)).listen(config.port + 1, '0.0.0.0');\nserver.on('error'") }),
+  'index: new Server(...) do node:http': () => noIndex("server.on('error'", "new Server((req, res) => extra(req, res)).listen(config.port + 1, '0.0.0.0');\nserver.on('error'"),
+  'index: linha que começa com log. e mexe no servidor': () => noIndex("server.on('error'", "log.info('extra'), server.prependListener('request', (req, res) => extra(req, res));\nserver.on('error'"),
+  'index: ouvinte registrado dentro de um texto com crase': () => noIndex("server.on('error'", "void `${server.prependListener('request', (req, res) => extra(req, res))}`;\nserver.on('error'"),
+  'index: fallback trocado por desestruturação': () => noIndex(GUARD, `${GUARD}\nconst antigo = fallback;\n[fallback] = [(req, res, url) => (url.pathname === '/novo' ? extra(req, res) : antigo(req, res, url))];`),
+  'index: createApiHandler sombreado por import com outro nome': () => ({ ...FONTES, index: trocar(trocar(FONTES.index, "import { createApiHandler, sendJson } from './http/app';", "import { createApiHandler as criarApi, sendJson } from './http/app';"), 'const api = createApiHandler({', "const createApiHandler = (d: Parameters<typeof criarApi>[0]) => { const h = criarApi(d); return (req: IncomingMessage, res: ServerResponse, url: URL) => extra(req, res, url) || h(req, res, url); };\nconst api = createApiHandler({") }),
+  'index: a trava de publicação entregue como sempre ligada': () => ({ ...FONTES, index: FONTES.index.replace(/^  terminal: gate\.on,$/gm, '  terminal: true,') }),
+  'index: deps.timeline embrulhado': () => noIndex('  timeline: createTimelineHandler({ dir: timelineDir, recording: !!timeline }),', '  timeline: (req, res, url) => rotaNova(req, res, url) || createTimelineHandler({ dir: timelineDir, recording: !!timeline })(req, res, url),'),
+  'leitura: escrita com o método em crase (sem aspas)': () => naApp("      const detail = office.detail(id);\n", "      if (req.headers.x === `1`) return (handleCharacter(req, res, id, `PUT`).catch((err) => fail(res, err)), true);\n      const detail = office.detail(id);\n"),
   'app: terminalOn passa a valer sempre': () => naApp(TERMINAL_ON, 'const terminalOn = () => true;'),
   'rota em index.ts, antes do handler da API': () => ({ ...FONTES, index: trocar(FONTES.index, '    if (guard(req, res)) return;\n', "    if (guard(req, res)) return;\n    if (url.pathname === '/api/novo') return;\n") }),
 };
