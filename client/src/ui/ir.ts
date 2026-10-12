@@ -158,12 +158,15 @@ export class IrSection {
     const id = this.id;
     const req = ++this.req;
     let ir: IrInfo;
+    let motivo = 'Não foi possível obter o comando desta sessão.';
     try {
-      const res = await fetch(`/api/agentes/${encodeURIComponent(id)}/ir`);
+      // Emite um nonce no servidor: exige a prova do token como uma escrita.
+      const res = await tokenLocal.escrever(`/api/agentes/${encodeURIComponent(id)}/ir`);
+      if (res.status === 401) motivo = ((await res.json().catch(() => ({}))) as { error?: string }).error ?? motivo;
       if (!res.ok) throw new Error(String(res.status));
       ir = (await res.json()) as IrInfo;
     } catch {
-      if (req === this.req) this.show('Não foi possível obter o comando desta sessão.', '');
+      if (req === this.req) this.show(motivo, '');
       return;
     }
     if (req !== this.req) return;

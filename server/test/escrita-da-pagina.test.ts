@@ -25,6 +25,14 @@ describe('toda escrita da página passa por tokenLocal.escrever', () => {
     return achadas;
   }
 
+  it('nenhum fetch direto vai a um GET que muda estado no servidor (wait, focos, /ir), que exige a prova', () => {
+    for (const arquivo of fontes) {
+      for (const chamada of chamadasDeFetch(readFileSync(arquivo, 'utf8'))) {
+        expect(chamada, arquivo).not.toMatch(/\/wait|mod\/focos|\/ir[`'"?]/);
+      }
+    }
+  });
+
   it('nenhum fetch direto leva método de escrita', () => {
     expect(fontes.length).toBeGreaterThan(20);
     for (const arquivo of fontes) {

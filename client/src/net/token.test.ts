@@ -90,7 +90,7 @@ describe('bilhete no fragmento da URL', () => {
   });
 
   it('o #t= antigo (com o segredo), bilhete de formato errado e lixo: o fragmento sai da barra, nada é trocado', async () => {
-    for (const hash of [`#t=${TOKEN}`, '#t=', '#b=', '#b=curto', `#b=${BILHETE}0`, `#b=${BILHETE.toUpperCase()}`, `#b=${BILHETE}&x=1`, `#b=${'g'.repeat(32)}`]) {
+    for (const hash of [`#t=${TOKEN}`, `#t=${BILHETE}`, '#t=', '#b=', '#b=curto', `#b=${BILHETE}0`, `#b=${BILHETE.toUpperCase()}`, `#b=${BILHETE}&x=1`, `#b=${'g'.repeat(32)}`]) {
       const s = servidor();
       const trocas: string[] = [];
       const alvo = new TokenLocal(armazem().a, s.buscar);
