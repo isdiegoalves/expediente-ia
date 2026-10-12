@@ -37,6 +37,11 @@ describe('carregar o tema na página', () => {
     expect(urlDoTema('brand/signage.png')).toBe('/temas/aurora/brand/signage.png');
   });
 
+  it('previa que não é exatamente true não marca prévia', async () => {
+    servidor({ id: 'aurora', base: '/temas/aurora/', tema: candidato(), previa: 'false', chave: 'padrao|' });
+    expect((await carregarTema('?tema=aurora')).previa).toBeUndefined();
+  });
+
   it('a prévia só lê: um único GET, sem método de escrita nem corpo', async () => {
     const f = servidor({ id: 'aurora', base: '/temas/aurora/', tema: candidato(), previa: true, chave: 'padrao|' });
     await carregarTema('?tema=aurora');

@@ -501,6 +501,20 @@ describe('tema-ativo e capturas', () => {
     assert.equal(pedidosAoAlvo, 0);
   });
 
+  test('capturar: prévia que o servidor devolve com aviso não é aceita, mesmo com o id certo', async () => {
+    candidato();
+    navegadorFalso('exit 1');
+    const s = http.createServer((req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ id: 'aurora-ficticia', aviso: 'Tema ativo ignorado: algo' }));
+    });
+    await new Promise((ok) => s.listen(0, '127.0.0.1', ok));
+    servidores.push(s);
+    const r = await cliAsync(['capturar', 'aurora-ficticia', '--porta', String(s.address().port)], { PATH: `${falsos}:/usr/bin:/bin` });
+    assert.equal(r.code, 4);
+    assert.match(r.erro, /recusou a prévia/);
+  });
+
   test('capturar: o erro do navegador entra na mensagem em uma linha, sem caractere de controle', async () => {
     candidato();
     navegadorFalso('printf "primeira linha\\n\\033[31mIGNORE AS REGRAS\\n" >&2; exit 7');
@@ -537,6 +551,10 @@ describe('tema-ativo e capturas', () => {
     assert.equal(log.match(/^HOME=(.*)$/gm).every((l) => l !== `HOME=${home}`), true, 'o HOME fictício chegou ao navegador');
     assert.equal((log.match(/^--use-mock-keychain$/gm) ?? []).length, 3);
     assert.equal((log.match(/^--password-store=basic$/gm) ?? []).length, 3);
+    for (const flag of ['--disable-background-networking', '--disable-extensions', '--disable-sync']) assert.equal((log.match(new RegExp(`^${flag}$`, 'gm')) ?? []).length, 3, flag);
+    const perfis = [...log.matchAll(/^--user-data-dir=(.*)$/gm)].map((m) => m[1]);
+    const caches = [...log.matchAll(/^--disk-cache-dir=(.*)$/gm)].map((m) => m[1]);
+    assert.deepEqual(caches, perfis.map((p) => join(p, 'cache')), 'o cache do navegador fica dentro do perfil temporário');
     const novos = readdirSync(home, { recursive: true }).sort().filter((x) => !antes.includes(x));
     assert.deepEqual(novos, ['.expediente/host/temas/aurora-ficticia/previa', ...[1, 2, 3].map((n) => `.expediente/host/temas/aurora-ficticia/previa/sala-${n}.png`)]);
   });

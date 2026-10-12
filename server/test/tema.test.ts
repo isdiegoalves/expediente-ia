@@ -296,6 +296,8 @@ describe('rotas do tema', () => {
     const png = await fetch(`${base}/temas/teste/brand/logo-mark.png`);
     expect(png.status).toBe(200);
     expect(png.headers.get('content-type')).toBe('image/png');
+    expect(png.headers.get('cache-control')).toBe('no-cache');
+    expect(png.headers.get('x-content-type-options')).toBe('nosniff');
     expect(await png.text()).toBe('conteudo de teste/brand/logo-mark.png');
     expect((await fetch(`${base}/temas/teste/segredo.txt`)).status).toBe(404);
     expect((await fetch(`${base}/temas/teste/brand/logo-mark.png`, { method: 'POST' })).status).toBe(405);
@@ -321,6 +323,20 @@ describe('rotas do tema', () => {
       expect(ativo).toMatchObject({ id: 'teste', base: '/temas/teste/' });
       expect(ativo.previa).toBeUndefined();
       expect(JSON.stringify(readdirSync(h.hostDir, { recursive: true }).sort()) + readFileSync(join(h.hostDir, 'tema-ativo'), 'utf8')).toBe(antes);
+    });
+
+    it('a prévia do padrão, com outro tema ativo, é o padrão marcado como prévia', async () => {
+      const { base } = await servir(host());
+      const r = await api(base, '?previa=padrao');
+      expect(r).toMatchObject({ id: 'padrao', previa: true });
+      expect(r.aviso).toBeUndefined();
+    });
+
+    it('a prévia do padrão quando o padrão já é o ativo não é prévia', async () => {
+      const { base } = await servir(host(() => {}, null));
+      const r = await api(base, '?previa=padrao');
+      expect(r.id).toBe('padrao');
+      expect(r.previa).toBeUndefined();
     });
 
     it('a prévia do próprio tema ativo é o tema ativo, sem marca de prévia', async () => {
