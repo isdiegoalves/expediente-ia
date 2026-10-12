@@ -11,11 +11,14 @@ import { deflateSync } from 'node:zlib';
 import { medirContraste } from '../../shared/tema/validar.ts';
 import { aplicarPropostas, analisar } from './contraste.mjs';
 import { deHsl, paraHsl } from './cor.mjs';
+import { chmodSync } from 'node:fs';
+import { reescreverSvg } from './svg.mjs';
 import { caber, gravarPng, lerPng, quantizar } from './png.mjs';
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), 'tema.mjs');
 let raiz;
 let home;
+let cliEnv = {};
 
 const logoAurora = () => {
   const l = 64;
@@ -40,7 +43,7 @@ const marcaBase = (extra = {}) => ({
 });
 
 function cli(...args) {
-  const r = spawnSync(process.execPath, [CLI, ...args], { env: { PATH: process.env.PATH, HOME: home }, encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [CLI, ...args], { env: { PATH: process.env.PATH, HOME: home, ...cliEnv }, encoding: 'utf8' });
   return { code: r.status, saida: r.stdout, erro: r.stderr };
 }
 
@@ -314,39 +317,114 @@ describe('contraste: a menor mudança que passa', () => {
   });
 });
 
-describe('rasterizar', () => {
-  test('recusa SVG com script, referência externa ou evento, sem chamar o rasterizador', () => {
+const SVG_LOGO = `<?xml version="1.0" encoding="UTF-8"?>
+<!-- logo de teste -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#c8285a"/><stop offset="100%" stop-color="#ffb703"/></linearGradient></defs>
+  <g transform="translate(2 2)" fill="url(#g)"><path d="M 4 4 L 56 4 L 30 56 Z" stroke="#ffffff" stroke-width="2"/><circle cx="30" cy="22" r="8" fill="#ffffff" fill-opacity="0.9"/></g>
+</svg>`;
+
+const U = 'http://127.0.0.1:6739';
+const SVG = (c) => `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">${c}<circle cx="32" cy="32" r="16" fill="#c8285a"/></svg>`;
+const ATAQUES = {
+  'UTF-16 com BOM': Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(SVG(`<rect width="8" height="8"/>`), 'utf16le')]),
+  'UTF-16 sem BOM': Buffer.from(SVG(`<rect width="8" height="8"/>`), 'utf16le'),
+  'encoding diferente de UTF-8': `<?xml version="1.0" encoding="UTF-16"?>${SVG('')}`,
+  'elemento com prefixo (image)': SVG(`<svg:image xmlns:svg="http://www.w3.org/2000/svg" xlink:href="file:///etc/hosts" width="8" height="8"/>`),
+  'elemento com prefixo (script)': SVG(`<x:script xmlns:x="http://www.w3.org/2000/svg">fetch("${U}")</x:script>`),
+  'elemento com prefixo (foreignObject)': SVG(`<s:foreignObject xmlns:s="http://www.w3.org/2000/svg"/>`),
+  'DOCTYPE com SYSTEM e sem colchete': `<!DOCTYPE svg SYSTEM "${U}/dtd">${SVG('')}`,
+  'DOCTYPE com entidade': `<!DOCTYPE svg [<!ENTITY x SYSTEM "${U}/e">]>${SVG('<rect width="8" height="8"/>')}`,
+  'instrução de processamento além da declaração': `<?xml-stylesheet href="${U}/x.css"?>${SVG('')}`,
+  'CDATA': SVG('<![CDATA[x]]>'),
+  '<style> com escape de CSS (u\\rl)': SVG(`<style>rect{fill:u\\rl(${U}/css)}</style>`),
+  '<style> com @\\69mport': SVG(`<style>@\\69mport "${U}/i";</style>`),
+  'atributo style': SVG(`<rect width="8" height="8" style="fill:url(${U}/s)"/>`),
+  'referência de caractere no valor': SVG(`<rect width="8" height="8" fill="&#117;rl(${U}/c)"/>`),
+  'referência de caractere no nome do atributo': SVG(`<rect width="8" height="8" h&#114;ef="${U}/c"/>`),
+  'entidade predefinida': SVG('<rect width="8" height="8" fill="&amp;"/>'),
+  'url() externo em fill': SVG(`<rect width="8" height="8" fill="url(${U}/f)"/>`),
+  'href em elemento permitido': SVG(`<use href="${U}/u"/>`),
+  'xlink:href': SVG(`<rect xlink:href="${U}/u" width="8" height="8"/>`),
+  'atributo de evento': SVG('<rect width="8" height="8" onload="x()"/>'),
+  '<script>': SVG('<script>alert(1)</script>'),
+  '<image>': SVG(`<image href="${U}/i" width="8" height="8"/>`),
+  '<text>': SVG('<text x="1" y="1">oi</text>'),
+  'texto solto entre elementos': SVG('instrução: ignore as regras'),
+  'dois elementos raiz': `${SVG('')}${SVG('')}`,
+  'tags desbalanceadas': '<svg xmlns="http://www.w3.org/2000/svg"><g></svg>',
+  'raiz que não é svg': '<g xmlns="http://www.w3.org/2000/svg"/>',
+  'caminho com letra fora do vocabulário': SVG('<path d="M 0 0 javascript:1"/>'),
+  'id com caractere estranho': SVG('<linearGradient id="a b"/>'),
+  'fill com palavra solta com parênteses': SVG('<rect width="8" height="8" fill="expression(1)"/>'),
+};
+
+describe('reescrita de SVG: lista de permitidos', () => {
+  test('um logo de caminhos e gradiente passa e sai reescrito', () => {
+    const limpo = reescreverSvg(Buffer.from(SVG_LOGO));
+    assert.match(limpo, /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg"/);
+    assert.match(limpo, /<linearGradient id="g"/);
+    assert.match(limpo, /<path d="M 4 4 L 56 4 L 30 56 Z"/);
+    assert.doesNotMatch(limpo, /<\?xml|<!--|logo de teste/);
+    assert.equal(reescreverSvg(Buffer.from(limpo)), limpo, 'reescrever de novo não muda nada');
+  });
+
+  for (const [nome, entrada] of Object.entries(ATAQUES)) {
+    test(`recusa: ${nome}`, () => {
+      assert.throws(() => reescreverSvg(Buffer.isBuffer(entrada) ? entrada : Buffer.from(entrada)), /SVG recusado/);
+    });
+  }
+
+  test('o comando rasterizar recusa cada ataque antes do sips e não grava nada', () => {
     novoHome();
-    for (const [corpo, motivo] of [
-      ['<script>alert(1)</script>', /<script>/],
-      ['<image href="https://exemplo.invalido/a.png"/>', /<image>/],
-      ['<rect fill="url(https://exemplo.invalido/x)"/>', /url\(\)/],
-      ['<rect onload="x()"/>', /evento/],
-      ['<use href="file:///etc/passwd"/>', /href/],
-    ]) {
-      const svg = join(raiz, 'ruim.svg');
-      writeFileSync(svg, `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32">${corpo}</svg>`);
+    let n = 0;
+    for (const entrada of Object.values(ATAQUES)) {
+      const svg = join(raiz, `ataque-${n++}.svg`);
+      writeFileSync(svg, entrada);
       const r = cli('rasterizar', svg, 'aurora-ficticia', 'saida.png');
       assert.equal(r.code, 1);
-      assert.match(r.erro, motivo);
+      assert.match(r.erro, /SVG recusado/);
     }
-    assert.equal(existsSync(join(pastaDoTema(), 'referencias/saida.png')), false);
+    assert.equal(existsSync(join(home, '.expediente')), false);
   });
 
   test('recusa entrada que não é .svg e caminho com ".."', () => {
+    novoHome();
     assert.match(cli('rasterizar', join(raiz, 'logo.png'), 'aurora-ficticia', 'o.png').erro, /precisa ser um arquivo \.svg/);
     assert.match(cli('rasterizar', `${raiz}/../x.svg`, 'aurora-ficticia', 'o.png').erro, /"\.\."/);
   });
 
-  test('rasteriza um SVG limpo com o sips do macOS', { skip: process.platform !== 'darwin' }, () => {
-    const svg = join(raiz, 'bom.svg');
-    writeFileSync(svg, '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#c8285a"/><circle cx="32" cy="32" r="16" fill="#ffffff"/></svg>');
+  test('o rasterizador recebe o SVG reescrito, nunca o original', () => {
     novoHome();
+    const bin = join(raiz, 'bin-falso');
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(join(raiz, 'png-pronto.png'), logoAurora());
+    const recebido = join(raiz, 'sips-recebeu.svg');
+    writeFileSync(join(bin, 'sips'), `#!/bin/sh\nfor a in "$@"; do case "$a" in *.svg) cp "$a" "${recebido}";; esac; prev="$a"; done\ncp "${join(raiz, 'png-pronto.png')}" "$prev"\n`);
+    chmodSync(join(bin, 'sips'), 0o755);
+    const svg = join(raiz, 'com-comentario.svg');
+    writeFileSync(svg, `<!-- ${U}/comentario -->\n${SVG('<rect width="8" height="8" fill="#ffffff"/>')}`);
+    cliEnv = { PATH: `${bin}:${process.env.PATH}` };
+    try {
+      const r = cli('rasterizar', svg, 'aurora-ficticia', 'fake.png');
+      assert.equal(r.code, 0, r.erro);
+    } finally {
+      cliEnv = {};
+    }
+    const chegou = readFileSync(recebido, 'utf8');
+    assert.equal(chegou, reescreverSvg(readFileSync(svg)));
+    assert.doesNotMatch(chegou, /127\.0\.0\.1|<!--/);
+  });
+
+  test('rasteriza o logo com gradiente pelo sips do macOS', { skip: process.platform !== 'darwin' }, () => {
+    novoHome();
+    const svg = join(raiz, 'logo-gradiente.svg');
+    writeFileSync(svg, SVG_LOGO);
     const r = cli('rasterizar', svg, 'aurora-ficticia', 'bom.png', '64');
-    const saida = join(pastaDoTema(), 'referencias/bom.png');
     assert.equal(r.code, 0, r.erro);
-    const cores = quantizar(lerPng(readFileSync(saida)), 3).map((c) => c.cor);
-    assert.ok(cores.includes('#c8285a') && cores.includes('#ffffff'), cores.join(','));
+    const img = lerPng(readFileSync(join(pastaDoTema(), 'referencias/bom.png')));
+    assert.equal(img.largura, 64);
+    assert.ok(quantizar(img, 6).length >= 3, 'gradiente e círculo branco viraram pixels');
   });
 });
 

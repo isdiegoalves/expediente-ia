@@ -63,9 +63,10 @@ const comandos = {
     if (!svg || !id || nome === undefined) throw new Error('uso: rasterizar <entrada.svg> <id-do-tema> <nome.png> [lado]');
     idValido(id);
     nomePng(nome);
-    const pasta = criarPasta(homedir(), id, 'referencias');
-    destinoGravavel(join(pasta, nome));
+    cadeiaSegura(homedir(), id, 'referencias');
+    destinoGravavel(join(pastaDosTemas(homedir()), id, 'referencias', nome));
     const png = rasterizar(arquivoLocal(svg), lado ? Number(lado) : 256);
+    const pasta = criarPasta(homedir(), id, 'referencias');
     gravarArquivoComum(join(pasta, nome), png);
     const { largura, altura } = lerPng(png);
     console.log(`${join(pasta, nome)}: ${largura}x${altura}`);
