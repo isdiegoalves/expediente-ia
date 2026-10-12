@@ -1,7 +1,8 @@
 // Uma prova por trava dos scripts do tema: cada teste cai se a trava correspondente sair do código.
 // Marca fictícia; HOME fictício em toda execução; nenhum byte pode aparecer fora da pasta do tema.
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import http from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { chmodSync, existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -18,6 +19,8 @@ const MB = 1024 * 1024;
 let raiz;
 let home;
 let extraEnv = {};
+// Pasta dos navegadores falsos: o tema.mjs recusa lançar qualquer executável de fora dela (ver captura.mjs).
+let falsos;
 
 const novoHome = () => {
   home = join(raiz, `h-${randomBytes(4).toString('hex')}`);
@@ -27,7 +30,7 @@ const novoHome = () => {
 const pastaDoTema = (id = 'aurora-ficticia') => join(home, '.expediente/host/temas', id);
 
 function cli(...args) {
-  const r = spawnSync(process.execPath, [CLI, ...args], { env: { PATH: process.env.PATH, HOME: home, ...extraEnv }, encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [CLI, ...args], { env: { PATH: process.env.PATH, HOME: home, EXPEDIENTE_TESTE_NAVEGADOR_DIR: falsos, ...extraEnv }, encoding: 'utf8' });
   return { code: r.status, saida: r.stdout, erro: r.stderr };
 }
 
@@ -77,6 +80,8 @@ function fora(nome = 'fora') {
 
 before(() => {
   raiz = mkdtempSync(join(tmpdir(), 'travas-'));
+  falsos = join(raiz, 'bin-navegador');
+  mkdirSync(falsos);
 });
 after(() => rmSync(raiz, { recursive: true, force: true }));
 
@@ -345,5 +350,100 @@ describe('formato', () => {
     const r = cli('css', css);
     assert.equal(r.code, 0);
     assert.equal(r.saida, '#c8285a  1x\n');
+  });
+});
+
+describe('tema-ativo e capturas', () => {
+  const tema = () => join(home, '.expediente/host/tema-ativo');
+  const servidores = [];
+  after(() => servidores.forEach((x) => x.close()));
+  const candidato = () => {
+    novoHome();
+    assert.equal(cli('montar', escreverMarca(marcaBase({ cores: { primaria: '#c8285a', destaque: '#2a9d8f', fundo: '#1b1230', texto: '#c9c0d9' } }))).code, 0);
+    assert.equal(cli('contraste', 'aurora-ficticia', '--ajustar').code, 0);
+  };
+  const cliAsync = (args, env = {}) =>
+    new Promise((ok, falha) => {
+      const f = spawn(process.execPath, [CLI, ...args], { env: { PATH: '/usr/bin:/bin', HOME: home, EXPEDIENTE_APLICATIVOS: join(raiz, 'sem-apps'), EXPEDIENTE_TESTE_NAVEGADOR_DIR: falsos, ...env } });
+      let erro = '';
+      f.stderr.on('data', (c) => (erro += c));
+      f.on('error', falha);
+      f.on('close', (code) => ok({ code, erro }));
+    });
+  async function expediente() {
+    const s = http.createServer((req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ id: 'aurora-ficticia', previa: true }));
+    });
+    await new Promise((ok) => s.listen(0, '127.0.0.1', ok));
+    servidores.push(s);
+    return s.address().port;
+  }
+  const navegadorFalso = (corpo) => {
+    writeFileSync(join(falsos, 'chromium'), `#!/bin/sh\n${corpo}\n`);
+    chmodSync(join(falsos, 'chromium'), 0o755);
+  };
+  const PNG_DA_CAPTURA = 'for a in "$@"; do case "$a" in --screenshot=*) cp "PRONTO" "${a#--screenshot=}";; esac; done';
+
+  test('aplicar e padrao não sobrescrevem um tema-ativo que é hard link para arquivo de fora', () => {
+    candidato();
+    const f = fora();
+    mkdirSync(join(home, '.expediente/host'), { recursive: true });
+    linkSync(join(f.dir, 'sentinela.txt'), tema());
+    for (const args of [['aplicar', 'aurora-ficticia'], ['padrao']]) {
+      const r = cli(...args);
+      assert.equal(r.code, 1, args.join(' '));
+      assert.match(r.erro, /hard link/);
+      f.intacto();
+    }
+  });
+
+  test('aplicar não grava tema-ativo quando o pré-voo reprova', () => {
+    novoHome();
+    assert.equal(cli('montar', escreverMarca(marcaBase({ cores: { primaria: '#c8285a', destaque: '#2a9d8f', fundo: '#1b1230', texto: '#c9c0d9' } }))).code, 0);
+    assert.equal(cli('aplicar', 'aurora-ficticia').code, 1);
+    assert.equal(existsSync(tema()), false);
+  });
+
+  test('capturar: previa/sala-N.png que é hard link para arquivo de fora é recusado e o de fora fica intacto', async () => {
+    candidato();
+    writeFileSync(join(raiz, 'captura-pronta.png'), logoPng());
+    navegadorFalso(PNG_DA_CAPTURA.replace('PRONTO', join(raiz, 'captura-pronta.png')));
+    const f = fora();
+    mkdirSync(join(pastaDoTema(), 'previa'));
+    linkSync(join(f.dir, 'sentinela.txt'), join(pastaDoTema(), 'previa/sala-1.png'));
+    const r = await cliAsync(['capturar', 'aurora-ficticia', '--porta', String(await expediente())], { PATH: `${falsos}:/usr/bin:/bin` });
+    assert.equal(r.code, 1);
+    assert.match(r.erro, /hard link/);
+    f.intacto();
+  });
+
+  test('capturar: o navegador de fora da pasta dos falsos não é lançado, nem achado pela PATH', async () => {
+    candidato();
+    const marcaDeExecucao = join(raiz, `executou-${randomBytes(4).toString('hex')}`);
+    const outro = join(raiz, `outro-${randomBytes(4).toString('hex')}`);
+    mkdirSync(outro);
+    writeFileSync(join(outro, 'chrome'), `#!/bin/sh\necho x > "${marcaDeExecucao}"\n`);
+    chmodSync(join(outro, 'chrome'), 0o755);
+    const r = await cliAsync(['capturar', 'aurora-ficticia', '--porta', String(await expediente())], { PATH: `${outro}:/usr/bin:/bin` });
+    assert.equal(r.code, 1);
+    assert.match(r.erro, /fora da pasta de navegadores falsos/);
+    assert.equal(existsSync(marcaDeExecucao), false);
+  });
+
+  test('capturar: o navegador recebe o HOME verdadeiro e as flags do chaveiro, e a saída só cai em previa/', async () => {
+    candidato();
+    const registro = join(raiz, `registro-${randomBytes(4).toString('hex')}`);
+    writeFileSync(join(raiz, 'captura-pronta.png'), logoPng());
+    navegadorFalso(`printf '%s\\n' "HOME=$HOME" "$@" >> "${registro}"\n${PNG_DA_CAPTURA.replace('PRONTO', join(raiz, 'captura-pronta.png'))}`);
+    const antes = readdirSync(home, { recursive: true }).sort();
+    const r = await cliAsync(['capturar', 'aurora-ficticia', '--porta', String(await expediente())], { PATH: `${falsos}:/usr/bin:/bin` });
+    assert.equal(r.code, 0, r.erro);
+    const log = readFileSync(registro, 'utf8');
+    assert.equal(log.match(/^HOME=(.*)$/gm).every((l) => l !== `HOME=${home}`), true, 'o HOME fictício chegou ao navegador');
+    assert.equal((log.match(/^--use-mock-keychain$/gm) ?? []).length, 3);
+    assert.equal((log.match(/^--password-store=basic$/gm) ?? []).length, 3);
+    const novos = readdirSync(home, { recursive: true }).sort().filter((x) => !antes.includes(x));
+    assert.deepEqual(novos, ['.expediente/host/temas/aurora-ficticia/previa', ...[1, 2, 3].map((n) => `.expediente/host/temas/aurora-ficticia/previa/sala-${n}.png`)]);
   });
 });
