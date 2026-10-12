@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -136,19 +136,26 @@ describe('abrir: funções', () => {
 });
 
 describe('abrir: o script de verdade, contra o servidor de verdade (com um "open" falso no PATH, sem abrir navegador)', () => {
-  /** O "open" falso anota o argv, os modos da pasta e do arquivo e o HTML, e não abre nada. */
-  async function rodar(home: string, porta: number, script = SCRIPT) {
+  /**
+   * O programa de abrir falso anota o argv, os modos da pasta e do arquivo e o HTML, e não abre nada. Ele tem o nome que o script chama
+   * naquele sistema (`open` no macOS, `xdg-open` no resto): no Linux do CI o `xdg-open` de verdade existe e saía com 3. Com `plataforma`,
+   * o filho roda com `process.platform` trocado (um --require), para provar o lado de lá sem estar lá.
+   */
+  async function rodar(home: string, porta: number, script = SCRIPT, plataforma: string = process.platform) {
     const bin = mkdtempSync(join(tmpdir(), 'expediente-bin-'));
     limpezas.push(() => rmSync(bin, { recursive: true, force: true }));
     const registro = join(bin, 'registro.json');
+    const nome = comandoDeAbrir(plataforma);
+    const preload = join(bin, 'plataforma.cjs');
+    writeFileSync(preload, `Object.defineProperty(process, 'platform', { value: ${JSON.stringify(plataforma)} });\n`);
     writeFileSync(
-      join(bin, 'open'),
+      join(bin, nome),
       `#!${process.execPath}\nconst fs = require('node:fs'); const path = require('node:path'); const arq = process.argv[2];\nfs.writeFileSync(${JSON.stringify(registro)}, JSON.stringify({ argv: process.argv.slice(2), pasta: fs.statSync(path.dirname(arq)).mode & 0o777, arquivo: fs.statSync(arq).mode & 0o777, html: fs.readFileSync(arq, 'utf8') }));\n`,
     );
-    chmodSync(join(bin, 'open'), 0o755);
+    chmodSync(join(bin, nome), 0o755);
     // Assíncrono: o servidor de teste roda neste mesmo processo e precisa responder enquanto o script espera.
     const r = await new Promise<{ status: number | null; saida: string }>((ok, fail) => {
-      const filho = spawn(process.execPath, [script], { env: { PATH: `${bin}:/usr/bin:/bin`, HOME: home, EXPEDIENTE_PORT: String(porta) } });
+      const filho = spawn(process.execPath, ['--require', preload, script], { env: { PATH: `${bin}:/usr/bin:/bin`, HOME: home, EXPEDIENTE_PORT: String(porta) } });
       let saida = '';
       filho.stdout.setEncoding('utf8').on('data', (c: string) => (saida += c));
       filho.stderr.setEncoding('utf8').on('data', (c: string) => (saida += c));
@@ -157,8 +164,19 @@ describe('abrir: o script de verdade, contra o servidor de verdade (com um "open
     });
     const aberto = existsSync(registro) ? (JSON.parse(readFileSync(registro, 'utf8')) as { argv: string[]; pasta: number; arquivo: number; html: string }) : undefined;
     if (aberto) limpezas.push(() => rmSync(join(aberto.argv[0]!, '..'), { recursive: true, force: true }));
-    return { status: r.status, saida: r.saida, aberto };
+    return { status: r.status, saida: r.saida, aberto, nome, bin };
   }
+
+  it('o acessório cria o executável com o nome do sistema: open no macOS, xdg-open no Linux (e o script o chama assim)', async () => {
+    const s = await comServidor(TOKEN);
+    for (const [plataforma, nome] of [['darwin', 'open'], ['linux', 'xdg-open']] as const) {
+      const r = await rodar(comHome(`${TOKEN}\n`), s.porta, SCRIPT, plataforma);
+      expect(r.nome).toBe(nome);
+      expect(readdirSync(r.bin).filter((f) => f === 'open' || f === 'xdg-open')).toEqual([nome]);
+      expect(r.status, `${plataforma}: ${r.saida}`).toBe(0);
+      expect(r.aberto?.argv[0]).toMatch(/\/abrir\.html$/);
+    }
+  });
 
   it('abre o arquivo (pasta 700, arquivo 600) com um bilhete que o servidor troca uma vez pelo segredo; o argv, a saída e o que o servidor recebeu não têm o segredo nem o bilhete', async () => {
     const s = await comServidor(TOKEN);
