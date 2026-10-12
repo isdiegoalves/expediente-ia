@@ -381,11 +381,24 @@ export class OfficeStore {
     }
   }
 
+  /** Conta as aberturas do stream: o que chegar depois de um disconnect() ou de uma abertura mais nova não vale. */
+  private abertura = 0;
+
   private startSSE(): void {
     this.setConnection('connecting');
+    const minha = ++this.abertura;
+    // Com a chave do token, o stream leva a prova (uma por conexão) e conta como página aberta; sem ela abre na hora, como sempre.
+    if (!tokenLocal.tem()) return this.abrirStream('/api/stream');
+    void tokenLocal.urlDoStream('/api/stream').then((url) => {
+      if (minha === this.abertura && !this.stopped && !this.source) this.abrirStream(url);
+    });
+  }
+
+  private abrirStream(url: string): void {
+    const comProva = url.includes('?prova=');
     let es: EventSourceLike;
     try {
-      es = this.openStream('/api/stream');
+      es = this.openStream(url);
     } catch (err) {
       console.error('[store] não foi possível abrir o stream', err);
       this.setConnection('closed');
@@ -403,8 +416,10 @@ export class OfficeStore {
     });
     es.addEventListener('error', () => {
       if (!current()) return;
-      // CONNECTING: o próprio navegador vai tentar de novo. CLOSED: desistiu; a reconexão fica por nossa conta.
-      if (es.readyState === ES_CLOSED) {
+      // CONNECTING: o próprio navegador vai tentar de novo. CLOSED: desistiu; a reconexão fica por nossa conta. Com prova, a reconexão
+      // do navegador reusaria a prova já gasta e a página deixaria de contar: fechamos e abrimos de novo, com outra prova.
+      if (es.readyState === ES_CLOSED || comProva) {
+        if (comProva) this.closeSource();
         this.setConnection('closed');
         this.scheduleRetry();
       } else {
@@ -434,6 +449,7 @@ export class OfficeStore {
   }
 
   private closeSource(): void {
+    this.abertura++;
     this.source?.close();
     this.source = null;
   }

@@ -123,6 +123,10 @@ Borda (`http/guard.ts`, vale para API, estáticos e Vite): `Host` precisa ser `l
    vez, `no-store`; bilhete desconhecido, vencido ou reusado → 401. É assim que a chave do cliente chega à página, que a guarda como chave
    HMAC não exportável; ela só produz provas de cliente. Uma página com a chave do desenho anterior (o próprio K) leva 401.
 
+O stream (`GET /api/stream`) é leitura e segue atendido sem prova (o `EventSource` não manda cabeçalho), mas só o que trouxer
+`?prova=<desafio>.<hex>` válida (a mesma prova de cliente, presa a `GET` e `/api/stream`, de uso único) conta em `Hub.localSize`, que o
+registro de permissões usa para decidir se desvia o pedido. Prova ausente, vencida ou errada não derruba o stream: ele só não conta.
+
 Três `GET` mudam estado do servidor e por isso também exigem a prova (`http/prova-get.ts`): `/api/permissions/:id/wait` (entrega e
 apaga a decisão guardada para o hook), `/api/mod/focos` (marca que há um mod de pé) e `/api/agentes/:id/ir` (emite um nonce e expulsa
 os mais antigos). O `/api/agentes/:id/ir?abrir=1` é a navegação do navegador, que não manda cabeçalho: o nonce de uso único é a

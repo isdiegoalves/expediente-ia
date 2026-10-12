@@ -17,11 +17,12 @@ let agora = 1_000_000;
 let chegaram = 0;
 
 beforeAll(async () => {
-  const guard = createRequestGuard(new Autenticacao(() => token, () => agora));
+  const auth = new Autenticacao(() => token, () => agora);
+  const guard = createRequestGuard(auth);
   server = http.createServer((req, res) => {
     if (guard(req, res)) return;
     chegaram++;
-    res.writeHead(200, { 'Content-Type': 'application/json' }).end('{}');
+    res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ conta: auth.provou(req) }));
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   port = (server.address() as AddressInfo).port;
@@ -433,5 +434,57 @@ describe('bilhete e troca', () => {
     const primeiro = await bilhete();
     for (let i = 0; i < 64; i++) await bilhete();
     expect((await troca(primeiro)).status).toBe(401);
+  });
+});
+
+describe('o stream conta como página só com prova', () => {
+  beforeEach(() => {
+    token = ok(TOKEN);
+    chegaram = 0;
+  });
+  const conta = async (caminho: string, headers: Record<string, string> = {}) => {
+    const r = await enviar('GET', caminho, headers);
+    return { status: r.status, conta: (JSON.parse(r.body) as { conta: boolean }).conta };
+  };
+  const provaDoStream = async (metodo = 'GET', caminho = '/api/stream') => prova(metodo, caminho);
+
+  it('sem prova o stream é atendido e não conta', async () => {
+    expect(await conta('/api/stream')).toEqual({ status: 200, conta: false });
+  });
+
+  it('com a prova certa na query conta, uma vez só (a mesma prova de novo é atendida e não conta)', async () => {
+    const p = await provaDoStream();
+    expect(await conta(`/api/stream?prova=${p}`)).toEqual({ status: 200, conta: true });
+    expect(await conta(`/api/stream?prova=${p}`)).toEqual({ status: 200, conta: false });
+  });
+
+  it('prova de outro método ou caminho, errada, vencida, malformada, repetida ou com outro parâmetro: o stream é atendido e não conta', async () => {
+    const vencida = await provaDoStream();
+    agora += DESAFIO_VALIDADE_MS + 1;
+    const outras = [
+      `/api/stream?prova=${await provaDoStream('POST')}`,
+      `/api/stream?prova=${await provaDoStream('GET', '/api/demo')}`,
+      `/api/stream?prova=${await provaDoStream('GET', '/api/stream?x=1')}`,
+      `/api/stream?prova=${(await pedirDesafio()).desafio}.${'0'.repeat(64)}`,
+      `/api/stream?prova=${vencida}`,
+      '/api/stream?prova=curto',
+      '/api/stream?prova=',
+      `/api/stream?prova=${await provaDoStream()}&x=1`,
+      `/api/stream?x=1&prova=${await provaDoStream()}`,
+      `/api/stream?prova=${await provaDoStream()}&prova=${await provaDoStream()}`,
+      `/api/stream/?prova=${await provaDoStream()}`,
+    ];
+    for (const caminho of outras) expect(await conta(caminho), caminho).toEqual({ status: 200, conta: false });
+  });
+
+  it('o cabeçalho de prova não faz o stream contar (só a query), e outra rota GET com prova na query não conta', async () => {
+    expect(await conta('/api/stream', { 'X-Expediente-Prova': await provaDoStream() })).toEqual({ status: 200, conta: false });
+    expect(await conta(`/api/snapshot?prova=${await provaDoStream('GET', '/api/snapshot')}`)).toEqual({ status: 200, conta: false });
+  });
+
+  it('servidor sem token legível: o stream é atendido e não conta', async () => {
+    const p = await provaDoStream();
+    token = { ok: false, motivo: 'o arquivo do token não existe ou não pode ser lido' };
+    expect(await conta(`/api/stream?prova=${p}`)).toEqual({ status: 200, conta: false });
   });
 });

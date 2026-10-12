@@ -84,7 +84,8 @@ const office = new Office({
 const watcher = new ClaudeWatcher({ accounts, office, inDocker: config.inDocker });
 late.office = office;
 late.watcher = watcher;
-const hub = new Hub(office);
+// Só o stream que provou o token conta como página aberta: é ela que pode responder aos pedidos de permissão.
+const hub = new Hub(office, { conta: (req) => autenticacao.provou(req) });
 // Rodas e carteiras: a agenda roda aqui, todas as abas animam as mesmas rodas e o livro fica em <dataDir>/social.json.
 const social = new LivroSocial({ arquivo: join(config.dataDir, SOCIAL_ARQUIVO), agentes: () => hub.current().agents, mudou: () => office.markDirty() });
 late.social = social;

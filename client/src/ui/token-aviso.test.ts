@@ -19,6 +19,8 @@ describe('aviso das ações bloqueadas', () => {
   it('página sem a chave: diz o que fica bloqueado e os dois jeitos de abrir autorizado, em passos', () => {
     const t = textoDoAviso(base)!;
     expect(t).toContain('bloqueadas');
+    expect(t).toContain('não recebe os pedidos de permissão');
+    expect(t).toContain('escritório ao vivo');
     expect(t).toContain('/escritorio');
     expect(t).toContain('"Abrir o escritório"');
     expect(t).toContain('npm run abrir');

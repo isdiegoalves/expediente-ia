@@ -17,7 +17,7 @@ export interface EstadoDoToken {
 }
 
 const PASSOS_DA_PAGINA = [
-  'As ações que mudam algo (responder permissões, renomear salas, mudar o personagem ou o ritmo, focar sessões) estão bloqueadas: esta página não tem o token local. O que é só leitura segue funcionando.',
+  'As ações que mudam algo (responder permissões, renomear salas, mudar o personagem ou o ritmo, focar sessões) estão bloqueadas: esta página não tem a chave do token local, e por isso também não recebe os pedidos de permissão para responder (eles continuam no terminal). O que é só leitura, inclusive o escritório ao vivo, segue funcionando.',
   'Para liberar:',
   '1. No Claude Code, rode /escritorio e use "Abrir o escritório"; ou, na pasta do Expediente, rode npm run abrir',
   '2. A página abre já autorizada (por http://127.0.0.1, o endereço em que a autorização vale).',

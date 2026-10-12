@@ -10,7 +10,7 @@ import { migrateLegacyKeys, safeLocalStorage } from './ui/prefs';
 // Antes de tudo: o mundo (carteiras) e a UI (preferências) leem o localStorage ao serem criados.
 migrateLegacyKeys(safeLocalStorage());
 // O bilhete chega no fragmento da URL (o navegador não o manda ao servidor): vira a chave do token e some da barra de endereço.
-void receberTokenDaUrl(location, history);
+const tokenPronto = receberTokenDaUrl(location, history);
 
 void (async () => {
   const { aviso, previa, chave } = await carregarTema();
@@ -38,6 +38,8 @@ void (async () => {
       setTimeout(() => world.focusRoom(alvo.id), 1_500);
     });
   }
+  // O stream leva a prova do token: a chave (e a troca do bilhete da URL, se havia) tem de estar pronta antes de abrir.
+  await tokenPronto;
   store.connect();
 
   // Facilita a depuração pelo console do navegador.

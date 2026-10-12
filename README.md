@@ -445,6 +445,12 @@ também mudam estado no servidor (entregar a decisão ao hook, marcar que há um
 para a sessão) e por isso também exigem a prova. Se o Expediente estiver parado e outro programa ocupar a porta, ele não recebe K
 nem a prova de ninguém (o hook, o mod, o `npm run abrir` e o pré-voo recusam falar com quem não prova ter K).
 
+**Só página autorizada recebe pedidos de permissão.** O hook só desvia o pedido para o escritório quando há uma página aberta que pode
+respondê-lo. O `/api/stream` (a leitura ao vivo) continua atendido a qualquer um, mas só conta como página o stream que trouxer uma
+prova na query (`?prova=`, de uso único, pedida a cada conexão, inclusive nas reconexões). Uma página sem autorização vê tudo ao vivo,
+o aviso de "ações bloqueadas" diz por que os pedidos não chegam a ela, e eles ficam no terminal; um programa local que só abra o
+stream não consegue mais fazer o hook segurar o pedido de um subagente em segundo plano.
+
 **O que o token protege e o que não protege.** Ele protege contra quem alcança a porta mas não lê os arquivos do seu
 usuário: um container, um processo isolado, outro usuário da máquina. Um programa rodando como você consegue ler o
 arquivo do token; contra ele o token não é barreira (nem o resto do Expediente: esse programa já lê as suas sessões). O que

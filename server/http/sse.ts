@@ -23,10 +23,14 @@ export class Hub {
   private readonly throttleMs: number;
   private readonly pingMs: number;
 
+  /** Quais streams contam como página aberta (padrão: todos). */
+  private readonly conta: (req: IncomingMessage) => boolean;
+
   constructor(
     private readonly office: Office,
-    opts: { throttleMs?: number; pingMs?: number } = {},
+    opts: { throttleMs?: number; pingMs?: number; conta?: (req: IncomingMessage) => boolean } = {},
   ) {
+    this.conta = opts.conta ?? (() => true);
     this.throttleMs = opts.throttleMs ?? 200;
     this.pingMs = opts.pingMs ?? 15_000;
   }
@@ -58,7 +62,7 @@ export class Hub {
     return () => void this.snapshotCbs.delete(cb);
   }
 
-  /** Páginas conectadas por um Host local (localhost/127.x): quem pode responder pelo escritório. */
+  /** Páginas conectadas por um Host local (localhost/127.x) e que `conta` aceita (em produção, as que provaram o token): quem pode responder pelo escritório. */
   get localSize(): number {
     let n = 0;
     for (const c of this.clients) if (this.local.has(c) && !c.destroyed && !c.writableEnded) n++;
@@ -81,7 +85,7 @@ export class Hub {
     res.write(frame('feed', this.office.recentFeed(50)));
     if (this.frameTema) res.write(this.frameTema);
     this.clients.add(res);
-    if (isLoopbackHost(req.headers.host)) this.local.add(res);
+    if (isLoopbackHost(req.headers.host) && this.conta(req)) this.local.add(res);
     const drop = () => this.clients.delete(res);
     req.on('close', drop);
     res.on('close', drop);

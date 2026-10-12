@@ -172,19 +172,43 @@ export class TokenLocal {
     const alvo = new URL(input, 'http://x');
     const caminho = `${alvo.pathname}${alvo.search}`;
     for (let tentativa = 0; tentativa < 2; tentativa++) {
-      const n = hex(cripto.getRandomValues(new Uint8Array(16)));
-      const desafio = await this.buscar(`/api/token/desafio?n=${n}`);
-      if (!desafio.ok) return desafio;
-      const id = ((await desafio.json().catch(() => ({}))) as { desafio?: unknown }).desafio;
-      if (typeof id !== 'string' || !BILHETE_FORMATO.test(id)) return recusa(502, AVISO_DESAFIO);
-      const assinatura = await cripto.subtle.sign(HMAC.name, this.chave, new TextEncoder().encode(`cliente\n${id}\n${metodo}\n${caminho}`));
+      const prova = await this.novaProva(cripto, this.chave, metodo, caminho);
+      if (typeof prova !== 'string') return prova;
       const headers = new Headers(init.headers);
-      headers.set(TOKEN_CABECALHO, `${id}.${hex(assinatura)}`);
+      headers.set(TOKEN_CABECALHO, prova);
       const res = await this.buscar(input, { ...init, headers });
       if (res.status !== 401) return res;
     }
     await this.apagar();
     return recusa(401, AVISO_TOKEN_RECUSADO);
+  }
+
+  /** Pede um desafio e devolve `<desafio>.<assinatura>`; se o servidor não respondeu direito, devolve a resposta dele (ou um 502). */
+  private async novaProva(cripto: Crypto, chave: CryptoKey, metodo: string, caminho: string): Promise<string | Response> {
+    const n = hex(cripto.getRandomValues(new Uint8Array(16)));
+    const desafio = await this.buscar(`/api/token/desafio?n=${n}`);
+    if (!desafio.ok) return desafio;
+    const id = ((await desafio.json().catch(() => ({}))) as { desafio?: unknown }).desafio;
+    if (typeof id !== 'string' || !BILHETE_FORMATO.test(id)) return recusa(502, AVISO_DESAFIO);
+    const assinatura = await cripto.subtle.sign(HMAC.name, chave, new TextEncoder().encode(`cliente\n${id}\n${metodo}\n${caminho}`));
+    return `${id}.${hex(assinatura)}`;
+  }
+
+  /**
+   * A URL do stream com a prova na query (`?prova=`, de uso único e presa a GET e ao caminho): é ela que faz esta página contar como aberta
+   * para o registro de permissões, que só desvia o pedido para quem pode respondê-lo. Sem chave, ou se o servidor não responder o desafio,
+   * devolve o caminho puro: o stream só lê (a página vê tudo ao vivo) e não conta. Uma prova por conexão, inclusive nas reconexões.
+   */
+  async urlDoStream(caminho: string): Promise<string> {
+    await this.iniciar();
+    const cripto = this.cripto;
+    if (!this.chave || !cripto?.subtle) return caminho;
+    try {
+      const prova = await this.novaProva(cripto, this.chave, 'GET', caminho);
+      return typeof prova === 'string' ? `${caminho}?prova=${prova}` : caminho;
+    } catch {
+      return caminho;
+    }
   }
 
   private avisarMudanca(): void {

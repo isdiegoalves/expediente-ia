@@ -34,6 +34,9 @@ mostra a faixa de ações bloqueadas até ser aberta de novo pelo `npm run abrir
   cliente à chave guardada no navegador e, se o Expediente voltar com a aba falsa aberta, escrever em seu nome enquanto ela
   estiver aberta. O token não autentica a página para você; só TLS com identidade faria isso. O corpo do pedido e a resposta
   também não são autenticados.
+- **Só página autorizada conta como página aberta.** O hook de permissões só desvia o pedido para o escritório se houver uma página
+  que possa respondê-lo. O stream da leitura ao vivo segue atendido sem prova, mas só o que provar o token conta; antes, qualquer
+  programa local que abrisse o stream fazia o hook segurar, por até 5 minutos, o pedido de um subagente em segundo plano.
 - **Alguns `GET` também mudam estado e agora exigem a prova:** entregar ao hook a decisão que você deu (quem lesse o id no
   snapshot a roubaria), marcar que há um mod de pé e emitir o código de uso único do atalho para a sessão.
 

@@ -11,6 +11,7 @@ interface Fontes {
   guard: string;
   provaGet: string;
   autenticacao: string;
+  sse: string;
   delegadas: Record<string, string>;
 }
 
@@ -20,6 +21,7 @@ const FONTES: Fontes = {
   guard: ler('http/guard.ts'),
   provaGet: ler('http/prova-get.ts'),
   autenticacao: ler('http/autenticacao.ts'),
+  sse: ler('http/sse.ts'),
   delegadas: { 'tema.ts': ler('http/tema.ts'), 'timeline.ts': ler('http/timeline.ts'), 'stats.ts': ler('http/stats.ts') },
 };
 
@@ -126,7 +128,10 @@ const COBRANCA_DO_TOKEN = [
   "else rejectJson(res, 405, 'método não permitido');",
   'return true;',
   '}',
-  'if (leitura && !(api && getExigeProva(url))) return false;',
+  'if (leitura && !(api && getExigeProva(url))) {',
+  'auth.contaComoPagina(req, url);',
+  'return false;',
+  '}',
   "const origin = typeof req.headers.origin === 'string' ? req.headers.origin : undefined;",
   "if (!leitura && method !== 'OPTIONS' && !originAllowed(origin, host)) {",
   "reject(res, 403, 'Origem não permitida.');",
@@ -351,6 +356,9 @@ function violacoes(f: Fontes): string[] {
     v.push('o guard em index.ts não recebe a autenticação com o leitor do token do dono');
   }
 
+  if (!/^const hub = new Hub\(office, \{ conta: \(req\) => autenticacao\.provou\(req\) \}\);$/m.test(f.index)) v.push('o hub em index.ts conta como página qualquer stream, e não só o que provou o token');
+  if (!/this\.local\.add\(res\)/.test(f.sse) || !/isLoopbackHost\(req\.headers\.host\) && this\.conta\(req\)\) this\.local\.add\(res\);/.test(f.sse)) v.push('o hub deixou de contar só os streams que `conta` aceita');
+
   const pedido = semComentario(entre(f.index, "server.on('request', (req, res) => {", '});', 'index.ts'));
   if (JSON.stringify(pedido) !== JSON.stringify(PEDIDO) || f.index.split("server.on('request'").length !== 2) {
     v.push('o tratamento do pedido em index.ts não é só guard, API e o resto');
@@ -422,12 +430,14 @@ const QUEBRAS: Record<string, () => Fontes> = {
   'delegada sem a recusa de escrita': () => noTema("if (req.method !== 'GET' && req.method !== 'HEAD') {", 'if (false) {'),
   'guard sem a conferência da prova': () => noGuard('if (!auth.confere(', 'if (false && !auth.confere('),
   'guard que falha aberto com o servidor sem token': () => noGuard('if (!lido.ok) {', 'if (false) {'),
-  'guard que deixa OPTIONS passar antes da prova': () => noGuard("if (leitura && !(api && getExigeProva(url))) return false;", "if ((leitura || method === 'OPTIONS') && !(api && getExigeProva(url))) return false;"),
+  'guard que deixa OPTIONS passar antes da prova': () => noGuard('if (leitura && !(api && getExigeProva(url))) {', "if ((leitura || method === 'OPTIONS') && !(api && getExigeProva(url))) {"),
   'guard que cobra a prova só em POST': () => noGuard('if (api && rota !== \'troca\') {', "if (api && rota !== 'troca' && method === 'POST') {"),
   'guard que lê o caminho sem normalizar': () => noGuard("url = new URL(req.url ?? '/', 'http://localhost');", "url = new URL('http://localhost' + (req.url ?? '/').split('?')[0]);"),
   'guard que deixa uma rota da API sem prova': () => noGuard('const rota = api ?', "if (url.pathname.startsWith('/api/mod/')) return false;\n    const rota = api ?"),
   'guard que dispensa a prova em outra rota de token': () => noGuard("if (api && rota !== 'troca') {", "if (api && rota !== 'troca' && rota !== 'bilhete') {"),
-  'guard que não pergunta quais GET mudam estado': () => noGuard('if (leitura && !(api && getExigeProva(url))) return false;', 'if (leitura) return false;'),
+  'guard que não pergunta quais GET mudam estado': () => noGuard('if (leitura && !(api && getExigeProva(url))) {', 'if (leitura) {'),
+  'guard que não conta o stream que provou': () => noGuard('auth.contaComoPagina(req, url);', ''),
+  'guard que conta o stream de qualquer rota GET': () => noGuard('auth.contaComoPagina(req, url);', 'auth.provadas.add(req);'),
   'guard que responde o desafio a qualquer método': () => noGuard('if (leitura) auth.desafio(req, res, url);', 'auth.desafio(req, res, url);'),
   'guard com a troca do bilhete antes do Content-Type': () => noGuard("if (api && !isJsonContentType(req.headers['content-type'])) {", "if (api && rota !== 'troca' && !isJsonContentType(req.headers['content-type'])) {"),
   'GET que muda estado sai da lista da prova': () => noProvaGet('/^\\/api\\/permissions\\/[^/]+\\/wait$/, ', ''),
@@ -438,6 +448,8 @@ const QUEBRAS: Record<string, () => Fontes> = {
   'rota de token nova sem prova': () => noAutenticacao("'/api/token/troca': 'troca' }", "'/api/token/troca': 'troca', '/api/token/novo': 'troca' }"),
   'conferência que compara antes de consumir o desafio': () => noAutenticacao('if (!this.desafios.consumir(m[1])) return false;\n    return iguais', 'return iguais'),
   'conferência com ===': () => noAutenticacao('return iguais(m[2], provaDoCliente(chave, m[1], metodo, caminho));', 'return m[2] === provaDoCliente(chave, m[1], metodo, caminho);'),
+  'o hub conta qualquer stream como página': () => ({ ...FONTES, index: trocar(FONTES.index, 'new Hub(office, { conta: (req) => autenticacao.provou(req) })', 'new Hub(office)') }),
+  'o hub deixa de consultar `conta`': () => ({ ...FONTES, sse: trocar(FONTES.sse, ' && this.conta(req)) this.local.add(res);', ') this.local.add(res);') }),
   'index.ts cria o guard sem a autenticação do dono': () => ({ ...FONTES, index: trocar(FONTES.index, 'new Autenticacao(lerTokenDoDono)', "new Autenticacao(() => ({ ok: true, token: '', chave: Buffer.alloc(0) }))") }),
   'rota de leitura: recusa em uma linha, sem else, e a escrita logo depois': () => naApp(SNAP, `${SNAP}      handleDemo(req, res).catch((err) => fail(res, err));\n`),
   'rota de leitura: recusa em bloco sem return, e a escrita depois do bloco': () =>
@@ -514,10 +526,13 @@ describe('toda rota que age sobre sessões ou grava estado confere a trava de pu
 //   /api/agentes/:id/ir         emite um nonce e expulsa os mais antigos do agente; com abrir=1 só consome o nonce que o navegador traz
 //   /api/resumo                 só lê a hora da saída (quem a grava é o POST /api/resumo/presenca)
 //   /api/focos/:token           só lê o andamento
-//   /api/stream, /terminal      anexam um leitor, sem mudar o escritório
+//   /api/stream                 anexa um leitor, sem mudar o escritório e sem exigir prova (o EventSource não manda cabeçalho). A prova que ele
+//                               pode trazer na query (`?prova=`, de uso único) só muda a contagem de páginas abertas que o registro de
+//                               permissões usa para desviar o pedido; stream sem prova (ou com prova ruim) é atendido e não conta
+//   /terminal                   anexa um leitor, sem mudar o escritório
 const GET_DAS_ROTAS: Record<string, Array<[string, 'le' | 'prova']>> = {
   'if (deps.tema?.(req, res, url)) return true;': [['/api/tema', 'le']],
-  "if (path === '/api/stream')": [['/api/stream', 'le']],
+  "if (path === '/api/stream')": [['/api/stream', 'le'], ['/api/stream?prova=a.b', 'le']],
   "if (path === '/api/snapshot')": [['/api/snapshot', 'le']],
   "if (path === '/api/health')": [['/api/health', 'le']],
   "if (path === '/api/versao')": [['/api/versao', 'le']],

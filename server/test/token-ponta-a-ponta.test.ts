@@ -62,6 +62,19 @@ async function pedirComProva(method: string, path: string, opts: { body?: unknow
   return pedir(method, path, { body: opts.body, prova: `${desafio}.${provaDoCliente(chave, desafio, method, path)}` }, alvo);
 }
 
+/** Um leitor do /api/stream. Com `provar`, leva a prova (de uso único) na query e conta como página aberta; sem ela, só lê. */
+async function abrirStream(provar: boolean, alvo: number, token = SENTINELA): Promise<http.ClientRequest> {
+  let caminho = '/api/stream';
+  if (provar) {
+    const n = aleatorioHex();
+    const { desafio } = JSON.parse((await pedir('GET', `/api/token/desafio?n=${n}`, {}, alvo)).text) as { desafio: string };
+    caminho += `?prova=${desafio}.${provaDoCliente(chaveDoToken(token), desafio, 'GET', '/api/stream')}`;
+  }
+  const req = http.get({ host: '127.0.0.1', port: alvo, path: caminho }, (res) => res.resume());
+  req.on('error', () => {});
+  return req;
+}
+
 const esperar = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
 
 async function ate<T>(descricao: string, fn: () => Promise<T | undefined | false>, ms = 20_000): Promise<T> {
@@ -103,8 +116,7 @@ beforeAll(async () => {
   servidor.stdout!.setEncoding('utf8').on('data', (c: string) => (logDoServidor += c));
   servidor.stderr!.setEncoding('utf8').on('data', (c: string) => (logDoServidor += c));
   await ate('o servidor responder', async () => (await pedir('GET', '/api/health')).status === 200);
-  viewer = http.get({ host: '127.0.0.1', port: porta, path: '/api/stream' }, (res) => res.resume());
-  viewer.on('error', () => {});
+  viewer = await abrirStream(true, porta);
 }, 60_000);
 
 afterAll(async () => {
@@ -244,4 +256,111 @@ describe('token local: arquivo ausente', () => {
     writeFileSync(arquivo(), `${token}\n`, { mode: 0o600 });
     expect((await demo(token)).status).toBe(200);
   });
+});
+
+describe('só o stream que provou o token conta como página, e é para ele que o hook desvia o pedido (servidor de verdade)', () => {
+  let casa: string;
+  let porta3: number;
+  let filho: ChildProcess;
+  let token3: string;
+  const abertos: http.ClientRequest[] = [];
+
+  beforeAll(async () => {
+    casa = mkdtempSync(join(tmpdir(), 'expediente-e2e-'));
+    mkdirSync(join(casa, '.claude', 'sessions'), { recursive: true });
+    writeFileSync(join(casa, '.claude', 'sessions', `${process.pid}.json`), JSON.stringify({ pid: process.pid, sessionId: SESSAO, cwd: '/p/loja', startedAt: Date.now(), kind: 'interactive', entrypoint: 'cli', status: 'busy' }));
+    porta3 = await portaLivre();
+    filho = spawn(join(ROOT, 'node_modules/.bin/tsx'), ['server/index.ts', '--dev'], { cwd: ROOT, env: { PATH: process.env.PATH, HOME: casa, EXPEDIENTE_PORT: String(porta3) }, stdio: 'ignore' });
+    await ate('o servidor responder', async () => (await pedir('GET', '/api/health', {}, porta3)).status === 200);
+    token3 = readFileSync(join(casa, '.expediente', 'host', 'token'), 'utf8').trim();
+  }, 60_000);
+
+  afterAll(async () => {
+    for (const a of abertos) a.destroy();
+    const saiu = new Promise((ok) => filho.once('exit', ok));
+    filho.kill('SIGTERM');
+    await Promise.race([saiu, esperar(5_000)]);
+    if (filho.exitCode === null) filho.kill('SIGKILL');
+    rmSync(casa, { recursive: true, force: true });
+  });
+
+  const rodarHook = () =>
+    new Promise<{ code: number | null; stdout: string; ms: number }>((ok, fail) => {
+      const t0 = Date.now();
+      const h = spawn(process.execPath, [HOOK, '--port', String(porta3), '--timeout', '5'], { env: { PATH: process.env.PATH, HOME: casa }, stdio: ['pipe', 'pipe', 'ignore'] });
+      let stdout = '';
+      h.stdout.setEncoding('utf8').on('data', (c: string) => (stdout += c));
+      h.on('error', fail);
+      h.on('close', (code) => ok({ code, stdout, ms: Date.now() - t0 }));
+      h.stdin.end(JSON.stringify(hookJson({ session_id: SESSAO, cwd: '/p/loja' })));
+    });
+  const agente = async () => (JSON.parse((await pedir('GET', '/api/snapshot', {}, porta3)).text) as OfficeSnapshot).agents.find((a) => a.sessionId === SESSAO);
+
+  it('stream sem prova (um programa local qualquer, ou uma página sem autorização): o hook sai na hora e nada fica pendente; o stream segue servindo a leitura', async () => {
+    await ate('o agente da sessão aparecer', async () => (await agente()) !== undefined);
+    abertos.push(await abrirStream(false, porta3));
+    await esperar(300);
+    const r = await rodarHook();
+    expect(r).toMatchObject({ code: 0, stdout: '' });
+    expect(r.ms).toBeLessThan(3_000);
+    expect((await agente())?.permission).toBeUndefined();
+    // A leitura ao vivo continua: o snapshot chega pelo stream sem prova.
+    const frames = await new Promise<string>((ok, fail) => {
+      let texto = '';
+      const req = http.get({ host: '127.0.0.1', port: porta3, path: '/api/stream' }, (res) => {
+        res.setEncoding('utf8').on('data', (c: string) => {
+          texto += c;
+          if (texto.includes('event: snapshot')) (req.destroy(), ok(texto));
+        });
+      });
+      req.on('error', () => ok(texto));
+      setTimeout(() => (req.destroy(), fail(new Error('sem snapshot'))), 5_000);
+    });
+    expect(frames).toContain('event: snapshot');
+  }, 40_000);
+
+  it('prova ruim (reusada, de outro caminho ou errada) também não conta: o hook continua saindo na hora', async () => {
+    const n = aleatorioHex();
+    const { desafio } = JSON.parse((await pedir('GET', `/api/token/desafio?n=${n}`, {}, porta3)).text) as { desafio: string };
+    const chave = chaveDoToken(token3);
+    for (const prova of [`${desafio}.${'0'.repeat(64)}`, `${desafio}.${provaDoCliente(chave, desafio, 'GET', '/api/demo')}`, `${desafio}.${provaDoCliente(chave, desafio, 'POST', '/api/stream')}`]) {
+      const req = http.get({ host: '127.0.0.1', port: porta3, path: `/api/stream?prova=${prova}` }, (res) => res.resume());
+      req.on('error', () => {});
+      abertos.push(req);
+    }
+    await esperar(300);
+    expect(await rodarHook()).toMatchObject({ code: 0, stdout: '' });
+    expect((await agente())?.permission).toBeUndefined();
+  }, 40_000);
+
+  it('stream que provou conta como página aberta: o pedido é desviado e fica pendente até o prazo', async () => {
+    abertos.push(await abrirStream(true, porta3, token3));
+    await esperar(300);
+    const preso = rodarHook();
+    const pendente = await ate('o pedido desviado', async () => (await agente())?.permission);
+    expect(pendente.id).toBeTruthy();
+    const r = await preso;
+    expect(r).toMatchObject({ code: 0, stdout: '' });
+    expect(r.ms).toBeGreaterThanOrEqual(4_500);
+  }, 40_000);
+
+  it('a prova do stream vale uma vez: o mesmo endereço de novo é atendido e não conta', async () => {
+    for (const a of abertos.splice(0)) a.destroy();
+    await esperar(300);
+    const n = aleatorioHex();
+    const { desafio } = JSON.parse((await pedir('GET', `/api/token/desafio?n=${n}`, {}, porta3)).text) as { desafio: string };
+    const caminho = `/api/stream?prova=${desafio}.${provaDoCliente(chaveDoToken(token3), desafio, 'GET', '/api/stream')}`;
+    for (let i = 0; i < 2; i++) {
+      const req = http.get({ host: '127.0.0.1', port: porta3, path: caminho }, (res) => res.resume());
+      req.on('error', () => {});
+      abertos.push(req);
+      await esperar(200);
+    }
+    // Um conta, o outro não: fechando o que contou, nenhuma página fica e o hook volta a sair na hora.
+    abertos[0]!.destroy();
+    await esperar(500);
+    const r = await rodarHook();
+    expect(r).toMatchObject({ code: 0, stdout: '' });
+    expect(r.ms).toBeLessThan(3_000);
+  }, 40_000);
 });

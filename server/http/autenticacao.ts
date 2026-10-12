@@ -77,6 +77,8 @@ function lerCorpo(req: IncomingMessage): Promise<unknown> {
 export class Autenticacao {
   private readonly desafios: Validades;
   private readonly bilhetes: Validades;
+  /** Os `/api/stream` que trouxeram prova válida: só eles contam como página aberta (ver `contaComoPagina`). */
+  private readonly provadas = new WeakSet<IncomingMessage>();
 
   constructor(
     private readonly lerToken: () => TokenLido,
@@ -105,6 +107,23 @@ export class Autenticacao {
     if (!m) return false;
     if (!this.desafios.consumir(m[1])) return false;
     return iguais(m[2], provaDoCliente(chave, m[1], metodo, caminho));
+  }
+
+  /**
+   * O stream (`GET /api/stream`) é leitura e segue atendido sem prova, mas só o que trouxer `?prova=<desafio>.<hex>` válida (de uso único,
+   * presa a método e caminho) conta como página aberta: é por essa contagem que o registro de permissões decide desviar o pedido do
+   * terminal, e uma página sem autorização não consegue responder a ele. Prova ausente, vencida ou errada não derruba o stream: ele só não conta.
+   */
+  contaComoPagina(req: IncomingMessage, url: URL): void {
+    if (req.method !== 'GET' || url.pathname !== '/api/stream') return;
+    const prova = url.searchParams.getAll('prova');
+    if (prova.length !== 1 || [...url.searchParams.keys()].some((k) => k !== 'prova')) return;
+    const lido = this.lerToken();
+    if (lido.ok && this.confere(prova[0], 'GET', url.pathname, lido.chave)) this.provadas.add(req);
+  }
+
+  provou(req: IncomingMessage): boolean {
+    return this.provadas.has(req);
   }
 
   /**

@@ -335,3 +335,98 @@ describe('personagem do projeto (store)', () => {
     expect(fetchMock.mock.calls.length).toBe(calls);
   });
 });
+
+describe('OfficeStore: o stream leva a prova do token', () => {
+  const CHAVE = 'a69dc70bd79ca70a947af7c6984ae0f2e4dc1604dcb5b97ef9fca5374600e78c';
+  const BILHETE = '00112233445566778899aabbccddeeff';
+  const DESAFIO = 'fedcba9876543210fedcba9876543210';
+  let urls: string[];
+  let sources: FakeSource[];
+  let store: OfficeStore;
+  let respostaDoDesafio: () => Promise<Response>;
+  let desafios: number;
+
+  const fetchDoServidor = vi.fn(async (url: string) => {
+    if (url === '/api/token/troca') return new Response(JSON.stringify({ chave: CHAVE }), { status: 200 });
+    if (url.startsWith('/api/token/desafio')) {
+      desafios++;
+      return respostaDoDesafio();
+    }
+    return new Response('{}', { status: 200 });
+  });
+
+  /** O que a página assina para o stream: HMAC com a chave do cliente sobre `cliente\n<desafio>\nGET\n/api/stream`. */
+  const assinatura = async () => {
+    const chave = await globalThis.crypto.subtle.importKey('raw', Uint8Array.from(CHAVE.match(/../g)!, (b) => Number.parseInt(b, 16)), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    const bytes = new Uint8Array(await globalThis.crypto.subtle.sign('HMAC', chave, new TextEncoder().encode(`cliente\n${DESAFIO}\nGET\n/api/stream`)));
+    return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+  };
+
+  beforeEach(async () => {
+    urls = [];
+    sources = [];
+    desafios = 0;
+    respostaDoDesafio = async () => new Response(JSON.stringify({ desafio: DESAFIO, prova: 'x' }), { status: 200 });
+    vi.stubGlobal('fetch', fetchDoServidor);
+    await tokenLocal.receberDaUrl({ hash: `#b=${BILHETE}`, pathname: '/', search: '' }, { replaceState: () => {} });
+    store = new OfficeStore({
+      eventSource: (url) => {
+        urls.push(url);
+        const s = new FakeSource();
+        sources.push(s);
+        return s;
+      },
+    });
+  });
+
+  afterEach(async () => {
+    store.disconnect();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+    await tokenLocal.apagar();
+  });
+
+  it('com a chave, o stream abre com a prova na query, presa a GET e ao caminho', async () => {
+    store.connect();
+    await vi.waitFor(() => expect(urls).toHaveLength(1));
+    expect(urls[0]).toBe(`/api/stream?prova=${DESAFIO}.${await assinatura()}`);
+    expect(store.connection).toBe('connecting');
+  });
+
+  it('sem a chave abre na hora, sem prova: a leitura ao vivo não depende de autorização', async () => {
+    await tokenLocal.apagar();
+    store.connect();
+    expect(urls).toEqual(['/api/stream']);
+    expect(desafios).toBe(0);
+  });
+
+  it('o servidor que não responde o desafio não derruba o stream: abre sem prova', async () => {
+    respostaDoDesafio = async () => new Response('{}', { status: 503 });
+    store.connect();
+    await vi.waitFor(() => expect(urls).toEqual(['/api/stream']));
+  });
+
+  it('erro do stream com prova: o store fecha o stream (a reconexão do navegador reusaria a prova gasta) e abre outro, com outra prova', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+    store.connect();
+    await vi.waitFor(() => expect(urls).toHaveLength(1));
+    sources[0]!.fire('error');
+    expect(sources[0]!.closed).toBe(true);
+    expect(store.connection).toBe('closed');
+    await vi.advanceTimersByTimeAsync(2_000);
+    await vi.waitFor(() => expect(urls).toHaveLength(2));
+    expect(desafios).toBe(2);
+    expect(urls[1]).toMatch(/^\/api\/stream\?prova=/);
+  });
+
+  it('disconnect() enquanto a prova é pedida: nenhum stream abre depois', async () => {
+    let liberar!: () => void;
+    respostaDoDesafio = () => new Promise<Response>((ok) => (liberar = () => ok(new Response(JSON.stringify({ desafio: DESAFIO, prova: 'x' }), { status: 200 }))));
+    store.connect();
+    await vi.waitFor(() => expect(desafios).toBe(1));
+    store.disconnect();
+    liberar();
+    await new Promise((ok) => setTimeout(ok, 50));
+    expect(urls).toEqual([]);
+  });
+});

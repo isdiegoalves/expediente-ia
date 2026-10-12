@@ -146,7 +146,10 @@ export function createRequestGuard(auth: Autenticacao): (req: IncomingMessage, r
       else rejectJson(res, 405, 'método não permitido');
       return true;
     }
-    if (leitura && !(api && getExigeProva(url))) return false;
+    if (leitura && !(api && getExigeProva(url))) {
+      auth.contaComoPagina(req, url);
+      return false;
+    }
     const origin = typeof req.headers.origin === 'string' ? req.headers.origin : undefined;
     if (!leitura && method !== 'OPTIONS' && !originAllowed(origin, host)) {
       reject(res, 403, 'Origem não permitida.');
